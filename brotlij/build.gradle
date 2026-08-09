@@ -1,0 +1,38 @@
+apply plugin: 'com.android.library'
+
+version = '0.0.1-SNAPSHOT'
+group = 'com.netease.hearttouch'
+
+android {
+    compileSdk 33
+    
+    defaultConfig {
+        minSdk 14
+        versionCode 3
+        versionName "0.0.3"
+    }
+
+    buildTypes {
+        debug {
+            ndk {
+                abiFilters 'armeabi-v7a', 'x86'
+            }
+        }
+        release {
+            minifyEnabled false
+            proguardFiles.add(file("proguard-rules.pro"))
+            ndk {
+                abiFilters 'armeabi-v7a', 'x86'
+//                    abiFilters 'armeabi-v7a'
+            }
+        }
+    }
+
+}
+
+dependencies {
+    api fileTree(dir: 'libs', include: ['*.jar'])
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+}

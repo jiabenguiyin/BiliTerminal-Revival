@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path
+        name="ext_files"
+        path="." />
+    <external-media-path
+        name="ext_media"
+        path="." />
+    <external-cache-path
+        name="ext_cache"
+        path="." />
+    <external-path
+        name="downloads"
+        path="Download/" />
+    <external-path
+        name="pictures"
+        path="Pictures/" />
+    <external-path
+        name="terminal_media"
+        path="Android/media/com.RobinNotBad.BiliClient/" />
+    <files-path
+        name="files"
+        path="." />
+    <cache-path
+        name="cache"
+        path="." />
+</paths>

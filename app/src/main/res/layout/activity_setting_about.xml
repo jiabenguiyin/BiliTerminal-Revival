@@ -1,0 +1,866 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <RelativeLayout
+        android:id="@+id/top"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true">
+
+        <TextView
+            android:id="@+id/pageName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentLeft="true"
+            android:layout_marginVertical="3dp"
+            android:layout_marginLeft="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_toStartOf="@id/timeText"
+            android:layout_toLeftOf="@id/timeText"
+            android:lines="1"
+            android:text="@string/pagename_about"
+            android:textStyle="bold"
+            app:drawableStartCompat="@drawable/arrow_back" />
+
+        <com.RobinNotBad.BiliClient.ui.widget.TextClock
+            android:id="@+id/timeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginRight="8dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginVertical="3dp"
+            android:layout_alignParentRight="true"
+            android:layout_alignParentEnd="true" />
+
+    </RelativeLayout>
+
+    <com.RobinNotBad.BiliClient.ui.widget.RotaryScrollView
+        android:id="@+id/scrollView"
+        android:layout_height="match_parent"
+        android:layout_width="match_parent"
+        android:layout_below="@id/top">
+
+        <LinearLayout
+            android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/activity_padding_horizontal"
+            android:paddingBottom="20dp">
+
+            <ImageView
+                android:layout_height="65dp"
+                android:layout_width="65dp"
+                android:src="@mipmap/icon"
+                android:layout_marginTop="20dp"
+                android:layout_gravity="center" />
+
+            <TextView
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:layout_marginTop="2dp"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:text="@string/app_name" />
+
+            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:textSize="12sp"
+                android:alpha="0.85"
+                android:layout_marginHorizontal="4dp"
+                android:layout_marginBottom="6dp"
+                android:text="@string/about_description"
+                android:singleLine="true"
+                android:gravity="center" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/version_name_card"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="0.5"
+                    android:layout_width="0dp"
+                    android:layout_marginRight="2dp"
+                    android:layout_marginEnd="2dp">
+
+                    <TextView
+                        android:layout_height="match_parent"
+                        android:layout_width="wrap_content"
+                        android:textSize="11sp"
+                        android:alpha="0.9"
+                        android:text="版本名"
+                        android:padding="3dp"
+                        android:id="@+id/app_version"
+                        android:layout_gravity="center"
+                        android:gravity="center" />
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/version_code_card"
+                    android:layout_height="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_weight="0.5"
+                    android:layout_marginLeft="2dp"
+                    android:layout_marginStart="2dp">
+
+                    <TextView
+                        android:layout_height="match_parent"
+                        android:layout_width="wrap_content"
+                        android:textSize="11sp"
+                        android:alpha="0.9"
+                        android:padding="3dp"
+                        android:text="版本号"
+                        android:id="@+id/app_version_code"
+                        android:layout_gravity="center"
+                        android:gravity="center" />
+
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/debug_tip"
+                android:layout_marginTop="4dp"
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:layout_marginHorizontal="1dp">
+
+                <TextView
+                    android:layout_height="match_parent"
+                    android:layout_width="wrap_content"
+                    android:textSize="11sp"
+                    android:padding="3dp"
+                    android:alpha="0.85"
+                        android:text="1.1.1 正式版\n稳定通道"
+                    android:layout_gravity="center"
+                    android:gravity="center" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <include layout="@layout/cell_divider" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center"
+                    android:text="@string/about_group"
+                    android:textSize="12sp" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/author_words"
+                android:layout_marginTop="6dp"
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent">
+
+                <LinearLayout
+                    android:layout_height="wrap_content"
+                    android:layout_width="match_parent"
+                    android:paddingVertical="6dp"
+                    android:paddingHorizontal="4dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="维护说明"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:layout_marginVertical="2dp"
+                        android:gravity="center"
+                        android:text="@string/about_say"
+                        android:textSize="11sp" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_marginTop="6dp"
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent">
+
+                <LinearLayout
+                    android:layout_height="wrap_content"
+                    android:layout_width="match_parent"
+                    android:paddingVertical="6dp"
+                    android:paddingHorizontal="4dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="使用边界"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:layout_marginVertical="2dp"
+                        android:gravity="center"
+                        android:text="@string/about_group_tip"
+                        android:textSize="11sp" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:paddingVertical="6dp"
+                    android:paddingHorizontal="4dp"
+                    android:text="@string/about_wearbili"
+                    android:textSize="11sp" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <include layout="@layout/cell_divider" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="6dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="1.1.1 维护组件"
+                        android:textSize="14sp" />
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/robin_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/robinAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/robinName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="客户端兼容层"
+                                app:layout_constraintBottom_toTopOf="@+id/robinDesc"
+                                app:layout_constraintStart_toEndOf="@id/robinAvatar"
+                                app:layout_constraintTop_toTopOf="@id/robinAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/robinDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:singleLine="true"
+                                android:text="旧设备兼容、动态接口与后台播放维护"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/robinAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/robinAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/robinName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/moye_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/moyeAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/moyeName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="网络中继"
+                                app:layout_constraintBottom_toTopOf="@+id/moyeDesc"
+                                app:layout_constraintStart_toEndOf="@id/moyeAvatar"
+                                app:layout_constraintTop_toTopOf="@id/moyeAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/moyeDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:singleLine="true"
+                                android:text="直连失败后转发 B 站相关请求"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/moyeAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/moyeAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/moyeName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:layout_marginTop="6dp"
+                        android:text="运行状态"
+                        android:textSize="14sp" />
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/silent_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/silentAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/silentName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="服务器"
+                                app:layout_constraintBottom_toTopOf="@+id/silentDesc"
+                                app:layout_constraintStart_toEndOf="@id/silentAvatar"
+                                app:layout_constraintTop_toTopOf="@id/silentAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/silentDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:singleLine="true"
+                                android:text="jp.031030.xyz / HTTPS / 断点续传"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/silentAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/silentAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/silentName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/dudu_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/duduAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/duduName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="公告"
+                                app:layout_constraintBottom_toTopOf="@+id/duduDesc"
+                                app:layout_constraintStart_toEndOf="@id/duduAvatar"
+                                app:layout_constraintTop_toTopOf="@id/duduAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/duduDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:singleLine="true"
+                                android:text="由服务器 config.json 动态下发"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/duduAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/duduAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/duduName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/dada_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/dadaAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/dadaName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:singleLine="true"
+                                android:text="诊断日志"
+                                app:layout_constraintBottom_toTopOf="@+id/dadaDesc"
+                                app:layout_constraintStart_toEndOf="@id/dadaAvatar"
+                                app:layout_constraintTop_toTopOf="@id/dadaAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/dadaDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="仅在用户确认后上传技术信息"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/dadaAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/dadaAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/dadaName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/huanli_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/huanliAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/huanliName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="原项目"
+                                app:layout_constraintBottom_toTopOf="@+id/huanliDesc"
+                                app:layout_constraintStart_toEndOf="@id/huanliAvatar"
+                                app:layout_constraintTop_toTopOf="@id/huanliAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/huanliDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:singleLine="true"
+                                android:text="感谢 BiliClient 与相关开源项目"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/huanliAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/huanliAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/huanliName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/jank_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp">
+
+                        <androidx.constraintlayout.widget.ConstraintLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <ImageView
+                                android:id="@+id/jankAvatar"
+                                android:layout_width="0dp"
+                                android:layout_height="0dp"
+                                android:layout_marginLeft="8dp"
+                                android:layout_marginStart="8dp"
+                                android:adjustViewBounds="true"
+                                app:layout_constraintBottom_toBottomOf="parent"
+                                app:layout_constraintDimensionRatio="1:1"
+                                app:layout_constraintHeight_percent="0.7"
+                                app:layout_constraintStart_toStartOf="parent"
+                                app:layout_constraintTop_toTopOf="parent" />
+
+                            <TextView
+                                android:id="@+id/jankName"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="2dp"
+                                android:layout_marginBottom="1dp"
+                                android:ellipsize="end"
+                                android:singleLine="true"
+                                android:text="维护约定"
+                                app:layout_constraintBottom_toTopOf="@+id/jankDesc"
+                                app:layout_constraintStart_toEndOf="@id/jankAvatar"
+                                app:layout_constraintTop_toTopOf="@id/jankAvatar" />
+
+                            <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                                android:id="@+id/jankDesc"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginLeft="6dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_marginTop="1dp"
+                                android:layout_marginBottom="2dp"
+                                android:alpha="0.7"
+                                android:singleLine="true"
+                                android:text="官方接口优先；弱网失败后自动中继"
+                                android:textSize="11sp"
+                                app:layout_constraintBottom_toBottomOf="@+id/jankAvatar"
+                                app:layout_constraintEnd_toEndOf="parent"
+                                app:layout_constraintStart_toEndOf="@id/jankAvatar"
+                                app:layout_constraintTop_toBottomOf="@id/jankName" />
+
+                        </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <include layout="@layout/cell_divider" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent">
+
+                <LinearLayout
+                    android:layout_height="wrap_content"
+                    android:layout_width="match_parent"
+                    android:paddingVertical="6dp"
+                    android:paddingHorizontal="4dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_height="wrap_content"
+                        android:layout_width="wrap_content"
+                        android:textSize="14sp"
+                        android:text="版本信息"
+                        android:layout_gravity="center" />
+
+                    <TextView
+                        android:layout_height="wrap_content"
+                        android:layout_width="match_parent"
+                        android:gravity="center"
+                        android:textSize="11sp"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/update_tip"
+                        android:layout_gravity="center" />
+
+                    <TextView
+                        android:id="@+id/updatelog_view"
+                        android:layout_height="wrap_content"
+                        android:layout_width="match_parent"
+                        android:gravity="center"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="2dp"
+                        android:layout_gravity="center" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:layout_marginTop="4dp">
+
+                <LinearLayout
+                    android:layout_height="wrap_content"
+                    android:layout_width="match_parent"
+                    android:paddingVertical="6dp"
+                    android:paddingHorizontal="4dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_height="wrap_content"
+                        android:layout_width="wrap_content"
+                        android:textSize="14sp"
+                        android:text="开源说明"
+                        android:layout_gravity="center" />
+
+                    <TextView
+                        android:layout_height="wrap_content"
+                        android:layout_width="match_parent"
+                        android:gravity="center"
+                        android:textSize="11sp"
+                        android:layout_marginVertical="2dp"
+                        android:text="@string/about_opensource"
+                        android:layout_gravity="center" />
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginVertical="6dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:gravity="center"
+                    android:text="@string/about_source"
+                    android:textSize="11sp" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/icon_license_list"
+                android:layout_marginTop="4dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="35sp"
+                        android:layout_marginHorizontal="8dp"
+                        android:gravity="center_vertical|start"
+                        android:text="开源、原作者与许可"
+                        android:textSize="13sp"
+                        app:drawableEndCompat="@drawable/arrow_forward" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="8dp"
+                        android:layout_marginBottom="6dp"
+                        android:alpha="0.7"
+                        android:text="RobinNotBad · GPL-3.0 · 第三方图标"
+                        android:textSize="10sp" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider" />
+
+                    <TextView
+                        android:id="@+id/gpl_license_full"
+                        android:layout_width="match_parent"
+                        android:layout_height="35sp"
+                        android:layout_marginHorizontal="8dp"
+                        android:gravity="center_vertical|start"
+                        android:text="GNU GPL-3.0 许可证全文"
+                        android:textSize="12sp"
+                        app:drawableEndCompat="@drawable/arrow_forward" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_height="wrap_content"
+                android:layout_width="match_parent"
+                android:id="@+id/toUncle"
+                android:layout_marginTop="4dp">
+
+                <LinearLayout
+                    android:layout_height="wrap_content"
+                    android:layout_width="match_parent"
+                    android:paddingVertical="6dp"
+                    android:paddingHorizontal="4dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_height="wrap_content"
+                        android:layout_width="wrap_content"
+                        android:textSize="14sp"
+                        android:text="自用声明"
+                        android:layout_gravity="center" />
+
+                    <TextView
+                        android:layout_height="wrap_content"
+                        android:layout_width="match_parent"
+                        android:gravity="center"
+                        android:textSize="11sp"
+                        android:layout_marginVertical="2dp"
+                        android:text="@string/about_to_uncle"
+                        android:layout_gravity="center" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+
+    </com.RobinNotBad.BiliClient.ui.widget.RotaryScrollView>
+
+</RelativeLayout>

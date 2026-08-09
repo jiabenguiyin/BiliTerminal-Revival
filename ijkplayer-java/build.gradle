@@ -1,0 +1,11 @@
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 33
+}
+
+dependencies {
+
+}
+
+
