@@ -208,7 +208,8 @@ public class PrivateMsgActivity extends BaseActivity {
         CenterThreadPool.run(() -> {
             try {
                 int oldListSize = list.size();
-                JSONObject msgResult = PrivateMsgApi.getPrivateMsg(uid, 50, list.get(list.size() - 1).msgSeqno, 0);
+                long beginSeqno = PrivateMsgApi.getRefreshBeginSeqno(list);
+                JSONObject msgResult = PrivateMsgApi.getPrivateMsg(uid, 50, beginSeqno, 0);
                 ArrayList<PrivateMessage> newList = PrivateMsgApi.getPrivateMsgList(msgResult);
                 if (newList.size() > 0) {
                     for (int i = 0; i < PrivateMsgApi.getEmoteJsonArray(msgResult).length(); ++i) {
@@ -217,11 +218,8 @@ public class PrivateMsgActivity extends BaseActivity {
                     }
                     Collections.reverse(newList);
                     runOnUiThread(() -> {
-                        for (PrivateMessage msg : newList) {
-                            list.add(msg);
-                            adapter.notifyItemInserted(list.size() - 1);
-                        }
-                        adapter.notifyItemRangeChanged(oldListSize - 1, list.size());
+                        list.addAll(newList);
+                        adapter.notifyItemRangeInserted(oldListSize, newList.size());
                         msgView.smoothScrollToPosition(list.size() - 1);
                     });
                 }

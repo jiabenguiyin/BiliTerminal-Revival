@@ -47,7 +47,7 @@ public final class ImageViewerPagerAdapter extends PagerAdapter {
     @Override
     public void destroyItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
         PhotoView photoView = (PhotoView) object;
-        Glide.with(photoView).clear(photoView);
+        Glide.with(container.getContext().getApplicationContext()).clear(photoView);
         container.removeView(photoView);
     }
 }

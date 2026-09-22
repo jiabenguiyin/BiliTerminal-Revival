@@ -15,6 +15,7 @@ public class PlayerData implements Parcelable {
 
     public String title = "";
     public String videoUrl = "";
+    public ArrayList<String> videoBackupUrls = new ArrayList<>();
     public String danmakuUrl = "";
     public int qn = -1;
     public String[] qnStrList;
@@ -30,7 +31,8 @@ public class PlayerData implements Parcelable {
     public ArrayList<Long> cids;
     public int currentPageIndex = 0;
     public DashData dashData; // DASH格式数据
-    public String audioUrl = ""; // 单独的音频URL（用于仅音频下载）
+    public String audioUrl = "";
+    public ArrayList<String> audioBackupUrls = new ArrayList<>();
 
     public PlayerData() {
     }
@@ -42,6 +44,8 @@ public class PlayerData implements Parcelable {
     protected PlayerData(Parcel in) {
         title = in.readString();
         videoUrl = in.readString();
+        videoBackupUrls = in.createStringArrayList();
+        if (videoBackupUrls == null) videoBackupUrls = new ArrayList<>();
         danmakuUrl = in.readString();
         qn = in.readInt();
         qnStrList = in.createStringArray();
@@ -57,6 +61,8 @@ public class PlayerData implements Parcelable {
         in.readList(cids, Long.class.getClassLoader());
         currentPageIndex = in.readInt();
         audioUrl = in.readString();
+        audioBackupUrls = in.createStringArrayList();
+        if (audioBackupUrls == null) audioBackupUrls = new ArrayList<>();
         // dashData不序列化，下载时会重新获取
     }
 
@@ -81,6 +87,7 @@ public class PlayerData implements Parcelable {
     public void writeToParcel(@NonNull Parcel dest, int flags) {
         dest.writeString(title);
         dest.writeString(videoUrl);
+        dest.writeStringList(videoBackupUrls);
         dest.writeString(danmakuUrl);
         dest.writeInt(qn);
         dest.writeStringArray(qnStrList);
@@ -95,6 +102,7 @@ public class PlayerData implements Parcelable {
         dest.writeList(cids);
         dest.writeInt(currentPageIndex);
         dest.writeString(audioUrl);
+        dest.writeStringList(audioBackupUrls);
         // dashData不序列化，下载时会重新获取
     }
 

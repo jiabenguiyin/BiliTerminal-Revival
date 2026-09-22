@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.SystemClock;
-import android.util.Log;
 
 import androidx.core.content.FileProvider;
 
@@ -23,6 +22,8 @@ import com.RobinNotBad.BiliClient.model.SubtitleLink;
 import com.RobinNotBad.BiliClient.model.VideoInfo;
 import com.RobinNotBad.BiliClient.service.DownloadService;
 import com.RobinNotBad.BiliClient.util.FileUtil;
+import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
+import com.RobinNotBad.BiliClient.util.DeviceProfile;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
@@ -39,6 +40,8 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class PlayerApi {
@@ -108,20 +111,16 @@ public class PlayerApi {
      * @param playerData 传入aid、cid、qn等必要数据
      */
     public static void getVideoDash(PlayerData playerData) throws JSONException, IOException {
+        int requestedQn = playerData.qn;
         playerData.timeStamp = 0;
         playerData.videoUrl = "";
+        playerData.videoBackupUrls.clear();
         playerData.audioUrl = "";
-        playerData.danmakuUrl = NetWorkUtil.routeUrlForRelay("https://comment.bilibili.com/" + playerData.cid + ".xml");
+        playerData.audioBackupUrls.clear();
+        // Keep the official URL here; the current global relay mode is applied at use time.
+        playerData.danmakuUrl = "https://comment.bilibili.com/" + playerData.cid + ".xml";
 
-        String query = "?"
-                + "avid=" + playerData.aid
-                + "&cid=" + playerData.cid
-                + "&qn=" + playerData.qn
-                + "&fnval=16&fnver=0" // 16:DASH格式
-                + "&platform=pc"
-                + "&voice_balance=1"
-                + "&gaia_source=pre-load"
-                + "&isGaiaAvoided=true";
+        String query = buildDashPlayQuery(playerData);
         String wbiUrl = "https://api.bilibili.com/x/player/wbi/playurl" + query;
         String legacyUrl = "https://api.bilibili.com/x/player/playurl" + query;
         JSONObject data = requestPlayDataWithFallback(wbiUrl, legacyUrl, true);
@@ -132,17 +131,44 @@ public class PlayerApi {
             playerData.dashData = DashData.fromJson(dashJson);
 
             // 设置视频URL（选择指定清晰度的视频流）
-            DashVideoStream videoStream = playerData.dashData.getVideoStream(playerData.qn);
-            if (videoStream != null) {
-                playerData.videoUrl = NetWorkUtil.routeUrlForRelay(firstStreamUrl(videoStream.baseUrl, videoStream.backupUrl));
+            int selectQn = requestedQn;
+            if (requestedQn <= 0 && DeviceProfile.get() == DeviceProfile.Tier.COMPAT) {
+                // 1.1.6: 兼容档自动档优先 720P；接口没有 720P 时再回退到 360P
+                selectQn = DeviceProfile.autoQuality();
             }
+            DashVideoStream videoStream = playerData.dashData.getVideoStream(selectQn);
+            if (videoStream == null) {
+                throw new JSONException("接口未返回所选清晰度的视频流，请切换普通画质后重试");
+            }
+            int actualQn = videoStream.id > 0 ? videoStream.id : requestedQn;
+            playerData.qn = actualQn;
+            playerData.videoUrl = firstStreamUrl(videoStream.baseUrl, videoStream.backupUrl);
+            setBackupUrls(playerData, videoStream.backupUrl);
+            JSONObject streamDetails = new JSONObject();
+            try {
+                streamDetails.put("requested_qn", requestedQn);
+                streamDetails.put("actual_qn", actualQn);
+                streamDetails.put("stream_id", videoStream.id);
+                streamDetails.put("width", videoStream.width);
+                streamDetails.put("height", videoStream.height);
+                streamDetails.put("frame_rate", videoStream.frameRate);
+                streamDetails.put("codecid", videoStream.codecid);
+                streamDetails.put("device_profile", DeviceProfile.get().name());
+            } catch (JSONException ignored) {
+            }
+            DiagnosticLogManager.record("player_video_stream_selected", streamDetails);
 
-            // 设置音频URL（选择最高质量的音频流）
-            DashAudioStream audioStream = playerData.dashData.getBestAudioStream();
+            DashAudioStream audioStream = playerData.dashData.getBestCompatibleAudioStream();
             if (audioStream != null) {
-                playerData.audioUrl = NetWorkUtil.routeUrlForRelay(firstStreamUrl(audioStream.baseUrl, audioStream.backupUrl));
+                playerData.audioUrl = firstStreamUrl(audioStream.baseUrl, audioStream.backupUrl);
+                setAudioBackupUrls(playerData, audioStream.backupUrl);
             }
         } else {
+            if (requestedQn <= 0) {
+                // 1.1.6: 兼容档自动档 durl 优先 720P，其余保持原请求档位
+                playerData.qn = DeviceProfile.get() == DeviceProfile.Tier.COMPAT
+                        ? DeviceProfile.autoQuality() : 80;
+            }
             getVideo(playerData, true);
             return;
         }
@@ -160,6 +186,98 @@ public class PlayerApi {
         playerData.timeStamp = System.currentTimeMillis();
     }
 
+    static String buildDashPlayQuery(PlayerData playerData) {
+        // 1.1.6: 按设备档位钳制请求画质 —— 高端设备请求 4K 顶层档以获取全部清晰度描述；
+        // 中低端设备只请求档位上限内的画质，降低响应体积与低端设备的解析负担。
+        int topQn = DeviceProfile.requestTopTier4k() ? DashData.QN_4K : DashData.QN_1080P;
+        int qn = Math.min(topQn, DeviceProfile.maxQuality());
+        // Capable devices use one unified DASH timeline; COMPAT stays on durl.
+        boolean fourk = DeviceProfile.useUnifiedDashPlayer();
+        return "?"
+                + "avid=" + playerData.aid
+                + "&cid=" + playerData.cid
+                + "&qn=" + qn
+                + "&fnval=16&fnver=0"
+                + "&fourk=" + (fourk ? 1 : 0)
+                + "&platform=pc"
+                + "&voice_balance=1"
+                + "&gaia_source=pre-load"
+                + "&isGaiaAvoided=true";
+    }
+
+    public static void getVideoForPlayback(PlayerData playerData) throws JSONException, IOException {
+        int requestedQn = playerData.qn;
+        // 1.1.6: 兼容档直接走 durl 单播放器，不先请求 DASH 再回退。
+        // Android 4.x/低内存设备不需要解析 DASH 元数据，这能减少一次网络请求、
+        // JSON 解析和播放器初始化，避免低配机打开视频后明显变慢。
+        if (!DeviceProfile.useUnifiedDashPlayer() && !DeviceProfile.useDashDualPlayer()) {
+            if (requestedQn <= 0) playerData.qn = DeviceProfile.autoQuality();
+            getVideo(playerData, false);
+            return;
+        }
+        try {
+            getVideoDash(playerData);
+        } catch (IOException | JSONException dashError) {
+            fallbackToProgressivePlayback(playerData, requestedQn, dashError);
+            return;
+        }
+        if (!usesProgressivePlayback(playerData.qn)) return;
+
+        int resolvedQn = playerData.qn;
+        String dashVideoUrl = playerData.videoUrl;
+        ArrayList<String> dashVideoBackups = new ArrayList<>(playerData.videoBackupUrls);
+        String dashAudioUrl = playerData.audioUrl;
+        ArrayList<String> dashAudioBackups = new ArrayList<>(playerData.audioBackupUrls);
+        String[] availableLabels = playerData.qnStrList;
+        int[] availableValues = playerData.qnValueList;
+
+        playerData.timeStamp = 0L;
+        getVideo(playerData, false);
+        if (playerData.qn != resolvedQn) {
+            // The progressive endpoint occasionally applies its own downgrade. Keep
+            // the already resolved DASH stream instead of unexpectedly dropping to 480P.
+            playerData.videoUrl = dashVideoUrl;
+            playerData.videoBackupUrls.clear();
+            playerData.videoBackupUrls.addAll(dashVideoBackups);
+            playerData.audioUrl = dashAudioUrl;
+            playerData.audioBackupUrls.clear();
+            playerData.audioBackupUrls.addAll(dashAudioBackups);
+        }
+        playerData.qn = resolvedQn;
+        playerData.qnStrList = availableLabels;
+        playerData.qnValueList = availableValues;
+    }
+
+    private static void fallbackToProgressivePlayback(PlayerData playerData, int requestedQn,
+                                                      Exception dashError)
+            throws IOException, JSONException {
+        playerData.qn = requestedQn;
+        playerData.dashData = null;
+        try {
+            getVideo(playerData, false);
+            Logu.w("player-quality", "DASH unavailable, using progressive playback: "
+                    + dashError.getClass().getSimpleName());
+        } catch (IOException progressiveError) {
+            progressiveError.addSuppressed(dashError);
+            throw progressiveError;
+        } catch (JSONException progressiveError) {
+            progressiveError.addSuppressed(dashError);
+            throw progressiveError;
+        }
+    }
+
+    static boolean usesProgressivePlayback(int qn) {
+        // Ordinary qualities are available as a muxed stream. Keeping audio and video
+        // in one player avoids the clock drift that separate DASH players develop on
+        // long videos, seeks and speed changes. High-frame-rate/member qualities still
+        // require DASH because the progressive endpoint degrades them to a lower tier.
+        return qn == 6 || qn == 16 || qn == 32 || qn == 64 || qn == 80;
+    }
+
+    static boolean automaticQualityUsesProgressivePlayback(int requestedQn, int resolvedQn) {
+        return requestedQn <= 0 && usesProgressivePlayback(resolvedQn);
+    }
+
     /**
      * 解析视频
      *
@@ -174,22 +292,13 @@ public class PlayerApi {
 
         playerData.timeStamp = 0;
         playerData.videoUrl = "";
+        playerData.videoBackupUrls.clear();
+        playerData.audioUrl = "";
+        playerData.audioBackupUrls.clear();
 
-        playerData.danmakuUrl = NetWorkUtil.routeUrlForRelay("https://comment.bilibili.com/" + playerData.cid + ".xml");
+        playerData.danmakuUrl = "https://comment.bilibili.com/" + playerData.cid + ".xml";
 
-        boolean html5 = !download && SharedPreferencesUtil.getString("player", "").equals("mtvPlayer");
-        // html5方式现在已经仅对小电视播放器保留了
-
-        String query = "?"
-                + "avid=" + playerData.aid
-                + "&cid=" + playerData.cid
-                + (html5 ? "&high_quality=1" : "")
-                + "&qn=" + playerData.qn
-                + "&fnval=1&fnver=0"
-                + "&platform=" + (html5 ? "html5" : "pc")
-                + "&voice_balance=1"
-                + "&gaia_source=pre-load"
-                + "&isGaiaAvoided=true";
+        String query = buildVideoPlayQuery(playerData);
         String wbiUrl = "https://api.bilibili.com/x/player/wbi/playurl" + query;
         String legacyUrl = "https://api.bilibili.com/x/player/playurl" + query;
         JSONObject data;
@@ -200,7 +309,9 @@ public class PlayerApi {
             throw error;
         }
         JSONArray durl = data.optJSONArray("durl");
-        playerData.videoUrl = NetWorkUtil.routeUrlForRelay(firstDurlUrl(durl));
+        applyDurlUrls(playerData, durl);
+        int responseQuality = data.optInt("quality", playerData.qn);
+        if (DashData.isSupportedQuality(responseQuality)) playerData.qn = responseQuality;
         playerData.cidHistory = data.optLong("last_play_cid", 0);
         playerData.progress = data.optInt("last_play_time", 0);
 
@@ -212,6 +323,24 @@ public class PlayerApi {
 
         applyPlaybackMetadata(playerData, data);
         playerData.timeStamp = now;
+    }
+
+    static String buildVideoPlayQuery(PlayerData playerData) {
+        // 自动档由 DeviceProfile.autoQuality() 预先解析；用户明确选择普通 1080P 时，
+        // 兼容档也应按原请求获取单文件 durl，不能因为设备分档静默降到 720P。
+        int qn = Math.min(DashData.normalizeRequestedQuality(playerData.qn), DeviceProfile.maxQuality());
+        boolean fourk = DeviceProfile.useDashDualPlayer()
+                && DeviceProfile.get() != DeviceProfile.Tier.COMPAT;
+        return "?"
+                + "avid=" + playerData.aid
+                + "&cid=" + playerData.cid
+                + "&qn=" + qn
+                + "&fnval=0&fnver=0"
+                + "&fourk=" + (fourk ? 1 : 0)
+                + "&platform=pc"
+                + "&voice_balance=1"
+                + "&gaia_source=pre-load"
+                + "&isGaiaAvoided=true";
     }
 
     private static boolean isUsableCachedPlayUrl(PlayerData playerData, long now) {
@@ -226,6 +355,7 @@ public class PlayerApi {
     private static void clearFailedPlayUrl(PlayerData playerData) {
         playerData.timeStamp = 0;
         playerData.videoUrl = "";
+        playerData.videoBackupUrls.clear();
     }
 
     private static JSONObject requestPlayDataWithFallback(String wbiUrl, String legacyUrl, boolean requireDash)
@@ -258,66 +388,208 @@ public class PlayerApi {
         return durl != null && durl.length() > 0;
     }
 
-    private static String firstDurlUrl(JSONArray durl) throws JSONException {
+    private static void applyDurlUrls(PlayerData playerData, JSONArray durl) throws JSONException {
         if (durl == null || durl.length() == 0) {
             throw new JSONException("未返回可播放地址，可能需要登录、会员权限或切换清晰度");
         }
         JSONObject item = durl.optJSONObject(0);
         if (item == null) throw new JSONException("播放地址格式异常");
         String url = item.optString("url", item.optString("base_url", ""));
-        if (!url.isEmpty()) return url;
         JSONArray backups = item.optJSONArray("backup_url");
-        if (backups != null && backups.length() > 0 && !backups.optString(0).isEmpty()) {
-            return backups.optString(0);
-        }
-        throw new JSONException("播放接口返回了空地址");
-    }
-
-    private static String firstStreamUrl(String primary, java.util.List<String> backups) throws JSONException {
-        if (primary != null && !primary.isEmpty()) return primary;
-        if (backups != null) {
-            for (String backup : backups) {
-                if (backup != null && !backup.isEmpty()) return backup;
-            }
-        }
-        throw new JSONException("DASH 流没有可用地址");
-    }
-
-    private static void applyPlaybackMetadata(PlayerData playerData, JSONObject data) {
-        JSONArray descriptions = data.optJSONArray("accept_description");
-        JSONArray qualities = data.optJSONArray("accept_quality");
-        ArrayList<String> labels = new ArrayList<>();
-        ArrayList<Integer> values = new ArrayList<>();
-
-        if (descriptions != null && qualities != null) {
-            int count = Math.min(descriptions.length(), qualities.length());
-            for (int i = 0; i < count; i++) {
-                labels.add(descriptions.optString(i, "清晰度 " + qualities.optInt(i)));
-                values.add(qualities.optInt(i));
-            }
-        }
-
-        if (labels.isEmpty()) {
-            JSONArray formats = data.optJSONArray("support_formats");
-            if (formats != null) {
-                for (int i = 0; i < formats.length(); i++) {
-                    JSONObject format = formats.optJSONObject(i);
-                    if (format == null) continue;
-                    int quality = format.optInt("quality", 0);
-                    if (quality == 0) continue;
-                    String label = format.optString("new_description",
-                            format.optString("display_desc", "清晰度 " + quality));
-                    labels.add(label);
-                    values.add(quality);
+        if (backups == null) backups = item.optJSONArray("backupUrl");
+        if (url.isEmpty() && backups != null) {
+            for (int i = 0; i < backups.length(); i++) {
+                String backup = backups.optString(i, "");
+                if (!backup.isEmpty()) {
+                    url = backup;
+                    break;
                 }
             }
         }
+        if (url.isEmpty()) throw new JSONException("播放接口返回了空地址");
 
-        playerData.qnStrList = labels.toArray(new String[0]);
-        playerData.qnValueList = new int[values.size()];
-        for (int i = 0; i < values.size(); i++) playerData.qnValueList[i] = values.get(i);
+        playerData.videoUrl = url;
+        playerData.videoBackupUrls.clear();
+        if (backups != null) {
+            for (int i = 0; i < backups.length(); i++) {
+                addBackupUrl(playerData, backups.optString(i, ""));
+            }
+        }
+        // 1.1.6: 国内镜像优先排序 —— 把 upos-sz-mirror*（国内可达）排前，
+        // Akamai 海外边缘（edge.mountaintoys.cn）排后，从源头降低 -10000 硬解打开失败率
+        ArrayList<String> candidates = new ArrayList<>();
+        candidates.add(playerData.videoUrl);
+        candidates.addAll(playerData.videoBackupUrls);
+        List<String> ranked = sortUrlsByHost(candidates);
+        if (!ranked.isEmpty()) {
+            playerData.videoUrl = ranked.get(0);
+            playerData.videoBackupUrls.clear();
+            for (int i = 1; i < ranked.size(); i++) {
+                playerData.videoBackupUrls.add(ranked.get(i));
+            }
+        }
+    }
+
+    private static String firstStreamUrl(String primary, java.util.List<String> backups) throws JSONException {
+        // 1.1.6: 主备源一起按主机优先级挑选，而不是无脑用主源（主源常是 Akamai 海外边缘）
+        String best = pickBestUrl(primary, backups);
+        if (best == null || best.isEmpty()) {
+            throw new JSONException("DASH 流没有可用地址");
+        }
+        return best;
+    }
+
+    private static void setBackupUrls(PlayerData playerData, java.util.List<String> backups) {
+        playerData.videoBackupUrls.clear();
+        if (backups == null) return;
+        List<String> candidates = new ArrayList<>();
+        for (String backup : backups) {
+            if (backup == null || backup.isEmpty()) continue;
+            if (!candidates.contains(backup)) candidates.add(backup);
+        }
+        playerData.videoBackupUrls.addAll(sortUrlsByHost(candidates));
+    }
+
+    private static void setAudioBackupUrls(PlayerData playerData, java.util.List<String> backups) {
+        playerData.audioBackupUrls.clear();
+        if (backups == null) return;
+        List<String> candidates = new ArrayList<>();
+        for (String backup : backups) {
+            if (backup == null || backup.isEmpty() || backup.equals(playerData.audioUrl)
+                    || candidates.contains(backup)) continue;
+            candidates.add(backup);
+        }
+        playerData.audioBackupUrls.addAll(sortUrlsByHost(candidates));
+    }
+
+    // ==================== 1.1.6: 播放源主机优先级 ====================
+
+    /** 国内镜像 CDN（upos-sz-mirror*，国内网络可达性最好）rank=0；bilivideo.com 其他节点 rank=1；
+     *  其他第三方 CDN rank=2；Akamai 海外边缘（mountaintoys/akamaized，国内设备打开失败率高）rank=3。 */
+    private static int urlHostRank(String url) {
+        if (url == null) return 9;
+        try {
+            String host = Uri.parse(url).getHost();
+            if (host == null) return 9;
+            String h = host.toLowerCase(Locale.US);
+            if (h.contains("mirrorbd") || h.contains("mirrorali") || h.contains("mirrorcos")
+                    || h.contains("mirrorks") || h.contains("mirrorbda1")) return 0;
+            if (h.contains("bilivideo.com")) return 1;
+            if (h.contains("mountaintoys") || h.contains("akamaized")) return 3;
+            return 2;
+        } catch (Exception ignored) {
+            return 9;
+        }
+    }
+
+    /** 从主备候选里挑出主机优先级最高的 URL（同 rank 保持原顺序）。 */
+    private static String pickBestUrl(String primary, java.util.List<String> backups) {
+        String best = primary;
+        int bestRank = urlHostRank(primary);
+        if (backups != null) {
+            for (String backup : backups) {
+                int rank = urlHostRank(backup);
+                if (rank < bestRank) {
+                    bestRank = rank;
+                    best = backup;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** 按主机优先级稳定排序 URL 列表。 */
+    private static List<String> sortUrlsByHost(List<String> urls) {
+        ArrayList<String> sorted = new ArrayList<>();
+        for (int rank = 0; rank <= 3; rank++) {
+            for (String url : urls) {
+                if (urlHostRank(url) == rank) sorted.add(url);
+            }
+        }
+        for (String url : urls) {
+            if (urlHostRank(url) > 3) sorted.add(url);
+        }
+        return sorted;
+    }
+
+    private static void addBackupUrl(PlayerData playerData, String backup) {
+        if (backup == null || backup.isEmpty() || backup.equals(playerData.videoUrl)
+                || playerData.videoBackupUrls.contains(backup)) return;
+        playerData.videoBackupUrls.add(backup);
+    }
+
+    private static void applyPlaybackMetadata(PlayerData playerData, JSONObject data) {
+        ArrayList<Integer> values = extractAdvertisedQualityValues(data);
+
+        ArrayList<String> orderedLabels = new ArrayList<>();
+        ArrayList<Integer> orderedValues = new ArrayList<>();
+        for (int supportedQuality : DashData.getSupportedQualityOrder()) {
+            if (!values.contains(supportedQuality)) continue;
+            if (playerData.dashData != null && playerData.dashData.hasVideo()
+                    && !playerData.dashData.hasVideoStreamForQuality(supportedQuality)) continue;
+            orderedValues.add(supportedQuality);
+            orderedLabels.add(DashData.getQualityLabel(supportedQuality));
+        }
+        if (orderedValues.isEmpty() && playerData.dashData != null && playerData.dashData.hasVideo()) {
+            for (int supportedQuality : DashData.getSupportedQualityOrder()) {
+                if (!playerData.dashData.hasVideoStreamForQuality(supportedQuality)) continue;
+                orderedValues.add(supportedQuality);
+                orderedLabels.add(DashData.getQualityLabel(supportedQuality));
+            }
+        }
+        playerData.qnStrList = orderedLabels.toArray(new String[0]);
+        playerData.qnValueList = new int[orderedValues.size()];
+        for (int i = 0; i < orderedValues.size(); i++) playerData.qnValueList[i] = orderedValues.get(i);
+        JSONObject details = new JSONObject();
+        try {
+            details.put("selected_qn", data.optInt("quality", 0));
+            details.put("durl_count", data.optJSONArray("durl") == null ? 0 : data.optJSONArray("durl").length());
+            details.put("available_count", orderedValues.size());
+            details.put("available_qn", joinQualityValues(orderedValues));
+        } catch (JSONException ignored) {
+        }
+        DiagnosticLogManager.record("player_quality_response", details);
         Logu.d("qn_str", Arrays.toString(playerData.qnStrList));
         Logu.d("qn_val", Arrays.toString(playerData.qnValueList));
+    }
+
+    static int[] extractAvailableQualityValues(JSONObject data, DashData dashData) {
+        PlayerData playerData = new PlayerData();
+        playerData.dashData = dashData;
+        applyPlaybackMetadata(playerData, data);
+        return playerData.qnValueList;
+    }
+
+    private static ArrayList<Integer> extractAdvertisedQualityValues(JSONObject data) {
+        ArrayList<Integer> values = new ArrayList<>();
+        JSONArray qualities = data.optJSONArray("accept_quality");
+        if (qualities != null) {
+            for (int i = 0; i < qualities.length(); i++) {
+                int quality = qualities.optInt(i);
+                if (DashData.isSupportedQuality(quality) && !values.contains(quality)) values.add(quality);
+            }
+        }
+        if (!values.isEmpty()) return values;
+
+        JSONArray formats = data.optJSONArray("support_formats");
+        if (formats != null) {
+            for (int i = 0; i < formats.length(); i++) {
+                JSONObject format = formats.optJSONObject(i);
+                if (format == null) continue;
+                int quality = format.optInt("quality", 0);
+                if (DashData.isSupportedQuality(quality) && !values.contains(quality)) values.add(quality);
+            }
+        }
+        return values;
+    }
+
+    private static String joinQualityValues(ArrayList<Integer> values) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) result.append(',');
+            result.append(values.get(i));
+        }
+        return result.toString();
     }
 
     private static JSONObject getPlayData(JSONObject body) throws JSONException {
@@ -358,21 +630,11 @@ public class PlayerApi {
 
         JSONObject data = body.getJSONObject("result");
         JSONArray durl = data.getJSONArray("durl");
-        JSONObject video_url = durl.getJSONObject(0);
-        playerData.videoUrl = NetWorkUtil.routeUrlForRelay(video_url.getString("url"));
+        applyDurlUrls(playerData, durl);
 
-        playerData.danmakuUrl = NetWorkUtil.routeUrlForRelay("https://comment.bilibili.com/" + playerData.cid + ".xml");
+        playerData.danmakuUrl = "https://comment.bilibili.com/" + playerData.cid + ".xml";
 
-        JSONArray accept_description = data.getJSONArray("accept_description");
-        JSONArray accept_quality = data.getJSONArray("accept_quality");
-        String[] qnStrList = new String[accept_description.length()];
-        int[] qnValueList = new int[accept_description.length()];
-        for (int i = 0; i < qnStrList.length; i++) {
-            qnStrList[i] = accept_description.optString(i);
-            qnValueList[i] = accept_quality.optInt(i);
-        }
-        playerData.qnStrList = qnStrList;
-        playerData.qnValueList = qnValueList;
+        applyPlaybackMetadata(playerData, data);
     }
 
     /**
@@ -383,6 +645,9 @@ public class PlayerApi {
      */
     public static Intent jumpToPlayer(PlayerData playerData) {
         Context context = BiliTerminal.context;
+        // Built-in and external players both follow the explicit global relay mode.
+        String externalVideoUrl = NetWorkUtil.routeUrlForRelay(playerData.videoUrl);
+        String externalDanmakuUrl = NetWorkUtil.routeUrlForRelay(playerData.danmakuUrl);
         Logu.v("准备跳转", "--------");
         Logu.v("视频标题", playerData.title);
         Logu.v("视频地址", playerData.videoUrl);
@@ -394,6 +659,9 @@ public class PlayerApi {
             case "terminalPlayer":
                 intent.setClass(context, PlayerActivity.class);
                 intent.putExtra("url", playerData.videoUrl);
+                intent.putStringArrayListExtra("backup_urls", playerData.videoBackupUrls);
+                intent.putExtra("audio_url", playerData.audioUrl);
+                intent.putStringArrayListExtra("audio_backup_urls", playerData.audioBackupUrls);
                 intent.putExtra("danmaku", playerData.danmakuUrl);
                 intent.putExtra("title", playerData.title);
                 intent.putExtra("aid", playerData.aid);
@@ -417,26 +685,14 @@ public class PlayerApi {
                 }
                 break;
 
-            case "mtvPlayer":
-                intent.setClassName(context.getString(R.string.player_package_mtv),
-                        "com.xinxiangshicheng.wearbiliplayer.cn.player.PlayerActivity");
-                intent.setAction(Intent.ACTION_VIEW);
-                intent.putExtra("cookie", SharedPreferencesUtil.getString("cookies", ""));
-                intent.putExtra("mode", (playerData.isLocal() ? "2" : "0"));
-                intent.putExtra("url", playerData.videoUrl);
-                intent.putExtra("danmaku", playerData.danmakuUrl);
-                intent.putExtra("title", playerData.title);
-                intent.putExtra("live_mode", playerData.isLive());
-                break;
-
             case "aliangPlayer":
                 intent.setClassName(context.getString(R.string.player_package_aliang),
                         "com.aliangmaker.media.PlayVideoActivity");
                 intent.putExtra("name", playerData.title);
-                intent.putExtra("danmaku", playerData.danmakuUrl);
+                intent.putExtra("danmaku", externalDanmakuUrl);
                 intent.putExtra("live_mode", playerData.isLive());
 
-                intent.setData(Uri.parse(playerData.videoUrl));
+                intent.setData(Uri.parse(externalVideoUrl));
 
                 if (!playerData.isLocal()) {
                     Map<String, String> headers = new HashMap<>();
@@ -516,7 +772,7 @@ public class PlayerApi {
         JSONObject data = NetWorkUtil.getJson(url).getJSONObject("data");
 
         JSONArray subtitles = data.getJSONObject("subtitle").getJSONArray("subtitles");
-        Log.d("subtitle", subtitles.toString());
+        Logu.d("subtitle", "count=" + subtitles.length());
 
         SubtitleLink[] links = new SubtitleLink[subtitles.length() + 1];
         for (int i = 0; i < subtitles.length(); i++) {

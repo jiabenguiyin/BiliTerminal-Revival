@@ -5,6 +5,7 @@ import com.RobinNotBad.BiliClient.model.LiveRoom;
 import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.RobinNotBad.BiliClient.model.VideoCard;
 import com.RobinNotBad.BiliClient.util.DmImgParamUtil;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
 import com.RobinNotBad.BiliClient.util.FollowRelationUtil;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
@@ -16,9 +17,13 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
 //用户信息API
@@ -148,11 +153,49 @@ public class UserInfoApi {
     }
 
     public static UserInfo getCurrentUserInfo() throws IOException, JSONException {
+        AccountManager.restoreCurrentAccount();
+        String rejected = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        Exception lastRecoveryError = null;
+        try {
+            return getCurrentUserInfoOnce();
+        } catch (LoginExpiredException expired) {
+            if (AccountManager.restoreRejectedSession(rejected)) {
+                DiagnosticLogManager.record("session_backup_restored");
+                try {
+                    return getCurrentUserInfoOnce();
+                } catch (LoginExpiredException stillExpired) {
+                    lastRecoveryError = stillExpired;
+                } catch (IOException | JSONException recoveryError) {
+                    // A transient failure after restoring the backup must still be
+                    // allowed to reach the supported refresh-token path.
+                    lastRecoveryError = recoveryError;
+                }
+            } else {
+                lastRecoveryError = expired;
+            }
+            try {
+                if (CookieRefreshApi.refreshIfNeeded()) return getCurrentUserInfoOnce();
+            } catch (IOException | JSONException refreshError) {
+                lastRecoveryError = refreshError;
+            }
+            if (lastRecoveryError instanceof LoginExpiredException) {
+                throw (LoginExpiredException) lastRecoveryError;
+            }
+            if (lastRecoveryError instanceof IOException) throw (IOException) lastRecoveryError;
+            if (lastRecoveryError instanceof JSONException) throw (JSONException) lastRecoveryError;
+            throw expired;
+        }
+    }
+
+    private static UserInfo getCurrentUserInfoOnce() throws IOException, JSONException {
+        final long requestedMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        final String requestedCookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
         JSONObject myInfo = null;
         Exception primaryError = null;
         try {
             myInfo = NetWorkUtil.getJson("https://api.bilibili.com/x/space/myinfo");
             if (myInfo.optInt("code", -1) == 0 && !myInfo.isNull("data")) {
+                checkProfileSession(requestedMid, requestedCookies);
                 return parseCurrentUserMyInfo(myInfo.getJSONObject("data"));
             }
         } catch (IOException | JSONException | RuntimeException error) {
@@ -165,6 +208,7 @@ public class UserInfoApi {
             nav = NetWorkUtil.getJson("https://api.bilibili.com/x/web-interface/nav", NetWorkUtil.webHeaders);
             JSONObject data = nav.optJSONObject("data");
             if (nav.optInt("code", -1) == 0 && data != null && data.optBoolean("isLogin", false)) {
+                checkProfileSession(requestedMid, requestedCookies);
                 recordCurrentUserFallback(myInfo);
                 return parseCurrentUserNav(data);
             }
@@ -172,12 +216,24 @@ public class UserInfoApi {
             fallbackError = error;
         }
 
+        checkProfileSession(requestedMid, requestedCookies);
         int myInfoCode = myInfo == null ? Integer.MIN_VALUE : myInfo.optInt("code", -1);
         int navCode = nav == null ? Integer.MIN_VALUE : nav.optInt("code", -1);
         JSONObject navData = nav == null ? null : nav.optJSONObject("data");
         boolean navLoggedOut = navCode == -101 || (navCode == 0 && navData != null
                 && !navData.optBoolean("isLogin", false));
         if (myInfoCode == -101 && navLoggedOut) {
+            JSONObject details = new JSONObject();
+            try {
+                details.put("myinfo_code", myInfoCode);
+                details.put("nav_code", navCode);
+                details.put("has_sessdata", !NetWorkUtil.getInfoFromCookie(
+                        "SESSDATA", SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "")).isEmpty());
+                details.put("has_refresh_token", !SharedPreferencesUtil.getString(
+                        SharedPreferencesUtil.refresh_token, "").isEmpty());
+            } catch (JSONException ignored) {
+            }
+            DiagnosticLogManager.record("login_expired_detected", details);
             throw new LoginExpiredException();
         }
 
@@ -193,6 +249,122 @@ public class UserInfoApi {
                 + "/" + printableCode(navCode) + "）", cause);
     }
 
+    private static void checkProfileSession(long mid, String cookies) throws IOException {
+        if (mid != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)
+                || !AccountManager.sameSession(cookies,
+                        SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "")))
+            throw new IOException("账号已切换，请重新加载资料");
+    }
+
+    /**
+     * Loads the fields shown by Bilibili's profile editor. The general
+     * /x/space/myinfo response does not contain school and represents birthday
+     * as a China-local midnight timestamp, so it cannot be used alone here.
+     */
+    public static UserInfo getCurrentUserEditableProfile() throws IOException, JSONException {
+        UserInfo result = null;
+        Exception accountError = null;
+
+        try {
+            JSONObject account = NetWorkUtil.getJson(
+                    "https://api.bilibili.com/x/member/web/account", NetWorkUtil.webHeaders);
+            JSONObject data = account.optJSONObject("data");
+            if (account.optInt("code", -1) == 0 && data != null) {
+                result = parseCurrentUserAccount(data);
+            }
+        } catch (IOException | JSONException | RuntimeException error) {
+            accountError = error;
+        }
+
+        try {
+            JSONObject myInfo = NetWorkUtil.getJson(
+                    "https://api.bilibili.com/x/space/myinfo", NetWorkUtil.webHeaders);
+            JSONObject data = myInfo.optJSONObject("data");
+            if (myInfo.optInt("code", -1) == 0 && data != null) {
+                if (result == null) result = parseCurrentUserMyInfo(data);
+                else mergeEditableProfile(result, data);
+            }
+        } catch (IOException | JSONException | RuntimeException ignored) {
+        }
+
+        long mid = result == null ? SharedPreferencesUtil.getLong(
+                SharedPreferencesUtil.mid, 0) : result.mid;
+        if (mid > 0) {
+            try {
+                JSONObject space = getUserSpaceInfo(mid);
+                if (space != null) {
+                    if (result == null) result = parseEditableSpaceProfile(space);
+                    else mergeEditableProfile(result, space);
+                }
+            } catch (IOException | JSONException | RuntimeException ignored) {
+            }
+        }
+
+        if (result != null) return result;
+        try {
+            return getCurrentUserInfo();
+        } catch (IOException | JSONException error) {
+            if (accountError != null) error.addSuppressed(accountError);
+            throw error;
+        }
+    }
+
+    static UserInfo parseCurrentUserAccount(JSONObject data) {
+        UserInfo result = new UserInfo();
+        result.mid = data.optLong("mid", 0);
+        result.name = data.optString("uname", "");
+        result.sign = data.optString("sign", "");
+        result.sex = data.optString("sex", "保密");
+        result.birthday = normalizeBirthday(data.optString("birthday", ""));
+        return result;
+    }
+
+    private static UserInfo parseEditableSpaceProfile(JSONObject data) {
+        UserInfo result = new UserInfo();
+        result.mid = data.optLong("mid", 0);
+        mergeEditableProfile(result, data);
+        return result;
+    }
+
+    static void mergeEditableProfile(UserInfo target, JSONObject data) {
+        if (target.mid <= 0) target.mid = data.optLong("mid", 0);
+        if (isEmpty(target.name)) {
+            target.name = data.optString("uname", data.optString("name", ""));
+        }
+        if (isEmpty(target.avatar)) {
+            target.avatar = data.optString("face", data.optString("avatar", ""));
+        }
+        if (isEmpty(target.sign)) target.sign = data.optString("sign", "");
+        if (isEmpty(target.sex)) target.sex = data.optString("sex", "保密");
+
+        String birthday = normalizeBirthday(data.optString("birthday", ""));
+        if (isEmpty(target.birthday) || (target.birthday.length() < 10 && birthday.length() == 10)) {
+            target.birthday = birthday;
+        }
+
+        String school = readSchoolName(data.opt("school"));
+        if (!isEmpty(school)) target.school = school;
+    }
+
+    static String readSchoolName(Object schoolValue) {
+        if (schoolValue == null || schoolValue == JSONObject.NULL) return "";
+        if (schoolValue instanceof JSONObject) {
+            return ((JSONObject) schoolValue).optString("name", "").trim();
+        }
+        String value = String.valueOf(schoolValue).trim();
+        if (value.startsWith("{")) {
+            try {
+                return new JSONObject(value).optString("name", "").trim();
+            } catch (JSONException ignored) {
+            }
+        }
+        return value;
+    }
+
+    private static boolean isEmpty(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
     private static UserInfo parseCurrentUserMyInfo(JSONObject data) {
         long mid = data.optLong("mid", 0);
         JSONObject officialData = data.optJSONObject("official");
@@ -201,10 +373,48 @@ public class UserInfoApi {
         String officialDesc = officialData == null ? "" : officialData.optString("desc", "");
         long currentExp = levelExp == null ? 0 : levelExp.optLong("current_exp", 0);
         long nextExp = levelExp == null ? 0 : levelExp.optLong("next_exp", 0);
-        return new UserInfo(mid, data.optString("name", ""), data.optString("face", ""),
+        UserInfo result = new UserInfo(mid, data.optString("name", ""), data.optString("face", ""),
                 data.optString("sign", ""), data.optInt("follower", 0), 0,
                 data.optInt("level", 0), false, "", official, officialDesc,
                 currentExp, nextExp, data.optInt("is_senior_member", 0));
+        result.sex = data.optString("sex", "保密");
+        result.birthday = normalizeBirthday(data.optString("birthday", ""));
+        result.school = data.optString("school", "");
+        return result;
+    }
+
+    static String normalizeBirthday(String birthday) {
+        if (birthday == null) return "";
+        String value = birthday.trim();
+        if (value.length() >= 9 && value.length() <= 12) {
+            try {
+                SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                // Bilibili encodes the selected date as midnight in China.
+                format.setTimeZone(TimeZone.getTimeZone("GMT+08:00"));
+                return format.format(new Date(Long.parseLong(value) * 1000L));
+            } catch (Exception ignored) {
+            }
+        }
+        return value;
+    }
+
+    /** Updates the editable fields exposed by Bilibili's web profile form. */
+    public static int updateCurrentUserProfile(String name, String sex, String birthday,
+                                               String sign, String school)
+            throws IOException, JSONException {
+        String url = "https://api.bilibili.com/x/member/web/update";
+        String csrf = SharedPreferencesUtil.getString("csrf", "");
+        String body = new NetWorkUtil.FormData()
+                .put("uname", name == null ? "" : name)
+                .put("sex", sex == null ? "保密" : sex)
+                .put("birthday", birthday == null ? "" : birthday)
+                .put("usersign", sign == null ? "" : sign)
+                .put("school", school == null ? "" : school)
+                .put("csrf", csrf)
+                .toString();
+        JSONObject result = new JSONObject(Objects.requireNonNull(
+                NetWorkUtil.post(url, body, NetWorkUtil.webHeaders).body()).string());
+        return result.optInt("code", -1);
     }
 
     private static UserInfo parseCurrentUserNav(JSONObject data) {
@@ -283,9 +493,20 @@ public class UserInfoApi {
 
 
     public static int getUserVideos(long mid, int page, String searchKeyword, List<VideoCard> videoList) throws IOException, JSONException {
-        String url = "https://api.bilibili.com/x/space/wbi/arc/search?";
-        url += "keyword=" + searchKeyword + "&mid=" + mid + "&order_avoided=true&order=pubdate&pn=" + page
-                + "&ps=40&tid=0&platform=web&index=1&web_location=1550101";
+        String url = "https://api.bilibili.com/x/space/wbi/arc/search"
+                + new NetWorkUtil.FormData()
+                .setUrlParam(true)
+                // 该接口的 keyword 参数在部分账号/地区返回不稳定，由调用方本地筛选投稿。
+                .put("keyword", "")
+                .put("mid", mid)
+                .put("order_avoided", true)
+                .put("order", "pubdate")
+                .put("pn", page)
+                .put("ps", 40)
+                .put("tid", 0)
+                .put("platform", "web")
+                .put("index", 1)
+                .put("web_location", 1550101);
         JSONObject all = NetWorkUtil.getJson(ConfInfoApi.signWBI(DmImgParamUtil.getDmImgParamsUrl(url)));
         if (all.has("data") && !all.isNull("data")) {
             JSONObject data = all.getJSONObject("data");
@@ -399,9 +620,16 @@ public class UserInfoApi {
     }
 
     public static void exitLogin() {
+        exitLogin(SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""));
+    }
+
+    public static void exitLogin(String cookies) {
         try {
             String url = "https://passport.bilibili.com/login/exit/v2";
-            NetWorkUtil.get(url, NetWorkUtil.webHeaders);
+            java.util.ArrayList<String> headers = new java.util.ArrayList<>(NetWorkUtil.webHeaders);
+            headers.set(1, cookies);
+            try (okhttp3.Response ignored = NetWorkUtil.get(url, headers)) {
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }

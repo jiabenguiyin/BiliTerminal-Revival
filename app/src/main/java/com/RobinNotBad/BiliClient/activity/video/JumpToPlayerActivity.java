@@ -73,7 +73,7 @@ public class JumpToPlayerActivity extends BaseActivity {
 
         download = intent.getIntExtra("download", 0);
 
-        playerData.qn = playerData.qn != -1 ? playerData.qn : SharedPreferencesUtil.getInt("play_qn", 16);
+        playerData.qn = playerData.qn != -1 ? playerData.qn : SharedPreferencesUtil.getInt("play_qn", 0);
 
         requestVideo();
     }
@@ -84,7 +84,8 @@ public class JumpToPlayerActivity extends BaseActivity {
 
             try {
                 if (playerData.isBangumi()) PlayerApi.getBangumi(playerData);
-                else PlayerApi.getVideo(playerData, download != 0);
+                else if (download == 0) PlayerApi.getVideoForPlayback(playerData);
+                else PlayerApi.getVideo(playerData, true);
 
                 Logu.d("history", String.valueOf(playerData.progress));
                 jump();

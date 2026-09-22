@@ -95,6 +95,7 @@ public class LocalVideoAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                                 && !localVideo.subtitleFolderLocators.isEmpty()) {
                             player.putExtra("local_subtitle_root", localVideo.subtitleFolderLocators.get(0));
                         }
+                        player.putExtra("local_progress_folder", localVideo.pageFolderLocators.get(0));
                         context.startActivity(player);
                     } catch (ActivityNotFoundException e) {
                         MsgUtil.showMsg("跳转失败");

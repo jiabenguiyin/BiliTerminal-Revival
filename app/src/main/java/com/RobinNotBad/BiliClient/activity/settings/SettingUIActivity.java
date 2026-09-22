@@ -13,6 +13,7 @@ import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
+import com.RobinNotBad.BiliClient.util.UiConfigurationUtil;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 public class SettingUIActivity extends BaseActivity {
@@ -85,31 +86,48 @@ public class SettingUIActivity extends BaseActivity {
 
     private void save() {
         if (!uiScaleInput.getText().toString().isEmpty()) {
-            float dpiScale = Float.parseFloat(uiScaleInput.getText().toString());
-            if (dpiScale >= 0.25F && dpiScale <= 5.0F) {
-                SharedPreferencesUtil.putFloat("dpi", dpiScale);
-                BiliTerminal.DPI_FORCE_CHANGE = true;
+            try {
+                float dpiScale = Float.parseFloat(uiScaleInput.getText().toString());
+                if (dpiScale >= UiConfigurationUtil.MIN_SCALE
+                        && dpiScale <= UiConfigurationUtil.MAX_SCALE) {
+                    SharedPreferencesUtil.putFloat("dpi", dpiScale);
+                    BiliTerminal.DPI_FORCE_CHANGE = true;
+                } else {
+                    uiScaleInput.setText(String.valueOf(UiConfigurationUtil.normalizeScale(dpiScale)));
+                }
+            } catch (NumberFormatException ignored) {
+                uiScaleInput.setText(String.valueOf(SharedPreferencesUtil.getFloat(
+                        "dpi", UiConfigurationUtil.DEFAULT_SCALE)));
             }
             Logu.i("dpi", uiScaleInput.getText().toString());
         }
 
         if (!uiPaddingH.getText().toString().isEmpty()) {
-            int paddingH = Integer.parseInt(uiPaddingH.getText().toString());
-            if (paddingH <= 30) SharedPreferencesUtil.putInt("paddingH_percent", paddingH);
+            try {
+                int paddingH = Integer.parseInt(uiPaddingH.getText().toString());
+                SharedPreferencesUtil.putInt("paddingH_percent",
+                        UiConfigurationUtil.normalizePadding(paddingH));
+            } catch (NumberFormatException ignored) {
+            }
             Logu.i("paddingH", uiPaddingH.getText().toString());
         }
 
         if (!uiPaddingV.getText().toString().isEmpty()) {
-            int paddingV = Integer.parseInt(uiPaddingV.getText().toString());
-            if (paddingV <= 30) SharedPreferencesUtil.putInt("paddingV_percent", paddingV);
+            try {
+                int paddingV = Integer.parseInt(uiPaddingV.getText().toString());
+                SharedPreferencesUtil.putInt("paddingV_percent",
+                        UiConfigurationUtil.normalizePadding(paddingV));
+            } catch (NumberFormatException ignored) {
+            }
             Logu.i("paddingV", uiPaddingV.getText().toString());
         }
 
         if (!density_input.getText().toString().isEmpty()) {
             try {
                 int density = Integer.parseInt(density_input.getText().toString());
-                if (density >= 72) SharedPreferencesUtil.putInt("density", density);
-            } catch (Throwable ignored) {
+                SharedPreferencesUtil.putInt("density",
+                        UiConfigurationUtil.normalizeDensityForContext(density, old_context));
+            } catch (NumberFormatException ignored) {
             }
         }
 

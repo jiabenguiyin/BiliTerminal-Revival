@@ -11,6 +11,7 @@ import com.RobinNotBad.BiliClient.activity.settings.UIPreviewActivity;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
+import com.RobinNotBad.BiliClient.util.UiConfigurationUtil;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 public class SetupUIActivity extends BaseActivity {
@@ -76,21 +77,32 @@ public class SetupUIActivity extends BaseActivity {
 
     private void save() {
         if (!uiScaleInput.getText().toString().isEmpty()) {
-            float dpiTimes = Float.parseFloat(uiScaleInput.getText().toString());
-            if (dpiTimes >= 0.1F && dpiTimes <= 10.0F)
-                SharedPreferencesUtil.putFloat("dpi", dpiTimes);
+            try {
+                float dpiTimes = Float.parseFloat(uiScaleInput.getText().toString());
+                SharedPreferencesUtil.putFloat("dpi", UiConfigurationUtil.normalizeScale(dpiTimes));
+            } catch (NumberFormatException ignored) {
+                SharedPreferencesUtil.putFloat("dpi", UiConfigurationUtil.DEFAULT_SCALE);
+            }
             Logu.i("dpi", uiScaleInput.getText().toString());
         }
 
         if (!uiPaddingH.getText().toString().isEmpty()) {
-            int paddingH = Integer.parseInt(uiPaddingH.getText().toString());
-            if (paddingH <= 30) SharedPreferencesUtil.putInt("paddingH_percent", paddingH);
+            try {
+                int paddingH = Integer.parseInt(uiPaddingH.getText().toString());
+                SharedPreferencesUtil.putInt("paddingH_percent",
+                        UiConfigurationUtil.normalizePadding(paddingH));
+            } catch (NumberFormatException ignored) {
+            }
             Logu.i("paddingH", uiPaddingH.getText().toString());
         }
 
         if (!uiPaddingV.getText().toString().isEmpty()) {
-            int paddingV = Integer.parseInt(uiPaddingV.getText().toString());
-            if (paddingV <= 30) SharedPreferencesUtil.putInt("paddingV_percent", paddingV);
+            try {
+                int paddingV = Integer.parseInt(uiPaddingV.getText().toString());
+                SharedPreferencesUtil.putInt("paddingV_percent",
+                        UiConfigurationUtil.normalizePadding(paddingV));
+            } catch (NumberFormatException ignored) {
+            }
             Logu.i("paddingV", uiPaddingV.getText().toString());
         }
     }

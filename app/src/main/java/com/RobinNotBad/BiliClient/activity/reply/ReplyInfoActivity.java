@@ -42,6 +42,7 @@ import java.util.concurrent.Future;
 public class ReplyInfoActivity extends BaseActivity {
 
     private long oid, rpid, up_mid;
+    private long seekReply;
     private int sort = 0;
     private boolean isManager;
     private ContentType type;
@@ -52,6 +53,9 @@ public class ReplyInfoActivity extends BaseActivity {
     private boolean bottom = false;
     private int page = 1;
     private boolean refreshing = false;
+    private final Runnable clearHighlightRunnable = () -> {
+        if (replyAdapter != null) replyAdapter.clearHighlight();
+    };
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -61,6 +65,7 @@ public class ReplyInfoActivity extends BaseActivity {
 
         Intent intent = getIntent();
         rpid = intent.getLongExtra("rpid", 0);
+        seekReply = intent.getLongExtra("seekReply", -1);
         oid = intent.getLongExtra("oid", 0);
         try {
             type = ContentType.getContentType(intent.getIntExtra("type", 1));
@@ -91,11 +96,16 @@ public class ReplyInfoActivity extends BaseActivity {
         TerminalContext.getInstance().getReply(type, oid, rpid).observe(this, (rootReplyResult) -> {
             replyList = new ArrayList<>();
             rootReplyResult.onSuccess((rootReply) -> {
+                // The notification may carry a child rpid. Use the API-resolved
+                // root id for the child-reply request, otherwise the target can
+                // disappear even though it is visible in the normal video page.
+                if (rootReply != null && rootReply.rpid > 0) rpid = rootReply.rpid;
                 Future<Integer> future = CenterThreadPool.supplyAsyncWithFuture(() -> ReplyApi.getReplies(oid, rpid, page, type, sort, replyList));
                 CenterThreadPool.observe(future, (result) -> {
                     if (result != -1) {
                         replyList.add(0, rootReply);
                         replyAdapter = new ReplyAdapter(this, replyList, oid, rpid, type.getTypeCode(), sort, up_mid);
+                        replyAdapter.setHighlightRpid(seekReply);
                         replyAdapter.isManager = isManager;
                         replyAdapter.isDetail = true;
                         setOnSortSwitch();
@@ -121,6 +131,7 @@ public class ReplyInfoActivity extends BaseActivity {
                             }
                         });
                         refreshLayout.setRefreshing(false);
+                        scrollToHighlightedReply();
                         if (result == 1) {
                             Log.e("debug", "到底了");
                             bottom = true;
@@ -147,6 +158,7 @@ public class ReplyInfoActivity extends BaseActivity {
                 runOnUiThread(() -> {
                     replyList.addAll(list);
                     replyAdapter.notifyItemRangeInserted(replyList.size() - list.size() + 2, list.size());  //顶上有两个固定项
+                    scrollToHighlightedReply();
                     refreshLayout.setRefreshing(false);
                 });
                 if (result == 1) {
@@ -164,6 +176,37 @@ public class ReplyInfoActivity extends BaseActivity {
         }
     }
 
+    private void scrollToHighlightedReply() {
+        if (seekReply <= 0 || replyList == null || replyAdapter == null || recyclerView == null) return;
+        int index = -1;
+        for (int i = 0; i < replyList.size(); i++) {
+            Reply reply = replyList.get(i);
+            if (reply != null && reply.rpid == seekReply) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) {
+            if (!bottom && !refreshing) {
+                refreshing = true;
+                CenterThreadPool.run(this::continueLoading);
+            }
+            return;
+        }
+        int adapterPosition = index + 1;
+        replyAdapter.setHighlightRpid(seekReply);
+        recyclerView.removeCallbacks(clearHighlightRunnable);
+        recyclerView.post(() -> {
+            RecyclerView.LayoutManager layoutManager = recyclerView.getLayoutManager();
+            if (layoutManager instanceof LinearLayoutManager) {
+                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(adapterPosition, 0);
+            } else {
+                recyclerView.scrollToPosition(adapterPosition);
+            }
+            recyclerView.postDelayed(clearHighlightRunnable, 5000);
+        });
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     private void refresh() {
         page = 1;
@@ -171,6 +214,7 @@ public class ReplyInfoActivity extends BaseActivity {
 
         TerminalContext.getInstance().getReply(type, oid, rpid).observe(this, (rootReplyResult) -> rootReplyResult.onSuccess((rootReply) -> {
             List<Reply> list = new ArrayList<>();
+            if (rootReply != null && rootReply.rpid > 0) rpid = rootReply.rpid;
             Future<Integer> future = CenterThreadPool.supplyAsyncWithFuture(() -> ReplyApi.getReplies(oid, rpid, page, type, sort, list));
             CenterThreadPool.observe(future, (result) -> {
                 if (result != -1) {
@@ -180,12 +224,14 @@ public class ReplyInfoActivity extends BaseActivity {
                         replyList.addAll(list);
                         if (replyAdapter == null) {
                             replyAdapter = new ReplyAdapter(this, replyList, oid, rpid, type.getTypeCode(), sort, up_mid);
+                            replyAdapter.setHighlightRpid(seekReply);
                             replyAdapter.isDetail = true;
                             setOnSortSwitch();
                             recyclerView.setAdapter(replyAdapter);
                         } else {
                             replyAdapter.notifyDataSetChanged();
                         }
+                        scrollToHighlightedReply();
                         refreshLayout.setRefreshing(false);
                     });
                     if (result == 1) {
@@ -216,22 +262,28 @@ public class ReplyInfoActivity extends BaseActivity {
     @Subscribe(threadMode = ThreadMode.ASYNC, sticky = true, priority = 1)
     public void onEvent(ReplyEvent event) {
         if (event.getOid() != oid) return;
-        LinearLayoutManager layoutManager = (LinearLayoutManager) Objects.requireNonNull(recyclerView.getLayoutManager());
-        int pos = layoutManager.findFirstCompletelyVisibleItemPosition();
-        pos--;
-        if (pos <= 0) {
-            pos = layoutManager.findFirstVisibleItemPosition();
-            pos--;
-        }
-        pos = pos <= 0 ? 1 : pos;
-        replyList.add(pos, event.getMessage());
-        int finalPos = pos;
+        Reply reply = event.getMessage();
+        if (reply == null || replyList == null || replyAdapter == null) return;
+        // Reply detail has one root item and one fixed write row. New child
+        // replies belong after the existing children, never at the visible row.
+        if (reply.root != 0 && reply.root != rpid) return;
         runOnUiThread(() -> {
-            if (replyAdapter != null) {
-                replyAdapter.notifyItemInserted(finalPos);
-                replyAdapter.notifyItemRangeChanged(finalPos, replyList.size() - finalPos + 1);
-                layoutManager.scrollToPositionWithOffset(finalPos + 1, 0);
+            if (replyList == null || replyAdapter == null || recyclerView == null) return;
+            for (Reply existing : replyList) {
+                if (existing != null && existing.rpid == reply.rpid) return;
             }
+            int listIndex = replyList.size();
+            replyList.add(reply);
+            int adapterPosition = listIndex + 1;
+            replyAdapter.notifyItemInserted(adapterPosition);
+            recyclerView.post(() -> {
+                if (recyclerView.getLayoutManager() instanceof LinearLayoutManager) {
+                    ((LinearLayoutManager) recyclerView.getLayoutManager())
+                            .scrollToPositionWithOffset(adapterPosition, 0);
+                } else {
+                    recyclerView.scrollToPosition(adapterPosition);
+                }
+            });
         });
     }
 }

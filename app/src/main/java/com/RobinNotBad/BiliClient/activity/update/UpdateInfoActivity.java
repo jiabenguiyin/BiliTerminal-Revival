@@ -86,7 +86,8 @@ public class UpdateInfoActivity extends BaseActivity {
             versionCodeTv.setText(String.format(Locale.getDefault(), "版本号: %d", versionCode));
             isReleaseTv.setText(String.format("是否为正式版: %s", isRelease == 1 ? "是" : "否"));
             pubTimeTv.setText(String.format("发布时间: %s", ctime == -1 ? "未知" : new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date(String.valueOf(ctime).length() == 13 ? ctime : ctime * 1000))));
-            updateLogTv.setText(TextUtils.isEmpty(updateLog) ? "暂无更新日志" : updateLog);
+            updateLogTv.setText(AppInfoApi.appendFeedbackGroup(
+                    TextUtils.isEmpty(updateLog) ? "暂无更新日志" : updateLog));
 
             if (canDownload != 1) downloadBtn.setVisibility(View.GONE);
             downloadBtn.setOnClickListener((view1) -> {

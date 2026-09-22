@@ -30,8 +30,8 @@ public class VideoInfoApi {
     public static VideoInfo getVideoInfo(String bvid) throws IOException, JSONException {  //通过bvid获取json
         String url = "https://api.bilibili.com/x/web-interface/view?bvid=" + bvid;
         JSONObject result = NetWorkUtil.getJson(url);
-        if (!result.has("data")) return null;
-        VideoInfo videoInfo = getInfoByJson(result.getJSONObject("data"));
+        VideoInfo videoInfo = getVideoInfoFromResponse(result);
+        if (videoInfo == null) return null;
         LikeCoinFavApi.getVideoStats(videoInfo);
         return videoInfo;
     }
@@ -39,10 +39,20 @@ public class VideoInfoApi {
     public static VideoInfo getVideoInfo(long aid) throws IOException, JSONException {  //通过aid获取json
         String url = "https://api.bilibili.com/x/web-interface/view?aid=" + aid;
         JSONObject result = NetWorkUtil.getJson(url);
-        if (!result.has("data")) return null;
-        VideoInfo videoInfo = getInfoByJson(result.getJSONObject("data"));
+        VideoInfo videoInfo = getVideoInfoFromResponse(result);
+        if (videoInfo == null) return null;
         LikeCoinFavApi.getVideoStats(videoInfo);
         return videoInfo;
+    }
+
+    private static VideoInfo getVideoInfoFromResponse(JSONObject result) throws JSONException {
+        if (result == null) return null;
+        int code = result.optInt("code", 0);
+        if (code != 0) {
+            throw new JSONException("视频信息接口返回 " + code + "：" + result.optString("message", "未知错误"));
+        }
+        JSONObject data = result.optJSONObject("data");
+        return data == null ? null : getInfoByJson(data);
     }
 
 

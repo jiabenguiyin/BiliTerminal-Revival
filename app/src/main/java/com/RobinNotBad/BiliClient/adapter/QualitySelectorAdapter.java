@@ -4,15 +4,14 @@ import android.annotation.SuppressLint;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.content.res.AppCompatResources;
-import androidx.core.view.ViewCompat;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.listener.OnItemClickListener;
-import com.google.android.material.button.MaterialButton;
 
 public class QualitySelectorAdapter extends RecyclerView.Adapter<QualitySelectorAdapter.QualityHolder> {
     private String[] qualityNames;
@@ -47,15 +46,15 @@ public class QualitySelectorAdapter extends RecyclerView.Adapter<QualitySelector
     public void setSelectedItemIndex(int selectedItemIndex) {
         int previousSelectedIndex = this.selectedItemIndex;
         this.selectedItemIndex = selectedItemIndex;
-        notifyItemChanged(previousSelectedIndex);
-        notifyItemChanged(selectedItemIndex);
+        if (previousSelectedIndex >= 0) notifyItemChanged(previousSelectedIndex);
+        if (selectedItemIndex >= 0) notifyItemChanged(selectedItemIndex);
     }
 
     @NonNull
     @Override
     public QualityHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.cell_episode, parent, false);
+                .inflate(R.layout.cell_player_quality, parent, false);
         return new QualityHolder(view);
     }
 
@@ -76,7 +75,7 @@ public class QualitySelectorAdapter extends RecyclerView.Adapter<QualitySelector
 
     public class QualityHolder extends RecyclerView.ViewHolder {
         private OnItemClickListener listener;
-        private final MaterialButton button;
+        private final Button button;
 
         public QualityHolder(View view) {
             super(view);
@@ -89,12 +88,12 @@ public class QualitySelectorAdapter extends RecyclerView.Adapter<QualitySelector
             button.setText(qualityNames[currentIndex]);
             if (isSelected) {
                 button.setTextColor(0xcc262626);
-                ViewCompat.setBackgroundTintList(button, AppCompatResources.getColorStateList(itemView.getContext(),
+                button.setBackgroundColor(ContextCompat.getColor(itemView.getContext(),
                         R.color.background_button_selected));
             } else {
                 button.setTextColor(0xffebe0e2);
-                ViewCompat.setBackgroundTintList(button,
-                        AppCompatResources.getColorStateList(itemView.getContext(), R.color.background_button));
+                button.setBackgroundColor(ContextCompat.getColor(itemView.getContext(),
+                        R.color.background_button));
             }
             button.setOnClickListener(v -> {
                 setSelectedItemIndex(currentIndex);

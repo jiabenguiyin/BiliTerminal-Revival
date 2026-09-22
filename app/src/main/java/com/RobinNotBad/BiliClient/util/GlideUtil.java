@@ -16,11 +16,22 @@ import com.bumptech.glide.request.transition.DrawableCrossFadeFactory;
 
 public class GlideUtil {
     public static final int QUALITY_HIGH = 80;
+    public static final int QUALITY_CARD = 60;
     public static final int QUALITY_LOW = 25;
-    public static final int MAX_W_HIGH = 1024;
+    public static final int MAX_W_HIGH = 2048;
+    public static final int MAX_W_CARD = 768;
     public static final int MAX_W_LOW = 512;
 
     public static String url(String url) {
+        return sizedUrl(url, QUALITY_LOW, MAX_W_LOW);
+    }
+
+    public static String url_card(String url) {
+        return sizedUrl(url, QUALITY_CARD, MAX_W_CARD);
+    }
+
+    private static String sizedUrl(String url, int quality, int maxWidth) {
+        if (url == null || url.isEmpty()) return "";
         if (!url.startsWith("http") || url.endsWith("gif") || url.contains("@") || url.contains("afdian"))
             return NetWorkUtil.routeUrlForRelay(url);
         String result;
@@ -29,20 +40,19 @@ public class GlideUtil {
             if (!legacyJpeg && (url.endsWith("jpeg") || url.endsWith("jpg")))
                 return NetWorkUtil.routeUrlForRelay(url);
             result = url + "@0e_"
-                    + QUALITY_LOW + "q_"
-                    //+ MAX_H_LOW + "h_"
-                    + MAX_W_LOW + "w.jpeg";
+                    + quality + "q_"
+                    + maxWidth + "w.jpeg";
         } else {
             if (url.endsWith("webp")) return NetWorkUtil.routeUrlForRelay(url);
             result = url + "@0e_"
-                    + QUALITY_LOW + "q_"
-                    //+ MAX_H_LOW + "h_"
-                    + MAX_W_LOW + "w.webp";
+                    + quality + "q_"
+                    + maxWidth + "w.webp";
         }
         return NetWorkUtil.routeUrlForRelay(result);
     }
 
     public static String url_hq(String url) {
+        if (url == null || url.isEmpty()) return "";
         if (!url.startsWith("http") || url.endsWith("gif") || url.contains("@") || url.contains("afdiancdn.com"))
             return NetWorkUtil.routeUrlForRelay(url);
         String result;

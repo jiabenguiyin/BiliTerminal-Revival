@@ -27,13 +27,21 @@ public class AnnouncementsActivity extends RefreshListActivity {
                 ArrayList<Announcement> announcements = AppInfoApi.getAnnouncementList();
                 setRefreshing(false);
 
+                if (announcements.isEmpty()) {
+                    showEmptyView();
+                    return;
+                }
+
                 AnnouncementAdapter adapter = new AnnouncementAdapter(this, announcements);
 
                 setAdapter(adapter);
 
             } catch (Exception e) {
                 report(e);
-                runOnUiThread(() -> MsgUtil.showMsg("连接到哔哩终端接口时发生错误"));
+                setRefreshing(false);
+                runOnUiThread(() -> {
+                    if (!isFinishing()) MsgUtil.showMsg("公告暂时获取失败，请稍后重试");
+                });
             }
         });
     }

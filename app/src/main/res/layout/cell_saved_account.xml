@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="6dp"
+    android:layout_marginVertical="3dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardCornerRadius="6dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="58dp"
+        android:padding="8dp">
+
+        <ImageView
+            android:id="@+id/account_avatar"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:contentDescription="账号头像"
+            android:src="@mipmap/akari"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/account_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="8dp"
+            android:layout_marginStart="8dp"
+            android:ellipsize="end"
+            android:lines="1"
+            android:text="账号昵称"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toStartOf="@id/account_delete"
+            app:layout_constraintStart_toEndOf="@id/account_avatar"
+            app:layout_constraintTop_toTopOf="@id/account_avatar" />
+
+        <TextView
+            android:id="@+id/account_uid"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="8dp"
+            android:layout_marginStart="8dp"
+            android:alpha="0.7"
+            android:ellipsize="end"
+            android:lines="1"
+            android:text="UID 0"
+            android:textSize="11sp"
+            app:layout_constraintBottom_toBottomOf="@id/account_avatar"
+            app:layout_constraintEnd_toStartOf="@id/account_current"
+            app:layout_constraintStart_toEndOf="@id/account_avatar" />
+
+        <TextView
+            android:id="@+id/account_current"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:layout_marginRight="6dp"
+            android:text="当前"
+            android:textColor="@color/link"
+            android:textSize="11sp"
+            app:layout_constraintBottom_toBottomOf="@id/account_avatar"
+            app:layout_constraintEnd_toStartOf="@id/account_delete" />
+
+        <ImageView
+            android:id="@+id/account_delete"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:contentDescription="删除已保存账号"
+            android:padding="10dp"
+            android:src="@drawable/icon_delete"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</com.google.android.material.card.MaterialCardView>

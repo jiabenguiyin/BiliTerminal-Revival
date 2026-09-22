@@ -18,11 +18,15 @@ public class LoginRecordApi {
             url += "&buvid=" + buvid;
         }
 
-        JSONObject result = NetWorkUtil.getJson(url);
+        return parseLoginRecords(NetWorkUtil.getJson(url));
+    }
+
+    static List<LoginRecord> parseLoginRecords(JSONObject result) throws JSONException {
         List<LoginRecord> records = new ArrayList<>();
 
-        if (result.getInt("code") == 0) {
-            JSONObject data = result.getJSONObject("data");
+        if (result.optInt("code", -1) == 0) {
+            JSONObject data = result.optJSONObject("data");
+            if (data == null) return records;
             long recordMid = data.getLong("mid");
             String deviceName = data.optString("device_name", "未知设备");
             String loginType = data.optString("login_type", "未知方式");
@@ -36,4 +40,3 @@ public class LoginRecordApi {
         return records;
     }
 }
-

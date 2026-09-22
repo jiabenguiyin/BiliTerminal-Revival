@@ -4,9 +4,8 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.TextView;
-
-import androidx.constraintlayout.utils.widget.ImageFilterView;
 
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
@@ -37,14 +36,13 @@ public class TutorialActivity extends BaseActivity {
             ((TextView) findViewById(R.id.text_title)).setText(tutorial.name);
             ((TextView) findViewById(R.id.content)).setText(TutorialHelper.loadText(tutorial.content));
 
-            try {
-                if (tutorial.imgid != null) {
-                    int indentify = getResources().getIdentifier(getPackageName() + ":" + tutorial.imgid, null, null);
-                    if (indentify > 0)
-                        ((ImageFilterView) findViewById(R.id.image_view)).setImageDrawable(getResources().getDrawable(indentify));
-                } else findViewById(R.id.image_view).setVisibility(View.GONE);
-            } catch (Exception e) {
-                e.printStackTrace();
+            ImageView imageView = findViewById(R.id.image_view);
+            int imageId = resolveTutorialImage(tutorial.imgid);
+            if (imageId > 0) {
+                imageView.setImageResource(imageId);
+                imageView.setVisibility(View.VISIBLE);
+            } else {
+                imageView.setVisibility(View.GONE);
             }
 
             MaterialButton close_btn = findViewById(R.id.close_btn);
@@ -80,5 +78,36 @@ public class TutorialActivity extends BaseActivity {
 
     @Override
     public void onBackPressed() {
+    }
+
+    private int resolveTutorialImage(String resourceName) {
+        if (resourceName == null) return 0;
+        String value = resourceName.trim();
+        int separator = value.indexOf('/');
+        if (separator <= 0 || separator >= value.length() - 1) return 0;
+
+        String type = value.substring(0, separator).trim();
+        String name = value.substring(separator + 1).trim();
+        int imageId = getResources().getIdentifier(name, type, getPackageName());
+        if (imageId > 0) return imageId;
+
+        // Keep tutorial images available on old resource implementations where
+        // getIdentifier() can fail for mipmap-nodpi entries.
+        switch (name) {
+            case "tutorial_article":
+                return R.mipmap.tutorial_article;
+            case "tutorial_dynamic":
+                return R.mipmap.tutorial_dynamic;
+            case "tutorial_recommend":
+                return R.mipmap.tutorial_recommend;
+            case "tutorial_search":
+                return R.mipmap.tutorial_search;
+            case "tutorial_space":
+                return R.mipmap.tutorial_space;
+            case "tutorial_video":
+                return R.mipmap.tutorial_video;
+            default:
+                return 0;
+        }
     }
 }

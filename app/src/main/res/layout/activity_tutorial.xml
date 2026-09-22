@@ -35,14 +35,14 @@
                 android:layout_margin="6dp"
                 android:text="@string/text_default_subtitle" />
 
-            <androidx.constraintlayout.utils.widget.ImageFilterView
+            <ImageView
                 android:id="@+id/image_view"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
                 android:adjustViewBounds="true"
-                android:src="@mipmap/placeholder"
-                app:round="@dimen/card_round" />
+                android:scaleType="fitCenter"
+                android:src="@mipmap/placeholder" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/close_btn"

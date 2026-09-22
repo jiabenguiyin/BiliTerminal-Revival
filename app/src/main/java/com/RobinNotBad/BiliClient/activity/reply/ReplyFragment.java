@@ -13,6 +13,7 @@ import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.RobinNotBad.BiliClient.activity.base.RefreshListFragment;
 import com.RobinNotBad.BiliClient.adapter.ReplyAdapter;
@@ -44,9 +45,13 @@ public class ReplyFragment extends RefreshListFragment {
     protected ReplyAdapter replyAdapter;
     public int replyType = ReplyApi.REPLY_TYPE_VIDEO;
     private long seek;
+    private long loadSeek;
     private String pagination = "";
     private boolean isManager = false;
     private boolean legacyPaging = false;
+    private final Runnable clearHighlightRunnable = () -> {
+        if (replyAdapter != null) replyAdapter.clearHighlight();
+    };
 
     public static ReplyFragment newInstance(long aid, int type) {
         ReplyFragment fragment = new ReplyFragment();
@@ -79,22 +84,34 @@ public class ReplyFragment extends RefreshListFragment {
     }
 
     public static ReplyFragment newInstance(long aid, int type, boolean dontload, long seek_rpid) {
+        return newInstance(aid, type, dontload, seek_rpid, seek_rpid);
+    }
+
+    public static ReplyFragment newInstance(long aid, int type, boolean dontload,
+                                            long load_seek_rpid, long seek_rpid) {
         ReplyFragment fragment = new ReplyFragment();
         Bundle args = new Bundle();
         args.putLong("aid", aid);
         args.putInt("type", type);
         args.putBoolean("dontload", dontload);
+        args.putLong("loadSeek", load_seek_rpid);
         args.putLong("seek", seek_rpid);
         fragment.setArguments(args);
         return fragment;
     }
 
     public static ReplyFragment newInstance(long aid, int type, int count, long seek_rpid, long up_mid) {
+        return newInstance(aid, type, count, seek_rpid, seek_rpid, up_mid);
+    }
+
+    public static ReplyFragment newInstance(long aid, int type, int count, long load_seek_rpid,
+                                            long seek_rpid, long up_mid) {
         ReplyFragment fragment = new ReplyFragment();
         Bundle args = new Bundle();
         args.putLong("aid", aid);
         args.putInt("count", count);
         args.putInt("type", type);
+        args.putLong("loadSeek", load_seek_rpid);
         args.putLong("seek", seek_rpid);
         args.putLong("mid", up_mid);
         fragment.setArguments(args);
@@ -111,6 +128,7 @@ public class ReplyFragment extends RefreshListFragment {
             replyType = type;
             dontload = getArguments().getBoolean("dontload", false);
             seek = getArguments().getLong("seek", -1);
+            loadSeek = getArguments().getLong("loadSeek", seek);
             mid = getArguments().getLong("mid", -1);
         }
     }
@@ -137,6 +155,7 @@ public class ReplyFragment extends RefreshListFragment {
 
         replyList = new ArrayList<>();
         replyAdapter = createReplyAdapter();
+        replyAdapter.setHighlightRpid(seek);
         replyAdapter.count = count;
         replyAdapter.isManager = isManager;
         setOnSortSwitch();
@@ -210,24 +229,60 @@ public class ReplyFragment extends RefreshListFragment {
         if (replyEvent.getOid() != aid) return;
         if (replyList == null || replyAdapter == null) return;
         Reply reply = replyEvent.getMessage();
-        showReplyList();
-        if (reply.root == 0) {
-            LinearLayoutManager layoutManager = (LinearLayoutManager) Objects.requireNonNull(recyclerView.getLayoutManager());
-            int pos = 0;
-            replyList.add(pos, reply);
-            count = Math.max(count + 1, replyList.size());
-            replyAdapter.count = count;
-            int finalPos = pos;
-            runOnUiThread(() -> {
+        if (reply == null) return;
+        runOnUiThread(() -> {
+            if (replyList == null || replyAdapter == null || recyclerView == null) return;
+            showReplyList();
+            if (reply.root == 0) {
+                LinearLayoutManager layoutManager = (LinearLayoutManager) Objects.requireNonNull(recyclerView.getLayoutManager());
+                int pos = 0;
+                replyList.add(pos, reply);
+                count = Math.max(count + 1, replyList.size());
+                replyAdapter.count = count;
                 replyAdapter.notifyItemChanged(0);
-                replyAdapter.notifyItemInserted(finalPos + 1);
-                layoutManager.scrollToPositionWithOffset(finalPos + 1, 0);
-            });
-        } else if (replyEvent.getPos() >= 0) {
-            replyList.get(replyEvent.getPos()).childMsgList.add(reply);
-            replyList.get(replyEvent.getPos()).childCount++;
-            runOnUiThread(() -> replyAdapter.notifyItemChanged(replyEvent.getPos() + 1));
+                replyAdapter.notifyItemInserted(pos + 1);
+                layoutManager.scrollToPositionWithOffset(pos + 1, 0);
+            } else {
+                // The list can be refreshed or resorted while the compose screen is open.
+                // The position captured before sending is therefore only a last-resort
+                // fallback; the reply's root rpid is the stable parent identity.
+                int rootIndex = findRootReplyIndex(reply.root);
+                if (rootIndex < 0) {
+                    int fallback = replyEvent.getPos();
+                    if (fallback >= 0 && fallback < replyList.size()) {
+                        Reply candidate = replyList.get(fallback);
+                        if (candidate != null && candidate.rpid == reply.root) {
+                            rootIndex = fallback;
+                        }
+                    }
+                }
+                if (rootIndex < 0) return;
+
+                Reply rootReply = replyList.get(rootIndex);
+                if (rootReply.childMsgList == null) rootReply.childMsgList = new ArrayList<>();
+                boolean alreadyInserted = false;
+                for (Reply child : rootReply.childMsgList) {
+                    if (child != null && child.rpid == reply.rpid) {
+                        alreadyInserted = true;
+                        break;
+                    }
+                }
+                if (!alreadyInserted) {
+                    rootReply.childMsgList.add(reply);
+                    rootReply.childCount = Math.max(rootReply.childCount + 1, rootReply.childMsgList.size());
+                }
+                replyAdapter.notifyItemChanged(rootIndex + 1);
+            }
+        });
+    }
+
+    private int findRootReplyIndex(long rootRpid) {
+        if (rootRpid <= 0 || replyList == null) return -1;
+        for (int i = 0; i < replyList.size(); i++) {
+            Reply candidate = replyList.get(i);
+            if (candidate != null && candidate.rpid == rootRpid) return i;
         }
+        return -1;
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -261,6 +316,7 @@ public class ReplyFragment extends RefreshListFragment {
                         }
                         replyAdapter.notifyDataSetChanged();
                         showReplyList();
+                        locateSoughtReply();
                     });
                     //replyAdapter.notifyItemRangeInserted(0,replyList.size());
                     if (result == 1) {
@@ -278,13 +334,17 @@ public class ReplyFragment extends RefreshListFragment {
     private Pair<Integer, String> loadFirstPage(List<Reply> list) throws Exception {
         Exception lazyError = null;
         try {
-            Pair<Integer, String> pageState = ReplyApi.getRepliesLazy(aid, seek, pagination, type, sort, list);
-            if (pageState.first != -1) return pageState;
+            Pair<Integer, String> pageState = ReplyApi.getRepliesLazy(aid, loadSeek, pagination, type, sort, list);
+            // A notification may point at a child reply that the seek endpoint cannot
+            // resolve as a root. Fall back to the ordinary first page instead of showing
+            // an incomplete comment list that makes the target appear to have vanished.
+            if (pageState.first != -1 && (!list.isEmpty() || loadSeek <= 0)) return pageState;
         } catch (Exception e) {
             lazyError = e;
         }
 
         list.clear();
+        pagination = "";
         try {
             int result = ReplyApi.getReplies(aid, 0, 1,
                     ContentType.getContentType(type), getLegacySort(), list);
@@ -317,6 +377,44 @@ public class ReplyFragment extends RefreshListFragment {
             emptyView.setText(message);
             emptyView.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
+        });
+    }
+
+    private void locateSoughtReply() {
+        if (seek <= 0 || replyList == null || replyAdapter == null || recyclerView == null) return;
+        int index = -1;
+        for (int i = 0; i < replyList.size(); i++) {
+            Reply reply = replyList.get(i);
+            if (reply == null) continue;
+            if (reply.rpid == seek) {
+                index = i;
+                break;
+            }
+            if (reply.childMsgList != null) {
+                for (Reply child : reply.childMsgList) {
+                    if (child != null && child.rpid == seek) {
+                        // The main list renders the child replies inside the root card.
+                        // Locate the root card while keeping the child id for its own highlight.
+                        index = i;
+                        replyAdapter.setHighlightRpid(seek);
+                        break;
+                    }
+                }
+            }
+            if (index >= 0) break;
+        }
+        if (index < 0) return;
+        int adapterPosition = index + 1;
+        replyAdapter.setHighlightRpid(seek);
+        recyclerView.removeCallbacks(clearHighlightRunnable);
+        recyclerView.post(() -> {
+            RecyclerView.LayoutManager layoutManager = recyclerView.getLayoutManager();
+            if (layoutManager instanceof LinearLayoutManager) {
+                ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(adapterPosition, 0);
+            } else {
+                recyclerView.scrollToPosition(adapterPosition);
+            }
+            recyclerView.postDelayed(clearHighlightRunnable, 5000);
         });
     }
 

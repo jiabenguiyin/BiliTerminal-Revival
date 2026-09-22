@@ -279,8 +279,9 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
                 case "MAJOR_TYPE_LIVE_RCMD":
                     LiveRoom liveRoom = (LiveRoom) dynamic.major_object;
                     VideoCard childLiveCard = new VideoCard();
-                    childLiveCard.title = liveRoom.title;
-                    childLiveCard.cover = liveRoom.cover;
+                    childLiveCard.title = TextUtils.isEmpty(liveRoom.title) ? "直播间" : liveRoom.title;
+                    childLiveCard.cover = TextUtils.isEmpty(liveRoom.cover)
+                            ? liveRoom.user_cover : liveRoom.cover;
                     childLiveCard.upName = liveRoom.uname;
                     childLiveCard.view = "";
                     childLiveCard.type = "live";
@@ -289,8 +290,15 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
                         videoCardHolder = new VideoCardHolder(cell_dynamic_video);
                     }
                     videoCardHolder.showVideoCard(childLiveCard, context);
-                    cell_dynamic_video.setOnClickListener(
-                            view -> TerminalContext.getInstance().enterLiveDetailPage(context, liveRoom.roomid));
+                    cell_dynamic_video.setClickable(true);
+                    cell_dynamic_video.setFocusable(true);
+                    cell_dynamic_video.setOnClickListener(view -> {
+                        if (liveRoom.roomid > 0) {
+                            TerminalContext.getInstance().enterLiveDetailPage(context, liveRoom.roomid);
+                        } else {
+                            MsgUtil.showMsg("直播间信息暂时不可用");
+                        }
+                    });
                     cell_dynamic_video.setVisibility(View.VISIBLE);
                     break;
 

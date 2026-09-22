@@ -1,5 +1,6 @@
 package com.RobinNotBad.BiliClient.api;
 
+import android.net.Uri;
 import android.text.SpannableString;
 import android.util.Pair;
 
@@ -157,7 +158,7 @@ public class MessageApi {
                         likeInfo.content = "等总共 " + object.getLong("counts") + " 人点赞了你的专栏";
                         // 实在是抽象 但是我没时间改那么多
                         Reply replyChildInfo = new Reply();
-                        replyChildInfo.rpid = item.getLong("target_id");
+                        replyChildInfo.rpid = item.optLong("source_id", item.optLong("target_id", -1));
                         replyChildInfo.message = new SpannableString(item.getString("title"));
                         replyChildInfo.childCount = 0;
                         likeInfo.replyInfo = replyChildInfo;
@@ -206,12 +207,13 @@ public class MessageApi {
                 JSONObject item = object.getJSONObject("item");
                 replyInfo.businessId = item.getInt("business_id");
                 replyInfo.subjectId = item.getLong("subject_id");
+                replyInfo.itemUri = item.optString("uri", "");
+                replyInfo.contentId = parseContentId(item);
                 replyInfo.sourceId = item.optLong("source_id", -1);
                 replyInfo.rootId = item.optLong("root_id", -1);
+                replyInfo.targetId = item.optLong("target_id", -1);
                 replyInfo.itemType = item.getString("type");
                 replyInfo.getType = MessageCard.GET_TYPE_REPLY;
-                replyInfo.targetId = item.optLong("target_id", -1);
-
                 replyInfo.content = item.getString("source_content");
 
                 switch (replyInfo.itemType) {
@@ -243,7 +245,7 @@ public class MessageApi {
                     case "dynamic":
                     case "album":
                         Reply replyChildInfo_dynamic = new Reply();
-                        replyChildInfo_dynamic.rpid = item.getLong("target_id");
+                        replyChildInfo_dynamic.rpid = item.optLong("source_id", item.optLong("target_id", -1));
                         replyChildInfo_dynamic.sender = null;
                         replyChildInfo_dynamic.message = new SpannableString("[动态] " + item.getString("title"));
                         replyChildInfo_dynamic.pictureList = new ArrayList<>();
@@ -258,7 +260,7 @@ public class MessageApi {
                         break;
                     case "article":
                         Reply replyChildInfo_article = new Reply();
-                        replyChildInfo_article.rpid = item.getLong("target_id");
+                        replyChildInfo_article.rpid = item.optLong("source_id", item.optLong("target_id", -1));
                         replyChildInfo_article.message = new SpannableString("[专栏] " + item.getString("title"));
                         replyChildInfo_article.childCount = 0;
                         replyInfo.replyInfo = replyChildInfo_article;
@@ -303,38 +305,40 @@ public class MessageApi {
                 replyInfo.timeStamp = object.getLong("at_time");
                 replyInfo.content = "提到了我";
 
-                if (object.getJSONObject("item").getString("type").equals("video")) {
+                JSONObject item = object.getJSONObject("item");
+                String itemType = item.getString("type");
+                if (itemType.equals("video")) {
                     VideoCard videoCard = new VideoCard();
                     videoCard.aid = 0;
-                    videoCard.bvid = object.getJSONObject("item").getString("uri")
+                    videoCard.bvid = item.getString("uri")
                             .replace("https://www.bilibili.com/video/BV", "");
                     videoCard.upName = "";
-                    videoCard.title = object.getJSONObject("item").getString("title");
-                    videoCard.cover = object.getJSONObject("item").getString("image");
+                    videoCard.title = item.getString("title");
+                    videoCard.cover = item.getString("image");
                     videoCard.view = "";
                     replyInfo.videoCard = videoCard;
-                } else if (object.getJSONObject("item").getString("type").equals("reply")) {
+                } else if (itemType.equals("reply")) {
                     Reply replyChildInfo = new Reply();
-                    replyChildInfo.rpid = object.getJSONObject("item").getLong("target_id");
+                    replyChildInfo.rpid = item.optLong("source_id", item.optLong("target_id", -1));
                     replyChildInfo.sender = null;
                     replyChildInfo.message = new SpannableString(
-                            "[评论] " + object.getJSONObject("item").getString("title"));
+                            "[评论] " + item.getString("title"));
                     replyChildInfo.pictureList = new ArrayList<>();
                     replyChildInfo.likeCount = 0;
                     replyChildInfo.upLiked = false;
                     replyChildInfo.upReplied = false;
                     replyChildInfo.liked = false;
                     replyChildInfo.childCount = 0;
-                    replyChildInfo.ofBvid = object.getJSONObject("item").getString("uri")
+                    replyChildInfo.ofBvid = item.getString("uri")
                             .replace("https://www.bilibili.com/video/", "");
                     replyChildInfo.childMsgList = new ArrayList<>();
                     replyInfo.replyInfo = replyChildInfo;
-                } else if (object.getJSONObject("item").getString("type").equals("dynamic")) {
+                } else if (itemType.equals("dynamic") || itemType.equals("album") || itemType.equals("opus")) {
                     Reply replyChildInfo = new Reply();
-                    replyChildInfo.rpid = object.getJSONObject("item").getLong("target_id");
+                    replyChildInfo.rpid = item.optLong("source_id", item.optLong("target_id", -1));
                     replyChildInfo.sender = null;
                     replyChildInfo.message = new SpannableString(
-                            "[动态] " + object.getJSONObject("item").getString("title"));
+                            "[动态] " + item.optString("title", item.optString("source_content", "")));
                     replyChildInfo.pictureList = new ArrayList<>();
                     replyChildInfo.likeCount = 0;
                     replyChildInfo.upLiked = false;
@@ -344,19 +348,21 @@ public class MessageApi {
                     replyChildInfo.childCount = 0;
                     replyChildInfo.childMsgList = new ArrayList<>();
                     replyInfo.dynamicInfo = replyChildInfo;
-                } else if (object.getJSONObject("item").getString("type").equals("article")) {
+                } else if (itemType.equals("article")) {
                     Reply replyChildInfo = new Reply();
-                    replyChildInfo.rpid = object.getJSONObject("item").getLong("target_id");
+                    replyChildInfo.rpid = item.optLong("source_id", item.optLong("target_id", -1));
                     replyChildInfo.message = new SpannableString(
-                            "[专栏] " + object.getJSONObject("item").getString("title"));
+                            "[专栏] " + item.getString("title"));
                     replyChildInfo.childCount = 0;
                     replyInfo.replyInfo = replyChildInfo;
                 }
-                JSONObject item = object.getJSONObject("item");
                 replyInfo.businessId = item.getInt("business_id");
                 replyInfo.subjectId = item.getLong("subject_id");
+                replyInfo.itemUri = item.optString("uri", "");
+                replyInfo.contentId = parseContentId(item);
                 replyInfo.sourceId = item.optLong("source_id", -1);
                 replyInfo.rootId = item.optLong("root_id", -1);
+                replyInfo.targetId = item.optLong("target_id", -1);
                 replyInfo.itemType = item.getString("type");
                 replyInfo.getType = MessageCard.GET_TYPE_AT;
 
@@ -371,6 +377,29 @@ public class MessageApi {
         } else {
             return new Pair<>(null, new ArrayList<>());
         }
+    }
+
+    private static long parseContentId(JSONObject item) {
+        long itemId = item.optLong("item_id", -1);
+        if (itemId > 0) return itemId;
+
+        String uri = item.optString("uri", "").trim();
+        if (uri.isEmpty()) return -1;
+        try {
+            for (String segment : Uri.parse(uri).getPathSegments()) {
+                String value = segment;
+                if (value.startsWith("cv")) value = value.substring(2);
+                try {
+                    long id = Long.parseLong(value);
+                    if (id > 0) return id;
+                } catch (NumberFormatException ignored) {
+                    // Video BV identifiers and other non-numeric path segments are skipped.
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Malformed notification links should not make the entire @ feed fail.
+        }
+        return -1;
     }
 
     public static ArrayList<MessageCard> getSystemMsg() throws IOException, JSONException {

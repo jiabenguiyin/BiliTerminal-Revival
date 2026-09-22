@@ -63,6 +63,7 @@ public class EmoteActivity extends BaseActivity {
 
                 List<EmotePackage> packages = EmoteApi.getEmotes(from);
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     loading.setVisibility(View.GONE);
                     viewPager.setAdapter(new PagerAdapter(getSupportFragmentManager(), packages, origin -> {
                         origin.setOnListScroll(onScrollListener);
@@ -91,32 +92,40 @@ public class EmoteActivity extends BaseActivity {
 
                     CenterThreadPool.run(() -> {
                         for (int i = 0; i < count; i++) {
+                            if (isDestroyed()) return;
                             int finalI = i;
                             Objects.requireNonNull(packages);
 
                             runOnUiThread(() -> {
-                                Objects.requireNonNull(tabLayout.getTabAt(finalI)).setText(packages.get(finalI).text);
-                                if (finalI != 0)
-                                    Objects.requireNonNull(tabLayout.getTabAt(finalI)).setTabLabelVisibility(TabLayout.TAB_LABEL_VISIBILITY_UNLABELED);
+                                TabLayout.Tab tab = tabLayout.getTabAt(finalI);
+                                if (isDestroyed() || tab == null) return;
+                                tab.setText(packages.get(finalI).text);
+                                if (finalI != 0) tab.setTabLabelVisibility(TabLayout.TAB_LABEL_VISIBILITY_UNLABELED);
                             });
 
                             try {
-                                Drawable drawable = Glide.with(this).asDrawable()
-                                        .transition(GlideUtil.getTransitionOptions())
+                                Drawable drawable = Glide.with(getApplicationContext()).asDrawable()
                                         .load(packages.get(finalI).url)
                                         .submit().get();
-                                runOnUiThread(() -> Objects.requireNonNull(tabLayout.getTabAt(finalI)).setIcon(drawable));
+                                runOnUiThread(() -> {
+                                    TabLayout.Tab tab = tabLayout.getTabAt(finalI);
+                                    if (!isDestroyed() && tab != null) tab.setIcon(drawable);
+                                });
                             } catch (ExecutionException e) {
-                                MsgUtil.err("加载表情列表图标时出现错误：", e);
-                                e.printStackTrace();
+                                if (!isDestroyed()) MsgUtil.err("加载表情列表图标时出现错误：", e);
                             } catch (InterruptedException e) {
-                                e.printStackTrace();
+                                Thread.currentThread().interrupt();
+                                return;
+                            } catch (RuntimeException e) {
+                                if (!isDestroyed()) MsgUtil.err("加载表情列表图标时出现错误：", e);
                             }
                         }
                     });
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> MsgUtil.err(e));
+                runOnUiThread(() -> {
+                    if (!isDestroyed()) MsgUtil.err(e);
+                });
             }
         });
     }
@@ -210,9 +219,10 @@ public class EmoteActivity extends BaseActivity {
 
         @Override
         public void onDestroyView() {
-            super.onDestroyView();
-            if (this.onListScroll != null && hasListener)
+            if (this.onListScroll != null && hasListener && recyclerView != null)
                 recyclerView.removeOnScrollListener(onListScroll);
+            recyclerView = null;
+            super.onDestroyView();
         }
     }
 
@@ -254,11 +264,13 @@ public class EmoteActivity extends BaseActivity {
 
         private final EmotePackage emotePackage;
         private final Context context;
+        private final Context glideContext;
         private OnClickEmoteListener listener;
 
         public EmoteAdapter(EmotePackage emotePackage, Context context) {
             this.emotePackage = emotePackage;
             this.context = context;
+            this.glideContext = context.getApplicationContext();
         }
 
         @NonNull
@@ -271,7 +283,7 @@ public class EmoteActivity extends BaseActivity {
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             Emote emote = emotePackage.emotes.get(position);
             if (holder instanceof Holder) {
-                Glide.with(context).asDrawable()
+                Glide.with(glideContext).asDrawable()
                         .transition(GlideUtil.getTransitionOptions())
                         .load(GlideUtil.url(emote.url))
                         .into(((Holder) holder).itemView);
@@ -301,6 +313,14 @@ public class EmoteActivity extends BaseActivity {
         @Override
         public int getItemViewType(int position) {
             return emotePackage.type == 4 ? 0 : 1;
+        }
+
+        @Override
+        public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+            if (holder instanceof Holder) {
+                Glide.with(glideContext).clear(((Holder) holder).itemView);
+            }
+            super.onViewRecycled(holder);
         }
 
         public void setOnClickEmote(OnClickEmoteListener listener) {

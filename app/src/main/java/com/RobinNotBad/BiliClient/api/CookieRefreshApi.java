@@ -2,6 +2,8 @@ package com.RobinNotBad.BiliClient.api;
 
 import android.util.Base64;
 
+import com.RobinNotBad.BiliClient.util.AccountManager;
+import com.RobinNotBad.BiliClient.util.CookieMergeUtil;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
@@ -17,6 +19,7 @@ import java.security.PublicKey;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Objects;
+import java.util.ArrayList;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.OAEPParameterSpec;
@@ -58,85 +61,107 @@ public class CookieRefreshApi {
     public static String getRefreshCsrf(String CorrespondPath) throws IOException {
         if (Objects.equals(CorrespondPath, "")) return "";
         String url = "https://www.bilibili.com/correspond/1/" + CorrespondPath;
-        Response response = NetWorkUtil.get(url);
-        if (response.body() != null) {
+        try (Response response = NetWorkUtil.get(url)) {
+            if (response.body() == null) return "";
             Document document = Jsoup.parse(response.body().string());
             if (document.select("#1-name").size() > 0)
                 return document.select("#1-name").get(0).text();
-            else return "";
-        } else return "";
+            return "";
+        }
     }
 
-    public static boolean refreshCookie(String RefreshCsrf) throws JSONException, IOException {
-        //必须的参数不能为空
-        if (Objects.equals(RefreshCsrf, "")) return false;
-        if (Objects.equals(SharedPreferencesUtil.getString(SharedPreferencesUtil.refresh_token, ""), ""))
-            return false;
+    public static synchronized boolean refreshCookie(String RefreshCsrf) throws JSONException, IOException {
+        if (!confirmPendingRefresh()) return false;
+        String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        String token = SharedPreferencesUtil.getString(SharedPreferencesUtil.refresh_token, "");
+        return refreshCookie(RefreshCsrf, cookies, token);
+    }
 
-        String cookies_old = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
-
-        String refreshTokenOld = SharedPreferencesUtil.getString(SharedPreferencesUtil.refresh_token, "");
-        try {
-            String url = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh";
-            String args = "csrf=" + NetWorkUtil.getInfoFromCookie("bili_jct", cookies_old)
-                    + "&refresh_csrf=" + RefreshCsrf + "&source=main_web&refresh_token=" + refreshTokenOld;
-            Response response = NetWorkUtil.post(url, args, NetWorkUtil.webHeaders);
-            JSONObject result = new JSONObject(Objects.requireNonNull(response.body()).string());
+    private static boolean refreshCookie(String refreshCsrf, String oldCookies, String oldToken)
+            throws JSONException, IOException {
+        if (refreshCsrf.isEmpty() || oldToken.isEmpty() || !isCurrent(oldCookies, oldToken)) return false;
+        String url = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh";
+        String args = new NetWorkUtil.FormData()
+                .put("csrf", NetWorkUtil.getInfoFromCookie("bili_jct", oldCookies))
+                .put("refresh_csrf", refreshCsrf).put("source", "main_web")
+                .put("refresh_token", oldToken).toString();
+        String newToken;
+        String newCookies;
+        try (Response response = NetWorkUtil.post(url, args, headersFor(oldCookies))) {
+            if (!response.isSuccessful() || response.body() == null)
+                throw new IOException("Refresh HTTP " + response.code());
+            JSONObject result = new JSONObject(response.body().string());
             if (result.getInt("code") != 0) {
                 Logu.e("Cookie刷新失败", "刷新时返回:" + result.getInt("code"));
-                restoreLoginState(cookies_old, refreshTokenOld);
                 return false;
             }
-
-            String refreshToken_new = result.getJSONObject("data").getString("refresh_token");
-            Logu.v("新的RefreshToken", refreshToken_new);
-
-            String cookies_new = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
-            Logu.v("新的cookies", cookies_new);
-            String newMid = NetWorkUtil.getInfoFromCookie("DedeUserID", cookies_new);
-            String newCsrf = NetWorkUtil.getInfoFromCookie("bili_jct", cookies_new);
-            if (newMid.isEmpty() || newCsrf.isEmpty()
-                    || NetWorkUtil.getInfoFromCookie("SESSDATA", cookies_new).isEmpty()) {
-                restoreLoginState(cookies_old, refreshTokenOld);
-                return false;
-            }
-
-            int confirmCode = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(
-                    "https://passport.bilibili.com/x/passport-login/web/confirm/refresh",
-                    "csrf=" + newCsrf + "&refresh_token=" + refreshTokenOld,
-                    NetWorkUtil.webHeaders).body()).string()).getInt("code");
-            if (confirmCode != 0) { //必须要等确认更新Cookie成功，不然就无法完成Cookie的刷新
-                Logu.e("Cookie刷新失败", "确认刷新时返回:" + confirmCode);
-                restoreLoginState(cookies_old, refreshTokenOld);
-                return false;
-            }
-            SharedPreferencesUtil.putString(SharedPreferencesUtil.refresh_token, refreshToken_new);
-            SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, Long.parseLong(newMid));
-            SharedPreferencesUtil.putString(SharedPreferencesUtil.csrf, newCsrf);
-            SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.cookie_refresh, true);
-            Logu.v("Cookie刷新成功");
-            NetWorkUtil.refreshHeaders();
-            return true;
-        } catch (JSONException | IOException | RuntimeException error) {
-            restoreLoginState(cookies_old, refreshTokenOld);
-            throw error;
+            newToken = result.getJSONObject("data").getString("refresh_token");
+            String issued = CookieMergeUtil.merge("", response.headers("Set-Cookie"), true);
+            if (NetWorkUtil.getInfoFromCookie("SESSDATA", issued).isEmpty()
+                    || NetWorkUtil.getInfoFromCookie("bili_jct", issued).isEmpty()
+                    || !NetWorkUtil.getInfoFromCookie("DedeUserID", oldCookies).equals(
+                            NetWorkUtil.getInfoFromCookie("DedeUserID", issued))) return false;
+            newCookies = CookieMergeUtil.merge(oldCookies, response.headers("Set-Cookie"), true);
         }
+        // The server already issued the new pair. A lost confirmation must not roll it back.
+        if (!AccountManager.replaceRefreshedSession(oldCookies, oldToken, newCookies, newToken)) return false;
+        confirmPendingRefresh();
+        Logu.v("Cookie刷新", "新凭据已保存");
+        return true;
     }
 
-    private static void restoreLoginState(String cookies, String refreshToken) {
-        SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, cookies);
-        SharedPreferencesUtil.putString(SharedPreferencesUtil.refresh_token, refreshToken);
-        SharedPreferencesUtil.putString(SharedPreferencesUtil.csrf,
-                NetWorkUtil.getInfoFromCookie("bili_jct", cookies));
-        String mid = NetWorkUtil.getInfoFromCookie("DedeUserID", cookies);
-        if (!mid.isEmpty()) {
-            try {
-                SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, Long.parseLong(mid));
-            } catch (NumberFormatException ignored) {
-            }
+    public static synchronized boolean refreshIfNeeded() throws IOException, JSONException {
+        AccountManager.restoreCurrentAccount();
+        if (!confirmPendingRefresh()) return false;
+        String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        String token = SharedPreferencesUtil.getString(SharedPreferencesUtil.refresh_token, "");
+        if (token.isEmpty() || NetWorkUtil.getInfoFromCookie("SESSDATA", cookies).isEmpty()) return false;
+        JSONObject info = NetWorkUtil.getJson(
+                "https://passport.bilibili.com/x/passport-login/web/cookie/info", headersFor(cookies));
+        JSONObject data = info.optJSONObject("data");
+        if (info.optInt("code", -1) != 0 || data == null || !data.optBoolean("refresh")) return false;
+        String path = getCorrespondPath(data.getLong("timestamp"));
+        if (path.isEmpty() || !isCurrent(cookies, token)) return false;
+        String refreshCsrf;
+        try (Response response = NetWorkUtil.get("https://www.bilibili.com/correspond/1/" + path,
+                headersFor(cookies))) {
+            if (!response.isSuccessful() || response.body() == null) return false;
+            Document document = Jsoup.parse(response.body().string());
+            if (document.select("#1-name").isEmpty()) return false;
+            refreshCsrf = document.select("#1-name").get(0).text();
         }
-        SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.cookie_refresh, true);
-        NetWorkUtil.refreshHeaders();
+        return refreshCookie(refreshCsrf, cookies, token);
+    }
+
+    public static synchronized boolean confirmPendingRefresh() {
+        String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        String oldToken = SharedPreferencesUtil.getString(AccountManager.PENDING_CONFIRM_KEY, "");
+        if (oldToken.isEmpty()) return true;
+        try (Response response = NetWorkUtil.post(
+                "https://passport.bilibili.com/x/passport-login/web/confirm/refresh",
+                new NetWorkUtil.FormData()
+                        .put("csrf", NetWorkUtil.getInfoFromCookie("bili_jct", cookies))
+                        .put("refresh_token", oldToken).toString(), headersFor(cookies))) {
+            if (response.isSuccessful() && response.body() != null
+                    && new JSONObject(response.body().string()).optInt("code", -1) == 0) {
+                AccountManager.finishRefreshConfirmation(cookies, oldToken);
+                return true;
+            }
+        } catch (Exception error) {
+            Logu.e("Cookie刷新", "确认暂时失败，保留新凭据: " + error.getClass().getSimpleName());
+        }
+        return false;
+    }
+
+    private static boolean isCurrent(String cookies, String token) {
+        return AccountManager.sameSession(cookies, SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""))
+                && token.equals(SharedPreferencesUtil.getString(SharedPreferencesUtil.refresh_token, ""));
+    }
+
+    private static ArrayList<String> headersFor(String cookies) {
+        ArrayList<String> headers = new ArrayList<>(NetWorkUtil.webHeaders);
+        headers.set(1, cookies);
+        return headers;
     }
 
     public static String base16Encode(byte[] src) {

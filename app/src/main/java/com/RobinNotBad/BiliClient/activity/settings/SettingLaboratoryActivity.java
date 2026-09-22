@@ -109,20 +109,22 @@ public class SettingLaboratoryActivity extends RefreshListActivity {
                     + (VideoStorageUtil.MODE_SAF.equals(currentMode) ? "（当前）" : "")
                     + "\n可授权外置 SD 卡中的已有缓存目录";
         }
-        new AlertDialog.Builder(this)
+        AlertDialog storageDialog = new AlertDialog.Builder(this)
                 .setTitle("选择缓存存储位置")
                 .setItems(labels, (dialog, which) -> {
                     if (which < locations.size()) confirmFileStorageLocation(locations.get(which));
                     else launchSafDirectoryPicker();
                 })
                 .setNegativeButton("取消", null)
-                .show();
+                .create();
+        MsgUtil.prepareAlertDialog(storageDialog);
+        storageDialog.show();
     }
 
     private void confirmFileStorageLocation(FileUtil.StorageLocation location) {
         String message = "新的缓存会保存到：\n" + location.path
                 + "\n\n已有缓存不会自动迁移。应用卸载时，该目录中的缓存可能被系统删除。";
-        new AlertDialog.Builder(this)
+        AlertDialog confirmDialog = new AlertDialog.Builder(this)
                 .setTitle("切换缓存位置？")
                 .setMessage(message)
                 .setNegativeButton("取消", null)
@@ -135,7 +137,9 @@ public class SettingLaboratoryActivity extends RefreshListActivity {
                     MsgUtil.showMsg("缓存位置已切换");
                     recreate();
                 })
-                .show();
+                .create();
+        MsgUtil.prepareAlertDialog(confirmDialog);
+        confirmDialog.show();
     }
 
     private void launchSafDirectoryPicker() {

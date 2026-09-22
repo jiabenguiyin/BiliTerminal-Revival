@@ -55,6 +55,13 @@ public class DynamicApi {
         }
     }
 
+    /** Bilibili may briefly hide a dynamic immediately after it is published. */
+    public static class DynamicNotVisibleException extends JSONException {
+        public DynamicNotVisibleException(String message) {
+            super(message == null || message.isEmpty() ? "动态不可见" : message);
+        }
+    }
+
     /**
      * 发送纯文本动态
      *
@@ -141,6 +148,15 @@ public class DynamicApi {
     public static long publishTextContent(String content, Map<String, Long> atUserUid) throws JSONException, IOException {
         return publishComplex(parseAtContent(content, atUserUid), null, null, null,
                 1, null);
+    }
+
+    /** Publishes a text dynamic with already-uploaded image metadata. */
+    public static long publishTextContent(String content, Map<String, Long> atUserUid,
+                                          JSONArray pics) throws JSONException, IOException {
+        JSONArray contents = atUserUid == null || atUserUid.isEmpty()
+                ? new JSONArray().put(Content.create(content, 1, null))
+                : parseAtContent(content, atUserUid);
+        return publishComplex(contents, pics, null, null, 1, null);
     }
 
     /**
@@ -406,6 +422,7 @@ public class DynamicApi {
                 + "&web_location=333.1368";
 
         String signedUrl = ConfInfoApi.signWBI(DmImgParamUtil.getDmImgParamsUrl(url));
+        DynamicNotVisibleException lastNotVisible = null;
         for (int attempt = 0; attempt < DYNAMIC_DETAIL_SYNC_RETRY_COUNT; attempt++) {
             try {
                 Dynamic dynamic = parseDynamicDetailResponse(
@@ -416,11 +433,17 @@ public class DynamicApi {
                         getCompatDynamicJson("dynamic_detail", signedUrl, null)
                 );
                 if (dynamic != null) return dynamic;
+            } catch (DynamicNotVisibleException notVisible) {
+                lastNotVisible = notVisible;
             } catch (IOException | JSONException officialError) {
-                Dynamic dynamic = parseDynamicDetailResponse(
-                        getCompatDynamicJson("dynamic_detail", signedUrl, officialError)
-                );
-                if (dynamic != null) return dynamic;
+                try {
+                    Dynamic dynamic = parseDynamicDetailResponse(
+                            getCompatDynamicJson("dynamic_detail", signedUrl, officialError)
+                    );
+                    if (dynamic != null) return dynamic;
+                } catch (DynamicNotVisibleException notVisible) {
+                    lastNotVisible = notVisible;
+                }
             }
 
             if (attempt + 1 < DYNAMIC_DETAIL_SYNC_RETRY_COUNT) {
@@ -433,6 +456,7 @@ public class DynamicApi {
             }
         }
 
+        if (lastNotVisible != null) throw lastNotVisible;
         throw new DynamicSyncPendingException();
     }
 
@@ -449,7 +473,12 @@ public class DynamicApi {
 
     private static Dynamic parseDynamicDetailResponse(JSONObject result) throws JSONException {
         if (result.getInt("code") != 0) {
-            throw new JSONException(result.optString("message", "动态详情接口错误"));
+            String message = result.optString("message", result.optString("msg", "动态详情接口错误"));
+            if (message.contains("动态不可见") || message.contains("动态不存在")
+                    || message.contains("内容不可见")) {
+                throw new DynamicNotVisibleException(message);
+            }
+            throw new JSONException(message);
         }
         JSONObject data = result.optJSONObject("data");
         JSONObject item = data == null ? null : data.optJSONObject("item");
@@ -826,29 +855,87 @@ public class DynamicApi {
 
     private static LiveRoom analyzeLiveRcmd(JSONObject liveRcmd) {
         JSONObject contentJson = parseJsonObjectValue(liveRcmd.opt("content"));
-        JSONObject liveInfo = contentJson != null ? contentJson.optJSONObject("live_play_info") : null;
-        if (liveInfo == null && contentJson != null) liveInfo = contentJson;
-        if (liveInfo == null) liveInfo = liveRcmd.optJSONObject("live_play_info");
+        JSONObject liveInfo = findLiveInfo(contentJson);
+        if (liveInfo == null) liveInfo = findLiveInfo(liveRcmd);
         if (liveInfo == null) liveInfo = liveRcmd;
         return analyzeLiveInfo(liveInfo);
     }
 
     private static LiveRoom analyzeLiveInfo(JSONObject liveInfo) {
         LiveRoom room = new LiveRoom();
-        room.roomid = liveInfo.optLong("room_id", liveInfo.optLong("id"));
-        room.uid = liveInfo.optLong("uid");
-        room.title = liveInfo.optString("title");
-        room.uname = liveInfo.optString("uname", liveInfo.optString("name"));
-        room.cover = liveInfo.optString("cover", liveInfo.optString("user_cover", liveInfo.optString("keyframe")));
+        room.roomid = firstLong(liveInfo, "room_id", "roomid", "roomId", "room_id_str", "id");
+        room.uid = firstLong(liveInfo, "uid", "mid", "user_id", "anchor_id");
+        room.title = firstString(liveInfo, "title", "room_title", "live_title");
+        room.uname = firstString(liveInfo, "uname", "user_name", "anchor_name", "name");
+        room.cover = firstString(liveInfo, "cover", "user_cover", "cover_from_user", "show_cover", "keyframe");
         room.user_cover = liveInfo.optString("user_cover", room.cover);
         room.keyframe = liveInfo.optString("keyframe", room.cover);
-        room.online = liveInfo.optInt("online");
-        room.live_status = liveInfo.optInt("live_status", liveInfo.optInt("live_state"));
+        if (TextUtils.isEmpty(room.user_cover)) room.user_cover = room.cover;
+        if (TextUtils.isEmpty(room.keyframe)) room.keyframe = room.cover;
+        room.online = liveInfo.optInt("online", liveInfo.optInt("watched_num"));
+        room.live_status = liveInfo.optInt("live_status", liveInfo.optInt("live_state", 1));
         room.area_id = liveInfo.optInt("area_id");
         room.area_name = liveInfo.optString("area_name");
         room.area_parent_id = liveInfo.optInt("parent_area_id");
         room.area_parent_name = liveInfo.optString("parent_area_name");
         return room;
+    }
+
+    private static JSONObject findLiveInfo(JSONObject root) {
+        return findLiveInfo(root, 0);
+    }
+
+    private static JSONObject findLiveInfo(JSONObject root, int depth) {
+        if (root == null || depth > 5) return null;
+        if (hasLiveIdentity(root)) return root;
+
+        String[] preferredKeys = {
+                "live_play_info", "live_info", "room_info", "room", "live", "anchor_info"
+        };
+        for (String key : preferredKeys) {
+            JSONObject child = parseJsonObjectValue(root.opt(key));
+            JSONObject found = findLiveInfo(child, depth + 1);
+            if (found != null) return found;
+        }
+
+        java.util.Iterator<String> keys = root.keys();
+        while (keys.hasNext()) {
+            Object value = root.opt(keys.next());
+            JSONObject child = parseJsonObjectValue(value);
+            JSONObject found = findLiveInfo(child, depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static boolean hasLiveIdentity(JSONObject object) {
+        return firstLong(object, "room_id", "roomid", "roomId", "room_id_str") > 0
+                && (!TextUtils.isEmpty(firstString(object, "title", "room_title", "live_title"))
+                || !TextUtils.isEmpty(firstString(object, "cover", "user_cover", "keyframe")));
+    }
+
+    private static long firstLong(JSONObject object, String... keys) {
+        if (object == null) return 0;
+        for (String key : keys) {
+            Object value = object.opt(key);
+            if (value instanceof Number) {
+                long result = ((Number) value).longValue();
+                if (result > 0) return result;
+            } else if (value != null) {
+                long result = parseLong(String.valueOf(value));
+                if (result > 0) return result;
+            }
+        }
+        return 0;
+    }
+
+    private static String firstString(JSONObject object, String... keys) {
+        if (object == null) return "";
+        for (String key : keys) {
+            String value = object.optString(key, "").trim();
+            if (!value.isEmpty() && !"null".equalsIgnoreCase(value)) return value;
+        }
+        return "";
     }
 
     private static JSONObject parseJsonObjectValue(Object value) {

@@ -6,6 +6,7 @@ public class LocalVideo {
     public String cover;
     public String title;
     public String folderLocator;
+    public String progressFileLocator;
     public ArrayList<String> pageList;
     public ArrayList<String> pageFolderLocators;
     public ArrayList<String> videoFileList;

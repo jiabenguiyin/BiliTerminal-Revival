@@ -72,7 +72,7 @@
         android:textColor="@color/link"
         android:clickable="true"
         android:focusable="true"
-        android:background="?attr/selectableItemBackground"
+        android:background="@drawable/background_button_compat"
         app:layout_constraintBottom_toBottomOf="@+id/userFollowers"
         app:layout_constraintStart_toEndOf="@id/userFollowers"
         app:layout_constraintTop_toTopOf="@+id/userFollowers" />

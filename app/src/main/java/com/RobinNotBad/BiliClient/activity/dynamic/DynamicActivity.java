@@ -71,6 +71,7 @@ public class DynamicActivity extends RefreshMainActivity {
         Intent data = result.getData();
         if (code == RESULT_OK && data != null) {
             String text = data.getStringExtra("text");
+            String picsJson = data.getStringExtra("pics_json");
             CenterThreadPool.run(() -> {
                 try {
                     long dynId;
@@ -84,7 +85,9 @@ public class DynamicActivity extends RefreshMainActivity {
                             atUids.put(matchedString, uid);
                         }
                     }
-                    if (atUids.isEmpty()) {
+                    if (picsJson != null && !picsJson.isEmpty()) {
+                        dynId = DynamicApi.publishTextContent(text, atUids, new org.json.JSONArray(picsJson));
+                    } else if (atUids.isEmpty()) {
                         dynId = DynamicApi.publishTextContent(text);
                     } else {
                         dynId = DynamicApi.publishTextContent(text, atUids);
@@ -103,6 +106,8 @@ public class DynamicActivity extends RefreshMainActivity {
                                 });
                             } catch (DynamicApi.DynamicSyncPendingException e) {
                                 runOnUiThread(() -> MsgUtil.showMsgLong("发送成功，动态详情仍在同步，请稍后下拉刷新"));
+                            } catch (DynamicApi.DynamicNotVisibleException e) {
+                                runOnUiThread(() -> MsgUtil.showMsgLong("发送成功，动态正在同步，请稍后下拉刷新"));
                             } catch (Exception e) {
                                 MsgUtil.err(e);
                             }

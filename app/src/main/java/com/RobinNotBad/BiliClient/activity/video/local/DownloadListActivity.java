@@ -155,16 +155,11 @@ public class DownloadListActivity extends RefreshListActivity {
                                         }
                                         refreshList(false);
                                     } else {
-                                        DownloadService.setState(section.id, "none");
-                                        DownloadService.start(section.id);
+                                        DownloadService.retry(section.id);
                                     }
                                     return;
                                 }
-                                if (section.state.equals("error")) {
-                                    DownloadService.setState(section.id, "none");
-                                }
-
-                                DownloadService.start(section.id);
+                                DownloadService.retry(section.id);
                             }
                         });
                     }

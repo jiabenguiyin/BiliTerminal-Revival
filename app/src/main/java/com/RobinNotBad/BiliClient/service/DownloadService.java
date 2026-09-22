@@ -211,9 +211,9 @@ public class DownloadService extends Service {
                             toastState("下载封面");
                             result = downFile(section.url_cover, path.getOrCreateFile("cover.png", "image/png"));
                             if (result != NORMAL) {
-                                failed = true;
-                                exitCode = result;
-                                continue;
+                                // Cover art is optional metadata. A transient
+                                // cover-host failure must not block the video.
+                                Logu.d("下载封面失败，继续下载视频");
                             }
 
                             if (!section.isAudioOnly()) {
@@ -261,9 +261,7 @@ public class DownloadService extends Service {
                             if (cover.length() == 0L) {
                                 result = downFile(section.url_cover, cover);
                                 if (result != NORMAL) {
-                                    failed = true;
-                                    exitCode = result;
-                                    continue;
+                                    Logu.d("下载封面失败，继续下载视频");
                                 }
                             }
 
@@ -615,8 +613,10 @@ public class DownloadService extends Service {
                 notifyExit(exitMessage);
                 if (exitCode != NORMAL) {
                     setState(id, "none");
-                    if (exitCode == EXIT_DELETED || exitCode == ERR_FILE
-                            || exitCode == ERR_JSON || exitCode == ERR_DATABASE) {
+                    // Keep failed tasks and their partial files so the user can
+                    // retry from the download list. Only an explicit delete
+                    // is allowed to remove the task directory.
+                    if (exitCode == EXIT_DELETED) {
                         if (folder != null) folder.deleteRecursive();
                     }
                 }
@@ -759,6 +759,54 @@ public class DownloadService extends Service {
             if (database != null)
                 database.close();
         }
+    }
+
+    /**
+     * Prepare a failed task for a user-requested retry. Keep the video/audio
+     * payload so downFile() can resume, but discard metadata that may be
+     * truncated from the previous attempt.
+     */
+    public static void retry(long id) {
+        CenterThreadPool.run(() -> {
+            DownloadSection retrySection = findById(id);
+            if (retrySection == null) return;
+            try {
+                VideoStorageUtil.Node folder = retrySection.getStoragePath(BiliTerminal.context, false);
+                if (folder != null) {
+                    deleteChild(folder, ".DOWNLOADING");
+                    deleteChild(folder, "cover.png");
+                    deleteChild(folder, "danmaku.xml");
+                    VideoStorageUtil.Node subtitles = folder.find("subtitles");
+                    if (subtitles != null) subtitles.deleteRecursive();
+                }
+            } catch (IOException ignored) {
+            }
+            setState(id, "none");
+            start(id);
+        });
+    }
+
+    private static DownloadSection findById(long id) {
+        Cursor cursor = null;
+        SQLiteDatabase database = null;
+        try {
+            DownloadSqlHelper helper = new DownloadSqlHelper(BiliTerminal.context);
+            database = helper.getReadableDatabase();
+            cursor = database.rawQuery("select * from download where id=? limit 1",
+                    new String[]{String.valueOf(id)});
+            if (cursor != null && cursor.moveToFirst()) return new DownloadSection(cursor);
+        } catch (Exception e) {
+            MsgUtil.err(e);
+        } finally {
+            if (cursor != null) cursor.close();
+            if (database != null) database.close();
+        }
+        return null;
+    }
+
+    private static void deleteChild(VideoStorageUtil.Node folder, String name) {
+        VideoStorageUtil.Node child = folder.find(name);
+        if (child != null) child.deleteRecursive();
     }
 
     public static void resetInterruptedDownloads() {

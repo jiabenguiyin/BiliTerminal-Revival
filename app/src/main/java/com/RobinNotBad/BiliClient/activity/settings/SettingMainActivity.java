@@ -6,6 +6,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
 
@@ -139,25 +141,50 @@ public class SettingMainActivity extends InstanceActivity {
             });
 
             MaterialCardView uploadDiagnostics = findViewById(R.id.upload_diagnostics);
-            uploadDiagnostics.setOnClickListener(view -> new AlertDialog.Builder(this)
+            uploadDiagnostics.setOnClickListener(view -> {
+                AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this)
                     .setTitle("上传诊断日志？")
-                    .setMessage("将上传近期的启动、页面、中继、登录续期和播放器错误等技术信息。\n\n不包含账号、Cookie、搜索词、评论内容或视频标题。")
+                    .setMessage("将上传近期技术日志。\n\n不包含账号、Cookie、搜索词、评论内容或视频标题。")
                     .setNegativeButton("取消", null)
-                    .setPositiveButton("确认上传", (dialog, which) -> {
+                    .setPositiveButton("确认上传", (ignoredDialog, which) -> {
                         MsgUtil.showMsg("正在上传日志...");
-                        DiagnosticLogManager.uploadNow((success, uploadedEventCount) -> runOnUiThread(() -> {
+                        DiagnosticLogManager.uploadNow((success, uploadedEventCount, failureReason) -> runOnUiThread(() -> {
                             if (success) {
                                 MsgUtil.showMsg(uploadedEventCount == 0
                                         ? "暂无可上传的日志"
                                         : "日志上传成功，共 " + uploadedEventCount + " 条");
                             } else if (uploadedEventCount < 0) {
                                 MsgUtil.showMsg("日志正在上传，请稍候");
+                            } else if ("server".equals(failureReason)) {
+                                MsgUtil.showMsg("日志服务器未接受这批数据，日志已保留，请稍后重试");
                             } else {
-                                MsgUtil.showMsg("日志上传失败，请检查网络后重试");
+                                MsgUtil.showMsg("无法连接日志服务器，日志已保留，请稍后重试");
                             }
                         }));
-                    })
-                    .show());
+                    });
+                AlertDialog dialog = dialogBuilder.create();
+                dialog.setOnShowListener(ignored -> {
+                    // The global UI scale can make this confirmation dialog
+                    // exceed a watch's viewport and hide its action buttons.
+                    TextView message = dialog.findViewById(android.R.id.message);
+                    if (message != null) {
+                        message.setTextSize(12);
+                    }
+                    TextView title = dialog.findViewById(
+                            getResources().getIdentifier("alertTitle", "id", "android"));
+                    if (title != null) title.setTextSize(16);
+                    Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+                    Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+                    if (negative != null) negative.setTextSize(12);
+                    if (positive != null) positive.setTextSize(12);
+                    if (dialog.getWindow() != null) {
+                        int width = getResources().getDisplayMetrics().widthPixels;
+                        dialog.getWindow().setLayout((int) (width * 0.92f),
+                                android.view.WindowManager.LayoutParams.WRAP_CONTENT);
+                    }
+                });
+                dialog.show();
+            });
 
             //检查更新
             MaterialCardView checkUpdate = findViewById(R.id.checkupdate);

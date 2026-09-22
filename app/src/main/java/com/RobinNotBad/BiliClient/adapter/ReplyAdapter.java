@@ -66,6 +66,8 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     final int type;
     public int sort;
     public final int replyType;
+    private long highlightRpid = -1;
+    private final int highlightColor = Color.argb(110, 254, 103, 154);
     OnItemClickListener listener;
 
     public ReplyAdapter(Context context, ArrayList<Reply> replyList, long oid, long root, int type, int sort,
@@ -82,6 +84,17 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
 
     public void setOnSortSwitchListener(OnItemClickListener listener) {
         this.listener = listener;
+    }
+
+    public void setHighlightRpid(long rpid) {
+        highlightRpid = rpid > 0 ? rpid : -1;
+        notifyDataSetChanged();
+    }
+
+    public void clearHighlight() {
+        if (highlightRpid == -1) return;
+        highlightRpid = -1;
+        notifyDataSetChanged();
     }
 
     @NonNull
@@ -141,6 +154,12 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             Reply reply = replyList.get(realPosition);
             if (reply == null || reply.sender == null)
                 return;
+
+            if (reply.rpid == highlightRpid) {
+                replyHolder.itemView.setBackgroundColor(highlightColor);
+            } else {
+                replyHolder.itemView.setBackgroundColor(Color.TRANSPARENT);
+            }
 
             if (!GlideUtil.url(reply.sender.avatar).equals(replyHolder.lastAvatarUrl)) {
                 replyHolder.lastAvatarUrl = GlideUtil.url(reply.sender.avatar);
@@ -217,6 +236,12 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                         ContextCompat.getDrawable(context, R.drawable.icon_reply_like0), null, null, null);
             }
 
+            if (reply.hated) {
+                replyHolder.dislikeBtn.setColorFilter(Color.rgb(0xfe, 0x67, 0x9a));
+            } else {
+                replyHolder.dislikeBtn.clearColorFilter();
+            }
+
             if (reply.childCount != 0 && !(realPosition == 0 && isDetail)) {
                 replyHolder.childReplyCard.setVisibility(View.VISIBLE);
 
@@ -226,11 +251,11 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     replyHolder.childCount.setText("共" + reply.childCount + "条回复");
 
                 if (reply.childMsgList != null && replyHolder.childReplies != null) {
-                    int childCount = reply.childMsgList.size();
-                    int existingViewCount = replyHolder.childReplies.getChildCount();
-
-                    for (int i = 0; i < childCount; i++) {
-                        Reply child = reply.childMsgList.get(i);
+                    // This is a nested, dynamically-sized list inside a recycled
+                    // root-comment holder. Rebuild it on every bind so a holder
+                    // previously used by another root cannot show stale children.
+                    replyHolder.childReplies.removeAllViews();
+                    for (Reply child : reply.childMsgList) {
                         if (child == null || child.sender == null)
                             continue;
 
@@ -247,26 +272,24 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
 
                         childMsg.append("：").append(child.message);
 
-                        TextView textView;
-                        if (i < existingViewCount) {
-                            textView = (TextView) replyHolder.childReplies.getChildAt(i);
-                            textView.setVisibility(View.VISIBLE);
-                        } else {
-                            @SuppressLint("InflateParams")
-                            TextView newTextView = (TextView) LayoutInflater.from(context)
-                                    .inflate(R.layout.cell_reply_child, null);
-                            replyHolder.childReplies.addView(newTextView);
-                            textView = newTextView;
-                        }
+                        @SuppressLint("InflateParams")
+                        TextView textView = (TextView) LayoutInflater.from(context)
+                                .inflate(R.layout.cell_reply_child, null);
+                        replyHolder.childReplies.addView(textView);
                         textView.setText(childMsg);
+                        if (child.rpid == highlightRpid) {
+                            textView.setBackgroundColor(highlightColor);
+                        } else {
+                            // Child TextViews are reused when a root card is rebound.
+                            textView.setBackgroundColor(Color.TRANSPARENT);
+                        }
                     }
 
-                    for (int i = childCount; i < existingViewCount; i++) {
-                        replyHolder.childReplies.getChildAt(i).setVisibility(View.GONE);
-                    }
                 }
-            } else
+            } else {
                 replyHolder.childReplyCard.setVisibility(View.GONE);
+                if (replyHolder.childReplies != null) replyHolder.childReplies.removeAllViews();
+            }
 
             if (reply.upLiked)
                 replyHolder.upLiked.setVisibility(View.VISIBLE);
@@ -279,14 +302,17 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                 replyHolder.imageCard.setVisibility(View.VISIBLE);
                 replyHolder.imageCount.setVisibility(View.VISIBLE);
 
-                String firstImageUrl = GlideUtil.url(reply.pictureList.get(0));
+                String firstImageUrl = GlideUtil.url_card(reply.pictureList.get(0));
                 if (!firstImageUrl.equals(replyHolder.lastImageUrl)) {
                     replyHolder.lastImageUrl = firstImageUrl;
+                    // Reply rows can finish binding after their Activity has
+                    // been destroyed. Use the application lifecycle here so
+                    // Glide never tries to start a request from a dead Activity.
                     Glide.with(BiliTerminal.context).asDrawable().load(firstImageUrl)
                             .transition(GlideUtil.getTransitionOptions())
                             .placeholder(R.mipmap.placeholder)
                             .format(DecodeFormat.PREFER_RGB_565)
-                            .diskCacheStrategy(DiskCacheStrategy.NONE)
+                            .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                             .into(replyHolder.imageCard);
                 }
 
@@ -298,6 +324,9 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     context.startActivity(intent);
                 });
             } else {
+                replyHolder.lastImageUrl = "";
+                Glide.with(BiliTerminal.context).clear(replyHolder.imageCard);
+                replyHolder.imageCard.setImageResource(R.mipmap.placeholder);
                 replyHolder.imageCount.setVisibility(View.GONE);
                 replyHolder.imageCard.setVisibility(View.GONE);
             }
@@ -322,7 +351,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                 }
                 if (!reply.liked) {
                     try {
-                        if (ReplyApi.likeReply(oid, reply.rpid, true) == 0) {
+                        if (ReplyApi.likeReply(oid, reply.rpid, replyType, true) == 0) {
                             reply.liked = true;
                             ((Activity) context).runOnUiThread(() -> {
                                 MsgUtil.showMsg("点赞成功");
@@ -341,7 +370,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     }
                 } else {
                     try {
-                        if (ReplyApi.likeReply(oid, reply.rpid, false) == 0) {
+                        if (ReplyApi.likeReply(oid, reply.rpid, replyType, false) == 0) {
                             reply.liked = false;
                             ((Activity) context).runOnUiThread(() -> {
                                 MsgUtil.showMsg("取消成功");
@@ -358,6 +387,43 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
+                }
+            }));
+
+            replyHolder.dislikeBtn.setOnClickListener(view -> CenterThreadPool.run(() -> {
+                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) {
+                    ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg("还没有登录喵~"));
+                    return;
+                }
+
+                boolean targetAction = !reply.hated;
+                try {
+                    if (ReplyApi.hateReply(oid, reply.rpid, replyType, targetAction) == 0) {
+                        reply.hated = targetAction;
+                        if (targetAction && reply.liked) {
+                            reply.liked = false;
+                            if (reply.likeCount > 0) reply.likeCount--;
+                        }
+                        ((Activity) context).runOnUiThread(() -> {
+                            if (reply.hated) {
+                                replyHolder.dislikeBtn.setColorFilter(Color.rgb(0xfe, 0x67, 0x9a));
+                            } else {
+                                replyHolder.dislikeBtn.clearColorFilter();
+                            }
+                            if (reply.hated) {
+                                replyHolder.likeCount.setText(toWan(reply.likeCount));
+                                replyHolder.likeCount.setTextColor(Color.WHITE);
+                                replyHolder.likeCount.setCompoundDrawablesWithIntrinsicBounds(
+                                        ContextCompat.getDrawable(context, R.drawable.icon_reply_like0), null, null, null);
+                            }
+                            MsgUtil.showMsg(reply.hated ? "点踩成功" : "取消点踩成功");
+                        });
+                    } else {
+                        ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg(
+                                targetAction ? "点踩失败" : "取消点踩失败"));
+                    }
+                } catch (IOException | JSONException e) {
+                    ((Activity) context).runOnUiThread(() -> MsgUtil.err(e));
                 }
             }));
 
@@ -442,6 +508,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             ReplyHolder replyHolder = (ReplyHolder) holder;
             replyHolder.lastAvatarUrl = null;
             replyHolder.lastImageUrl = null;
+            if (replyHolder.childReplies != null) replyHolder.childReplies.removeAllViews();
         }
         super.onViewRecycled(holder);
     }

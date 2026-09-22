@@ -8,6 +8,7 @@ import android.os.Process;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.StyleSpan;
+import android.view.View;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -35,11 +36,13 @@ public class CatchActivity extends BaseActivity {
         TextView reason_view = findViewById(R.id.catch_reason);
         TextView stack_view = findViewById(R.id.stack);
         MaterialButton btn_upload = findViewById(R.id.upload_btn);
+        TextView upload_result = findViewById(R.id.upload_result);
 
         Intent intent = getIntent();
         String stack = intent.getStringExtra("stack");
 
         stack_view.setText(stack);
+        stack_view.setMaxHeight(Math.max(96, Math.round(getResources().getDisplayMetrics().heightPixels * 0.28f)));
 
         findViewById(R.id.exit_btn).setOnClickListener(view -> System.exit(-1));
 
@@ -62,22 +65,31 @@ public class CatchActivity extends BaseActivity {
 
             if (allow_upload) btn_upload.setOnClickListener(view -> {
                 btn_upload.setEnabled(false);
-                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, -1) == -1)
+                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, -1) <= 0) {
+                    btn_upload.setEnabled(true);
                     MsgUtil.toast("我们不对未登录时遇到的问题负责\n——除非它真的经常出现且非常影响使用");
+                }
                 else {
                     CenterThreadPool.run(() -> {
                         ApiResult res = AppInfoApi.uploadStack(stack, this);
                         runOnUiThread(() -> {
+                            upload_result.setVisibility(View.VISIBLE);
                             if (res.code >= 0)
-                                btn_upload.setText("请带着你的报错ID：" + res.code + "\n和你崩溃前进行的操作\n去找开发者\n（提醒：开发者不保证会修好也不保证随时回复你）");
-                            else btn_upload.setText(res.message);
+                                upload_result.setText("报错 ID：" + res.code
+                                        + "\n请带着这个 ID 和崩溃前的操作去找开发者。");
+                            else upload_result.setText(res.message);
 
                             if (res.code == -1) btn_upload.setEnabled(true);
                         });
                     });
                 }
             });
-            else btn_upload.setText("此类型报错不可上传\n非特殊情况请勿打扰开发者谢谢喵");
+            else {
+                btn_upload.setText("不可上传");
+                btn_upload.setEnabled(false);
+                upload_result.setVisibility(View.VISIBLE);
+                upload_result.setText("此类型报错不可上传。\n非特殊情况请勿打扰开发者，谢谢喵。");
+            }
 
         } else finish();
 
@@ -95,8 +107,17 @@ public class CatchActivity extends BaseActivity {
 
         stack_view.setOnClickListener(view -> {
             openStack = !openStack;
-            if (openStack) stack_view.setMaxLines(200);
-            else stack_view.setMaxLines(5);
+            if (openStack) {
+                stack_view.setMaxLines(Integer.MAX_VALUE);
+                stack_view.setMaxHeight(Math.max(96,
+                        Math.round(getResources().getDisplayMetrics().heightPixels * 0.28f)));
+                stack_view.setVerticalScrollBarEnabled(true);
+            } else {
+                stack_view.setMaxLines(5);
+                stack_view.setMaxHeight(Math.max(96,
+                        Math.round(getResources().getDisplayMetrics().heightPixels * 0.28f)));
+                stack_view.setVerticalScrollBarEnabled(false);
+            }
         });
 
         StringUtil.setCopy(stack_view);

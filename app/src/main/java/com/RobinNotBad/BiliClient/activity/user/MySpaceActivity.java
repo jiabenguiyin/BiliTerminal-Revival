@@ -16,10 +16,10 @@ import com.RobinNotBad.BiliClient.activity.user.favorite.FavoriteFolderListActiv
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
 import com.RobinNotBad.BiliClient.api.UserInfoApi;
 import com.RobinNotBad.BiliClient.model.UserInfo;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
-import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.StringUtil;
 import com.bumptech.glide.Glide;
@@ -31,10 +31,23 @@ public class MySpaceActivity extends InstanceActivity {
 
     private ImageView userAvatar;
     private TextView userName, userFans, userExp;
-    private MaterialCardView myInfo, follow, watchLater, favorite, bangumi, history, creative, vip, loginRecord, logout;
+    private MaterialCardView myInfo, editProfile, follow, watchLater, favorite, bangumi, history, creative, vip, accountSwitch, loginRecord, logout;
 
     private boolean confirmLogout = false;
     private volatile boolean loadingProfile = false;
+    private int profileGeneration;
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (myInfo != null) loadProfile();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 1001 && resultCode == RESULT_OK) loadProfile();
+    }
 
     @SuppressLint({"SetTextI18n", "InflateParams"})
     @Override
@@ -50,6 +63,7 @@ public class MySpaceActivity extends InstanceActivity {
             userExp = findViewById(R.id.userExp);
 
             myInfo = findViewById(R.id.myinfo);
+            editProfile = findViewById(R.id.edit_profile);
             follow = findViewById(R.id.follow);
             watchLater = findViewById(R.id.watchlater);
             favorite = findViewById(R.id.favorite);
@@ -57,6 +71,7 @@ public class MySpaceActivity extends InstanceActivity {
             history = findViewById(R.id.history);
             creative = findViewById(R.id.creative);
             vip = findViewById(R.id.vip);
+            accountSwitch = findViewById(R.id.account_switch);
             loginRecord = findViewById(R.id.login_record);
             logout = findViewById(R.id.logout);
 
@@ -72,6 +87,8 @@ public class MySpaceActivity extends InstanceActivity {
     }
 
     private void bindStaticActions() {
+        editProfile.setOnClickListener(view -> startActivityForResult(
+                new Intent(this, EditProfileActivity.class), 1001));
         watchLater.setOnClickListener(view -> startActivity(new Intent(this, WatchLaterActivity.class)));
         favorite.setOnClickListener(view -> startActivity(new Intent(this, FavoriteFolderListActivity.class)));
         bangumi.setOnClickListener(view -> startActivity(new Intent(this, FollowingBangumisActivity.class)));
@@ -80,11 +97,14 @@ public class MySpaceActivity extends InstanceActivity {
         if (!SharedPreferencesUtil.getBoolean("creative_enable", true))
             creative.setVisibility(View.GONE);
         vip.setOnClickListener(view -> startActivity(new Intent(this, VipActivity.class)));
+        accountSwitch.setOnClickListener(view -> startActivity(new Intent(this, AccountSwitchActivity.class)));
         loginRecord.setOnClickListener(view -> startActivity(new Intent(this, LoginRecordActivity.class)));
         logout.setOnClickListener(view -> {
             if (confirmLogout) {
-                CenterThreadPool.run(UserInfoApi::exitLogin);
+                String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+                profileGeneration++;
                 clearLocalLoginState();
+                CenterThreadPool.run(() -> UserInfoApi.exitLogin(cookies));
                 MsgUtil.showMsg("账号已退出");
                 startActivity(new Intent(this, LoginActivity.class));
                 finish();
@@ -96,34 +116,45 @@ public class MySpaceActivity extends InstanceActivity {
     }
 
     private void loadProfile() {
-        if (loadingProfile) return;
-        if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) {
-            showLoginExpired();
+        if (loadingProfile) {
+            MsgUtil.showMsg("正在恢复登录状态，请稍候");
             return;
         }
         loadingProfile = true;
+        final int generation = ++profileGeneration;
+        // Repair the active session before the first profile request. This is
+        // important after process death, when only the saved-account record may
+        // still contain the usable cookie pair.
+        AccountManager.restoreCurrentAccount();
         userName.setText("加载中...");
         userFans.setText("");
         userExp.setText("");
-        myInfo.setOnClickListener(null);
+        setProfileAction(view -> loadProfile());
 
         CenterThreadPool.run(() -> {
             try {
                 UserInfo userInfo = UserInfoApi.getCurrentUserInfo();
                 int userCoin = UserInfoApi.getCurrentUserCoin();
-                loadingProfile = false;
-                if (isActivityAlive()) runOnUiThread(() -> bindProfile(userInfo, userCoin));
+                if (isActivityAlive()) runOnUiThread(() -> {
+                    loadingProfile = false;
+                    if (generation != profileGeneration || userInfo.mid !=
+                            SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) return;
+                    bindProfile(userInfo, userCoin);
+                });
             } catch (UserInfoApi.LoginExpiredException error) {
-                loadingProfile = false;
-                if (isActivityAlive()) runOnUiThread(this::showLoginExpired);
+                if (isActivityAlive()) runOnUiThread(() -> {
+                    loadingProfile = false;
+                    if (generation == profileGeneration) showLoginExpired();
+                });
             } catch (Exception error) {
-                loadingProfile = false;
                 Log.e("MySpace", "个人资料加载失败", error);
                 if (isActivityAlive()) runOnUiThread(() -> {
+                    loadingProfile = false;
+                    if (generation != profileGeneration) return;
                     userName.setText("资料加载失败");
                     userFans.setText("点击头像重试");
                     userExp.setText("");
-                    myInfo.setOnClickListener(view -> loadProfile());
+                    setProfileAction(view -> loadProfile());
                     MsgUtil.showMsg("资料加载失败，请检查网络后重试");
                 });
             }
@@ -142,10 +173,11 @@ public class MySpaceActivity extends InstanceActivity {
                 .diskCacheStrategy(DiskCacheStrategy.NONE)
                 .into(userAvatar);
         userName.setText(userInfo.name);
+        AccountManager.updateCurrentProfile(userInfo);
         userFans.setText(StringUtil.toWan(userInfo.fans) + "粉丝 " + userCoin + "硬币");
         userExp.setText("EXP:" + userInfo.current_exp
                 + (userInfo.level >= 6 ? "" : "/" + userInfo.next_exp));
-        myInfo.setOnClickListener(view -> startActivity(new Intent(this, UserInfoActivity.class)
+        setProfileAction(view -> startActivity(new Intent(this, UserInfoActivity.class)
                 .putExtra("mid", userInfo.mid)));
         follow.setOnClickListener(view -> startActivity(new Intent(this, FollowUsersActivity.class)
                 .putExtra("mid", userInfo.mid)
@@ -153,19 +185,31 @@ public class MySpaceActivity extends InstanceActivity {
     }
 
     private void showLoginExpired() {
-        clearLocalLoginState();
-        MsgUtil.showMsg("登录状态已失效，请重新登录");
-        startActivity(new Intent(this, LoginActivity.class));
-        finish();
+        // Keep the local session. A failed confirmation can be caused by a
+        // transient route, relay, risk-control response, or device clock.
+        // Only the explicit logout action may remove credentials.
+        userName.setText("登录状态未恢复");
+        userFans.setText("账号信息已保留");
+        userExp.setText("");
+        // The avatar is the visible retry affordance on the watch-sized layout.
+        // Retry directly so recovery does not depend on a dialog button being
+        // visible or clickable on a narrow screen.
+        setProfileAction(view -> loadProfile());
+    }
+
+    private void setProfileAction(View.OnClickListener listener) {
+        myInfo.setOnClickListener(listener);
+        userAvatar.setOnClickListener(listener);
+    }
+
+    @Override
+    protected void onDestroy() {
+        profileGeneration++;
+        super.onDestroy();
     }
 
     private void clearLocalLoginState() {
-        SharedPreferencesUtil.removeValue(SharedPreferencesUtil.cookies);
-        SharedPreferencesUtil.removeValue(SharedPreferencesUtil.mid);
-        SharedPreferencesUtil.removeValue(SharedPreferencesUtil.csrf);
-        SharedPreferencesUtil.removeValue(SharedPreferencesUtil.refresh_token);
-        SharedPreferencesUtil.removeValue(SharedPreferencesUtil.cookie_refresh);
-        NetWorkUtil.refreshHeaders();
+        AccountManager.removeCurrentAccountAndCredentials();
     }
 
     private boolean isActivityAlive() {

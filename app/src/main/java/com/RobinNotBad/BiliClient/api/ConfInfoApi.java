@@ -81,7 +81,7 @@ public class ConfInfoApi {
 
         String wts = String.valueOf(System.currentTimeMillis() / 1000);
         String calc_str = sortUrlParams(Uri.encode(url_query, "@#&=*+-_.,:!?()/~'%") + "&wts=" + wts) + mixin_key;
-        Logu.d(calc_str);
+        Logu.d("WBI", "签名参数已生成");
 
         String w_rid = ToolsUtil.md5(calc_str);
 

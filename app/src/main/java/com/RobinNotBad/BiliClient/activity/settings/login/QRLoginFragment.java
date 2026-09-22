@@ -22,6 +22,7 @@ import com.RobinNotBad.BiliClient.activity.SplashActivity;
 import com.RobinNotBad.BiliClient.activity.base.InstanceActivity;
 import com.RobinNotBad.BiliClient.api.CookiesApi;
 import com.RobinNotBad.BiliClient.api.LoginApi;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
@@ -187,9 +188,8 @@ public class QRLoginFragment extends Fragment {
 
                     String str = response.body().string();
                     JSONObject loginJson = new JSONObject(str);
-                    Logu.v("login_state", str);
-
                     int code = loginJson.getJSONObject("data").getInt("code");
+                    Logu.v("login_state", "code=" + code);
                     switch (code) {
                         case 86090:
                             CenterThreadPool.runOnUiThread(() -> scanStat.setText("已扫描，请在手机上点击登录"));
@@ -209,16 +209,15 @@ public class QRLoginFragment extends Fragment {
                             CenterThreadPool.runOnUiThread(() -> scanStat.setText("正在处理登录……"));
                             String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
 
-                            SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, Long.parseLong(NetWorkUtil.getInfoFromCookie("DedeUserID", cookies)));
-                            SharedPreferencesUtil.putString(SharedPreferencesUtil.csrf, NetWorkUtil.getInfoFromCookie("bili_jct", cookies));
-                            SharedPreferencesUtil.putString(SharedPreferencesUtil.refresh_token, loginJson.getJSONObject("data").getString("refresh_token"));
-
-                            SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.cookie_refresh, true);
+                            if (!AccountManager.saveLogin(cookies, response.headers("Set-Cookie"),
+                                    loginJson.getJSONObject("data").getString("refresh_token"))) {
+                                CenterThreadPool.runOnUiThread(() ->
+                                        scanStat.setText("登录信息保存失败，请重新扫码"));
+                                return;
+                            }
 
                             InstanceActivity instance = BiliTerminal.getInstanceActivityOnTop();
                             if (instance != null && !instance.isDestroyed()) instance.finish();
-
-                            NetWorkUtil.refreshHeaders();
 
                             LoginApi.requestSSOs();
                             if (loginJson.getJSONObject("data").has("url")) {

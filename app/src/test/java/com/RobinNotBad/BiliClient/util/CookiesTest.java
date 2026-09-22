@@ -15,6 +15,16 @@ public class CookiesTest {
     }
 
     @Test
+    public void treatsCookieNamesCaseInsensitivelyWhenRefreshing() {
+        Cookies cookies = new Cookies("SESSDATA=old; bili_jct=old-csrf");
+        cookies.set("sessdata", "new");
+        cookies.set("BILI_JCT", "new-csrf");
+        assertEquals("new", cookies.get("SESSDATA"));
+        assertEquals("new-csrf", cookies.get("bili_jct"));
+        assertEquals("SESSDATA=new; bili_jct=new-csrf", cookies.toString());
+    }
+
+    @Test
     public void relayCanMergePassportCookiesWithoutErasingExistingLogin() {
         String existing = "SESSDATA=old; bili_jct=old-csrf; buvid3=device";
         String merged = CookieMergeUtil.merge(existing, Arrays.asList(

@@ -5,6 +5,7 @@ import static com.RobinNotBad.BiliClient.util.NetWorkUtil.USER_AGENT_WEB;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -23,6 +24,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -58,12 +60,14 @@ import com.RobinNotBad.BiliClient.api.PlayerApi;
 import com.RobinNotBad.BiliClient.api.VideoInfoApi;
 import com.RobinNotBad.BiliClient.event.SnackEvent;
 import com.RobinNotBad.BiliClient.model.DmSegMobileReply;
+import com.RobinNotBad.BiliClient.model.DashData;
 import com.RobinNotBad.BiliClient.model.HighEnergyData;
 import com.RobinNotBad.BiliClient.model.InteractionVideoData;
 import com.RobinNotBad.BiliClient.model.PlayerData;
 import com.RobinNotBad.BiliClient.model.Subtitle;
 import com.RobinNotBad.BiliClient.model.SubtitleLink;
 import com.RobinNotBad.BiliClient.model.ViewPoint;
+import com.RobinNotBad.BiliClient.player.DanmakuWindowLoader;
 import com.RobinNotBad.BiliClient.service.PlaybackKeepAliveService;
 import com.RobinNotBad.BiliClient.ui.widget.BatteryView;
 import com.RobinNotBad.BiliClient.ui.widget.HighEnergyProgressBar;
@@ -71,11 +75,16 @@ import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
 import com.RobinNotBad.BiliClient.util.BackgroundPlaybackPolicy;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
+import com.RobinNotBad.BiliClient.util.DeviceProfile;
+import com.RobinNotBad.BiliClient.util.DanmakuClock;
+import com.RobinNotBad.BiliClient.util.ForegroundRestorePolicy;
+import com.RobinNotBad.BiliClient.util.HighEnergyDataBuilder;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.PlaybackProgressGuard;
 import com.RobinNotBad.BiliClient.util.PlayerCompatibilityUtil;
+import com.RobinNotBad.BiliClient.util.PlayerSettingsUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.StringUtil;
 import com.RobinNotBad.BiliClient.util.ToolsUtil;
@@ -90,8 +99,14 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -107,6 +122,7 @@ import master.flame.danmaku.danmaku.loader.android.DanmakuLoaderFactory;
 import master.flame.danmaku.danmaku.model.BaseDanmaku;
 import master.flame.danmaku.danmaku.model.DanmakuTimer;
 import master.flame.danmaku.danmaku.model.IDisplayer;
+import master.flame.danmaku.danmaku.model.IDanmakuIterator;
 import master.flame.danmaku.danmaku.model.android.DanmakuContext;
 import master.flame.danmaku.danmaku.model.android.Danmakus;
 import master.flame.danmaku.danmaku.parser.BaseDanmakuParser;
@@ -119,22 +135,36 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okio.BufferedSink;
 import okio.Okio;
-import okio.Sink;
 import tv.danmaku.ijk.media.player.AndroidMediaPlayer;
 import tv.danmaku.ijk.media.player.IMediaPlayer;
 import tv.danmaku.ijk.media.player.IjkMediaPlayer;
+import com.RobinNotBad.BiliClient.player.UnifiedDashPlayer;
+import com.RobinNotBad.BiliClient.player.UnifiedDashPlayerFactory;
 
 public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedListener {
-    private static final long PLAYBACK_PREPARE_TIMEOUT_MS = 10_000L;
-    private boolean destroyed = false;
+    private static final long PLAYBACK_PRIMARY_TIMEOUT_MS = 20_000L;
+    private static final long PLAYBACK_FINAL_TIMEOUT_MS = 45_000L;
+    private static final long DASH_START_HEADSTART_MS = 180L;
+    private static final long DASH_DRIFT_CORRECTION_THRESHOLD_MS = 350L;
+    private static final long DASH_DRIFT_CHECK_INTERVAL_MS = 2500L;
+    /** DASH can remain in BUFFERING without reporting an error when a CDN/relay stalls. */
+    private static final long UNIFIED_BUFFERING_FALLBACK_DELAY_MS = 8000L;
+    /** 1.1.6: 音频轨运行时网络恢复窗口（后台播放/听视频载入失败修复）。 */
+    private static final long AUDIO_RUNTIME_RETRY_DELAY_MS = 2500L;
+    private static final int AUDIO_RUNTIME_MAX_RETRIES = 2;
+    private volatile boolean destroyed = false;
 
     private IMediaPlayer ijkPlayer;
+    private IMediaPlayer dashAudioPlayer;
     private IDanmakuView mDanmakuView;
     private DanmakuContext mContext;
 
     private SurfaceView surfaceView;
     private TextureView textureView;
     private SurfaceTexture mSurfaceTexture;
+    private Surface textureSurface;
+    private boolean videoOutputDetached = false;
+    private boolean restoreFrameOnNextSurface = false;
 
     private SubtitleLink[] subtitleLinks = null;
     private Subtitle[] subtitles = null;
@@ -153,20 +183,68 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             btn_audio_only, btn_page_selector, btn_auto_next, btn_quality, btn_viewpoint, btn_debug;
     private HighEnergyProgressBar seekbar_progress;
     private SeekBar seekbar_speed;
-    private TextView text_progress, text_online, text_volume, loading_text0, loading_text1, text_speed, text_newspeed;
+    private TextView text_progress, text_online, text_volume, loading_text0, loading_text1, text_speed, text_newspeed, swipe_seek_hint;
     public TextView text_title, text_subtitle, text_audio_title, text_audio_subtitle;
 
     private Timer progressTimer, speedTimer, loadingTimer, onlineTimer, surfaceTimer;
     private Handler mainHandler;
     private Runnable danmakuSyncRunnable;
-    private String video_url, danmaku_url;
+    private Runnable bufferingUiRunnable;
+    private Runnable unifiedBufferingFallbackRunnable;
+    private boolean bufferingUiShown = false;
+    /** Keeps danmaku time moving without querying the media layer on every draw frame. */
+    private final DanmakuClock danmakuClock = new DanmakuClock();
+    private long lastDanmakuClockSyncAt = -1L;
+    /** 1.1.6: 音频轨运行时恢复重试计数（新视频加载时清零）。 */
+    private int audioRuntimeRetryCount = 0;
+    /** 1.1.6: 本地缓存视频同源重试标记（每个视频一次）。 */
+    private boolean localSourceRetried = false;
+    private String video_url, audio_url, danmaku_url;
+    private final ArrayList<String> playbackUrls = new ArrayList<>();
+    private final ArrayList<String> audioPlaybackUrls = new ArrayList<>();
+    private int playbackUrlIndex = 0;
+    private int audioPlaybackUrlIndex = 0;
+    private int audioPrepareAttempt = 0;
+    private boolean videoTrackPrepared = false;
+    private boolean audioTrackPrepared = false;
+    private boolean preparationFinalized = false;
+    private boolean resumeAfterPrepare = true;
+    private long lastDashAudioSyncAt = 0L;
+    private long suppressDashDriftUntil = 0L;
+    private boolean audioRenderingStarted = false;
+    private boolean videoRenderingStarted = false;
+    private boolean dashVideoStarted = false;
+    private boolean dashPlaybackStartedOnce = false;
+    private boolean videoTrackBuffering = false;
+    private boolean audioTrackBuffering = false;
+    private long videoBufferingStartedAt = -1L;
+    private boolean videoSeekPending = false;
+    private boolean audioSeekPending = false;
+    private long pendingVideoSeekPosition = -1L;
+    private long pendingAudioSeekPosition = -1L;
+    private long queuedSynchronizedSeekPosition = -1L;
+    private boolean audioOnlySynchronizedSeek = false;
+    private boolean resumeAfterSynchronizedSeek = false;
+    private int synchronizedSeekGeneration = 0;
+    private int dashStartGeneration = 0;
+    private float currentPlaybackSpeed = 1.0F;
+    private Runnable dashBufferingPauseRunnable;
+    private boolean dashBufferingPauseApplied = false;
+    private boolean dashAudioRecoveryPending = false;
     private String localSubtitleRoot = "";
     private PlayerMediaSessionController mediaSession;
 
     private boolean isPlaying, isPrepared, hasDanmaku,
             isOnlineVideo, isLiveMode, isSeeking, isDanmakuVisible;
+    private boolean danmakuLoadStarted;
+    private volatile int danmakuLoadGeneration;
+    private volatile DanmakuWindowLoader danmakuWindowLoader;
+    private Map<Integer, DmSegMobileReply> pendingDanmakuWindow;
+    private final HashSet<Integer> displayedDanmakuSegments = new HashSet<>();
+    private BiliProtobufDanmakuParser windowDanmakuParser;
+    private boolean unifiedPlayerFallbackAttempted = false;
+    private boolean forceCompatibilityPlayer = false;
     private boolean menu_opened = false;
-    private boolean relayRetryTried = false;
     private int playbackPrepareAttempt = 0;
     private boolean isAudioOnlyMode = false;
     private boolean isLocalAudioFile = false; // 标记是否为本地音频文件
@@ -174,26 +252,57 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private boolean backgroundLeaveRequested = false;
     private boolean backgroundPlaybackActive = false;
     private boolean backgroundTransitionSuppressed = false;
+    private boolean wasPlayingBeforePause = false;
+    private long foregroundRestorePosition = -1L;
+    private int foregroundRestoreGeneration = 0;
+    private boolean foregroundRestoreScheduled = false;
     private boolean hardwareCodecInUse = false;
+    /** 1.1.6: 硬解失败后置位，强制同 URL 软解重试（避免 -10000 后只能换源碰运气）。 */
+    private boolean forceSoftwareDecode = false;
     private boolean progressAnomalyReported = false;
 
     private int video_all, video_now, video_now_last;
     private long progress_history;
+    private String localProgressFolderLocator = "";
+    private VideoStorageUtil.Node localProgressFile;
+    private float swipeDownX, swipeDownY;
+    private boolean swipeSeeking;
+    private long swipeSeekStartPosition;
     private final PlaybackProgressGuard progressGuard = new PlaybackProgressGuard();
+    private final HighEnergyDataBuilder highEnergyDataBuilder = new HighEnergyDataBuilder();
+    private final HashSet<Integer> highEnergySegments = new HashSet<>();
+    private boolean highEnergyEnabled;
     private String progress_str;
 
     private int screen_width, screen_height;
     private int video_width, video_height;
 
     private AudioManager audioManager;
+    private int heldVolumeKeyCode = KeyEvent.KEYCODE_UNKNOWN;
+    private final Runnable hardwareVolumeRepeat = new Runnable() {
+        @Override
+        public void run() {
+            if (destroyed || mainHandler == null || !isPrepared
+                    || (heldVolumeKeyCode != KeyEvent.KEYCODE_VOLUME_UP
+                    && heldVolumeKeyCode != KeyEvent.KEYCODE_VOLUME_DOWN)) {
+                return;
+            }
+            changeVolume(heldVolumeKeyCode == KeyEvent.KEYCODE_VOLUME_UP);
+            mainHandler.postDelayed(this, 120L);
+        }
+    };
 
     private ScaleGestureDetector scaleGestureDetector;
     private ViewScaleGestureListener scaleGestureListener;
     private float previousX, previousY;
     private boolean gesture_moved, gesture_scaled, gesture_click_disabled;
+    /** Once a second pointer appears, this gesture stays in two-finger mode until it ends. */
+    private boolean multiTouchGesture;
     private float video_origX, video_origY;
     private long timestamp_click;
     private boolean onLongClick = false;
+    private boolean danmakuPausedByBuffering = false;
+    private int localRuntimeRetryCount = 0;
 
     private final float[] speed_values = {0.5F, 0.75F, 1.0F, 1.25F, 1.5F, 1.75F, 2.0F, 3.0F};
     private final String[] speed_strs = {"x 0.5", "x 0.75", "x 1.0", "x 1.25", "x 1.5", "x 1.75", "x 2.0", "x 3.0"};
@@ -245,14 +354,99 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
             return new AndroidMediaPlayer();
         }
-        IjkMediaPlayer.loadLibrariesOnce(null);
-        return new IjkMediaPlayer();
+        if (PlayerCompatibilityUtil.shouldUsePlatformMediaPlayer()) {
+            Logu.w("player", "native decoder ABI unavailable, using platform player");
+            return new AndroidMediaPlayer();
+        }
+        boolean useUnified = DeviceProfile.useUnifiedDashPlayer()
+                && !forceCompatibilityPlayer
+                && isOnlineVideo
+                && !isAudioOnlyMode
+                && audio_url != null && !audio_url.isEmpty();
+        Logu.v("player", "create=" + (useUnified ? "unified" : "compatibility")
+                + ", profile=" + DeviceProfile.get().name()
+                + ", audio=" + (audio_url == null ? 0 : audio_url.length())
+                + ", forcedCompat=" + forceCompatibilityPlayer);
+        if (useUnified) {
+            IMediaPlayer unifiedPlayer = UnifiedDashPlayerFactory.create(this, audio_url);
+            if (unifiedPlayer != null) return unifiedPlayer;
+            Logu.e("player", "unified player creation failed, using compatibility player");
+        }
+        try {
+            IjkMediaPlayer.loadLibrariesOnce(null);
+            // Native IJK info logs print request headers, including cookies and relay tokens.
+            IjkMediaPlayer.native_setLogLevel(IjkMediaPlayer.IJK_LOG_WARN);
+            return new IjkMediaPlayer();
+        } catch (UnsatisfiedLinkError | SecurityException error) {
+            Logu.e("player", "native decoder unavailable, using platform player: "
+                    + error.getClass().getSimpleName());
+            return new AndroidMediaPlayer();
+        }
     }
 
     private void setPlaybackSpeed(float speed) {
-        if (ijkPlayer instanceof IjkMediaPlayer) {
-            ((IjkMediaPlayer) ijkPlayer).setSpeed(speed);
+        if (destroyed) return;
+        boolean changed = Math.abs(currentPlaybackSpeed - speed) > 0.01F;
+        currentPlaybackSpeed = speed;
+        danmakuClock.setSpeed(speed, SystemClock.elapsedRealtime());
+        setPlayerSpeed(ijkPlayer, speed);
+        setPlayerSpeed(dashAudioPlayer, speed);
+        setDanmakuSpeed(speed);
+        if (changed && hasDashAudio() && isPrepared) {
+            suppressDashDriftUntil = SystemClock.elapsedRealtime() + 2500L;
+            final int generation = synchronizedSeekGeneration;
+            mainHandler.postDelayed(() -> {
+                if (destroyed || generation != synchronizedSeekGeneration || isSeeking
+                        || videoTrackBuffering || audioTrackBuffering) return;
+                alignDashAudioToVideo("speed_change", 900L);
+            }, 600L);
         }
+    }
+
+    private void setDanmakuSpeed(float speed) {
+        if (!hasDanmaku || mDanmakuView == null) return;
+        try {
+            // PlayerActivity's callback supplies the real video clock. Applying
+            // another speed factor inside DanmakuFlameMaster made speed changes
+            // compound and caused long gaps/disappearing danmaku on watches.
+            mDanmakuView.setSpeed(1.0F);
+        } catch (RuntimeException error) {
+            Logu.e("danmaku-speed", "同步弹幕倍速失败: " + error);
+        }
+    }
+
+    private void setPlayerSpeed(IMediaPlayer player, float speed) {
+        if (player instanceof UnifiedDashPlayer) {
+            ((UnifiedDashPlayer) player).setPlaybackSpeed(speed);
+            return;
+        }
+        if (!(player instanceof IjkMediaPlayer)) return;
+        try {
+            ((IjkMediaPlayer) player).setSpeed(speed);
+        } catch (RuntimeException error) {
+            Logu.e("player-speed", "切换倍速失败: " + error);
+        }
+    }
+
+    private int getPlayerMemoryClass() {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        return manager != null ? manager.getMemoryClass() : 0;
+    }
+
+    private void startLongPressSpeed() {
+        float speed = PlayerCompatibilityUtil.longPressSpeed(Build.VERSION.SDK_INT, getPlayerMemoryClass());
+        setPlaybackSpeed(speed);
+        text_speed.setText(String.format(Locale.CHINA, "x %.1f", speed));
+        onLongClick = true;
+    }
+
+    private void stopLongPressSpeed() {
+        if (!onLongClick) return;
+        onLongClick = false;
+        int speedPosition = seekbar_speed.getProgress();
+        float normalSpeed = speed_values[speedPosition];
+        setPlaybackSpeed(normalSpeed);
+        text_speed.setText(speed_strs[speedPosition]);
     }
 
     private boolean getExtras() {
@@ -261,9 +455,27 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             return false;
 
         video_url = intent.getStringExtra("url");
+        ArrayList<String> backupUrls = intent.getStringArrayListExtra("backup_urls");
+        if (backupUrls == null) {
+            String[] backupUrlArray = intent.getStringArrayExtra("backup_urls");
+            if (backupUrlArray != null) backupUrls = new ArrayList<>(Arrays.asList(backupUrlArray));
+        }
+        if (backupUrls == null) {
+            String backupUrl = intent.getStringExtra("backup_url");
+            if (backupUrl != null && !backupUrl.isEmpty()) {
+                backupUrls = new ArrayList<>();
+                backupUrls.add(backupUrl);
+            }
+        }
+        setPlaybackUrls(video_url, backupUrls);
+        audio_url = intent.getStringExtra("audio_url");
+        ArrayList<String> audioBackupUrls = intent.getStringArrayListExtra("audio_backup_urls");
+        setDashAudioUrls(audio_url, audioBackupUrls);
         danmaku_url = intent.getStringExtra("danmaku");
         localSubtitleRoot = intent.getStringExtra("local_subtitle_root");
         if (localSubtitleRoot == null) localSubtitleRoot = "";
+        localProgressFolderLocator = intent.getStringExtra("local_progress_folder");
+        if (localProgressFolderLocator == null) localProgressFolderLocator = "";
         String title = intent.getStringExtra("title");
 
         if (video_url == null)
@@ -285,6 +497,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         isLiveMode = intent.getBooleanExtra("live_mode", false);
         isOnlineVideo = video_url.startsWith("http://") || video_url.startsWith("https://");
         hasDanmaku = danmaku_url != null && !danmaku_url.equals("");
+        // 本地缓存的进度文件是最终状态，优先于列表传入的旧进度。
+        loadLocalPlaybackProgress();
 
         if (intent.hasExtra("pagenames") && intent.hasExtra("cids")) {
             pagenames = intent.getStringArrayListExtra("pagenames");
@@ -307,7 +521,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (intent.hasExtra("qnStrList") && intent.hasExtra("qnValueList")) {
             qnStrList = intent.getStringArrayExtra("qnStrList");
             qnValueList = intent.getIntArrayExtra("qnValueList");
-            currentQuality = intent.getIntExtra("currentQuality", SharedPreferencesUtil.getInt("play_qn", 16));
+            currentQuality = intent.getIntExtra("currentQuality", SharedPreferencesUtil.getInt("play_qn", 0));
         }
 
         return true;
@@ -342,8 +556,6 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             initMediaSession();
         }
 
-        ijkPlayer = createMediaPlayer();
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             batteryManager = (BatteryManager) getSystemService(BATTERY_SERVICE);
             batteryView.setPower(batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
@@ -358,6 +570,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (isLocalAudioFile) {
             isAudioOnlyMode = true;
         }
+        ijkPlayer = createMediaPlayer();
         img_loading.setImageResource(R.drawable.loading_tv_shaking);
         anim_loading = (AnimationDrawable) img_loading.getDrawable();
         anim_loading.start();
@@ -502,6 +715,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         text_subtitle = findViewById(R.id.text_subtitle);
         text_audio_title = findViewById(R.id.audio_title);
         text_audio_subtitle = findViewById(R.id.audio_subtitle);
+        swipe_seek_hint = findViewById(R.id.swipe_seek_hint);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -510,13 +724,17 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             scaleGestureListener = new ViewScaleGestureListener(layout_video);
             scaleGestureDetector = new ScaleGestureDetector(this, scaleGestureListener);
 
-            boolean doublemove_enabled = SharedPreferencesUtil.getBoolean("player_doublemove", true); // 是否启用双指移动
+            boolean move_enabled = SharedPreferencesUtil.getBoolean("player_doublemove", true);
+            boolean single_move_enabled = SharedPreferencesUtil.getBoolean("player_singlemove", true);
 
             layout_control.setOnTouchListener((v, event) -> {
                 int action = event.getActionMasked();
                 int pointerCount = event.getPointerCount();
                 boolean singleTouch = pointerCount == 1;
                 boolean doubleTouch = pointerCount == 2;
+                boolean swipeSeekEnabled = SharedPreferencesUtil.getBoolean(
+                        SharedPreferencesUtil.PLAYER_SWIPE_SEEK, false);
+                boolean zoomedVideo = isVideoZoomed();
 
                 // Logu.v("gesture", event.getEventTime() + "");
                 scaleGestureDetector.onTouchEvent(event);
@@ -532,8 +750,28 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         if (singleTouch) {
                             if (gesture_scaling) {
                                 videoMoveBy(0, 0); // 防止单指缩放出框
-                            } else if (!(gesture_scaled && !doublemove_enabled)) {
-                                float currentX = event.getX(0); // 单指移动
+                            } else if (move_enabled && single_move_enabled
+                                    && !swipeSeekEnabled
+                                    && zoomedVideo
+                                    && !multiTouchGesture) {
+                                // With swipe-to-seek disabled, a single finger
+                                // pans the zoomed video.
+                                float currentX = event.getX(0);
+                                float currentY = event.getY(0);
+                                float deltaX = currentX - previousX;
+                                float deltaY = currentY - previousY;
+                                if (deltaX != 0f || deltaY != 0f) {
+                                    videoMoveBy(deltaX, deltaY);
+                                    previousX = currentX;
+                                    previousY = currentY;
+                                }
+                            } else if (move_enabled && !single_move_enabled
+                                    && !swipeSeekEnabled
+                                    && !zoomedVideo
+                                    && !multiTouchGesture) {
+                                // Preserve the original single-finger pan
+                                // behavior when swipe seeking is disabled.
+                                float currentX = event.getX(0);
                                 float currentY = event.getY(0);
                                 float deltaX = currentX - previousX;
                                 float deltaY = currentY - previousY;
@@ -544,7 +782,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                                 }
                             }
                         }
-                        if (doubleTouch && doublemove_enabled) {
+                        if (doubleTouch && move_enabled && !single_move_enabled) {
                             float currentX = (event.getX(0) + event.getX(1)) / 2;
                             float currentY = (event.getY(0) + event.getY(1)) / 2;
                             float deltaX = currentX - previousX;
@@ -558,6 +796,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         break;
 
                     case MotionEvent.ACTION_DOWN:
+                        multiTouchGesture = false;
                         if (singleTouch) { // 如果是单指按下，设置起始位置为当前手指位置
                             previousX = event.getX(0);
                             previousY = event.getY(0);
@@ -566,6 +805,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         break;
 
                     case MotionEvent.ACTION_POINTER_DOWN:
+                        multiTouchGesture = true;
+                        swipeSeeking = false;
+                        if (swipe_seek_hint != null) swipe_seek_hint.setVisibility(View.GONE);
                         if (doubleTouch) { // 如果是双指按下，设置起始位置为两指连线的中心点
                             previousX = (event.getX(0) + event.getX(1)) / 2;
                             previousY = (event.getY(0) + event.getY(1)) / 2;
@@ -583,20 +825,39 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         break;
 
                     case MotionEvent.ACTION_UP:
-                        if (onLongClick) {
-                            onLongClick = false;
-                            float normalSpeed = speed_values[seekbar_speed.getProgress()];
-                            if (ijkPlayer != null)
-                                setPlaybackSpeed(normalSpeed);
-                            if (mDanmakuView != null)
-                                mDanmakuView.setSpeed(normalSpeed);
-                            text_speed.setText(speed_strs[seekbar_speed.getProgress()]);
+                    case MotionEvent.ACTION_CANCEL:
+                        if (action == MotionEvent.ACTION_UP && swipeSeeking && !multiTouchGesture) {
+                            long target = swipeSeekTarget(event.getX(0));
+                            seekToPosition(target);
+                            MsgUtil.showMsg("已调整到 " + StringUtil.toTime((int) (target / 1000)));
                         }
+                        if (swipe_seek_hint != null) swipe_seek_hint.setVisibility(View.GONE);
+                        swipeSeeking = false;
+                        stopLongPressSpeed();
                         if (gesture_moved)
                             gesture_moved = false;
                         if (gesture_scaled)
                             gesture_scaled = false;
+                        multiTouchGesture = false;
                         break;
+                }
+
+                if (action == MotionEvent.ACTION_DOWN && singleTouch
+                        && swipeSeekEnabled) {
+                    swipeDownX = event.getX(0);
+                    swipeDownY = event.getY(0);
+                    swipeSeeking = false;
+                    swipeSeekStartPosition = ijkPlayer == null ? progress_history : Math.max(0L, ijkPlayer.getCurrentPosition());
+                } else if (action == MotionEvent.ACTION_MOVE && singleTouch
+                        && swipeSeekEnabled
+                        && !gesture_scaling && !multiTouchGesture) {
+                    float dx = event.getX(0) - swipeDownX;
+                    float dy = event.getY(0) - swipeDownY;
+                    if (Math.abs(dx) > ToolsUtil.dp2px(24) && Math.abs(dx) > Math.abs(dy) * 1.35f) {
+                        swipeSeeking = true;
+                        gesture_moved = true;
+                        updateSwipeSeekHint(event.getX(0));
+                    }
                 }
 
                 if (!gesture_click_disabled && (gesture_moved || gesture_scaled)) {
@@ -608,15 +869,36 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             });
         } else {
             layout_control.setOnTouchListener((view, motionEvent) -> {
-                if (motionEvent.getAction() == MotionEvent.ACTION_UP && onLongClick) {
-                    onLongClick = false;
-                    float normalSpeed = speed_values[seekbar_speed.getProgress()];
-                    if (ijkPlayer != null)
-                        setPlaybackSpeed(normalSpeed);
-                    if (mDanmakuView != null)
-                        mDanmakuView.setSpeed(normalSpeed);
-                    text_speed.setText(speed_strs[seekbar_speed.getProgress()]);
+                int action = motionEvent.getAction();
+                if (motionEvent.getPointerCount() > 1) {
+                    multiTouchGesture = true;
+                    swipeSeeking = false;
+                    if (swipe_seek_hint != null) swipe_seek_hint.setVisibility(View.GONE);
                 }
+                if (SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_SWIPE_SEEK, false)) {
+                    if (action == MotionEvent.ACTION_DOWN) {
+                        multiTouchGesture = false;
+                        swipeDownX = motionEvent.getX();
+                        swipeDownY = motionEvent.getY();
+                        swipeSeekStartPosition = ijkPlayer == null ? progress_history : Math.max(0L, ijkPlayer.getCurrentPosition());
+                        swipeSeeking = false;
+                    } else if (action == MotionEvent.ACTION_MOVE && !swipeSeeking && !multiTouchGesture) {
+                        float dx = motionEvent.getX() - swipeDownX;
+                        float dy = motionEvent.getY() - swipeDownY;
+                        if (Math.abs(dx) > ToolsUtil.dp2px(24) && Math.abs(dx) > Math.abs(dy) * 1.35f) swipeSeeking = true;
+                    }
+                    if (action == MotionEvent.ACTION_MOVE && swipeSeeking) {
+                        gesture_moved = true;
+                        updateSwipeSeekHint(motionEvent.getX());
+                    } else if (action == MotionEvent.ACTION_UP && swipeSeeking) {
+                        long target = swipeSeekTarget(motionEvent.getX());
+                        seekToPosition(target);
+                        MsgUtil.showMsg("已调整到 " + StringUtil.toTime((int) (target / 1000)));
+                    }
+                    if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && swipe_seek_hint != null) swipe_seek_hint.setVisibility(View.GONE);
+                }
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                    stopLongPressSpeed();
                 return false;
             });
         }
@@ -634,12 +916,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     && !isLiveMode) {
                 if (!onLongClick && !gesture_click_disabled) {
                     hidecon.run();
-                    if (ijkPlayer != null)
-                        setPlaybackSpeed(3.0F);
-                    if (mDanmakuView != null)
-                        mDanmakuView.setSpeed(3.0f);
-                    text_speed.setText("x 3.0");
-                    onLongClick = true;
+                    startLongPressSpeed();
                     Logu.v("gesture", "longclick_down");
                     return true;
                 }
@@ -650,6 +927,17 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     }
 
+    /**
+     * When swipe-seek is enabled, a zoomed video reserves single-finger
+     * movement for neither seeking nor panning. This matches the watch-friendly
+     * two-finger pan behavior and prevents the two gestures from competing.
+     */
+    private boolean isVideoZoomed() {
+        return scaleGestureListener != null
+                && (scaleGestureListener.can_reset
+                || layout_video != null && Math.abs(layout_video.getScaleX() - 1f) > 0.01f);
+    }
+
     private void autohideReset() {
         layout_control.removeCallbacks(hidecon);
         layout_control.postDelayed(hidecon, 4000);
@@ -658,18 +946,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private void clickUI() {
         long now_timestamp = System.currentTimeMillis();
         if (now_timestamp - timestamp_click < 300) {
-            if (SharedPreferencesUtil.getBoolean("player_scale", true) && scaleGestureListener.can_reset) {
-                scaleGestureListener.can_reset = false;
-                layout_video.setX(video_origX);
-                layout_video.setY(video_origY);
-                layout_video.setScaleX(1.0f);
-                layout_video.setScaleY(1.0f);
-            } else if (!isLiveMode) {
-                if (isPlaying)
-                    playerPause();
-                else
-                    playerResume();
-                showcon();
+            timestamp_click = 0L;
+            int mode = PlayerSettingsUtil.getDoubleTapMode();
+            if (mode == 0) {
+                if (!isLiveMode) togglePlayback();
+            } else if (mode == 1) {
+                resetVideoTransform();
+            } else if (!resetVideoTransform() && !isLiveMode) {
+                togglePlayback();
             }
         } else {
             timestamp_click = now_timestamp;
@@ -680,35 +964,259 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
     }
 
-    private boolean retryPlaybackThroughRelay(String failedUrl, String reason) {
-        if (relayRetryTried || !(isOnlineVideo || isLiveMode)) return false;
-        String relayUrl = NetWorkUtil.relayUrl(failedUrl);
-        if (relayUrl.equals(failedUrl)) return false;
-        relayRetryTried = true;
-        NetWorkUtil.forceRelayFallback("player failed: " + reason);
-        video_url = relayUrl;
-        runOnUiThread(() -> {
-            try {
-                loading_text0.setText("Switching relay");
-                isPrepared = false;
-                if (ijkPlayer != null) ijkPlayer.reset();
-                MPPrepare(video_url);
-            } catch (Throwable th) {
-                Logu.e("bili-relay", "player relay retry failed: " + th);
+    private boolean resetVideoTransform() {
+        if (!SharedPreferencesUtil.getBoolean("player_scale", true)
+                || scaleGestureListener == null || !scaleGestureListener.can_reset)
+            return false;
+
+        scaleGestureListener.can_reset = false;
+        layout_video.setX(video_origX);
+        layout_video.setY(video_origY);
+        layout_video.setScaleX(1.0f);
+        layout_video.setScaleY(1.0f);
+        return true;
+    }
+
+    private void togglePlayback() {
+        if (isLiveMode)
+            return;
+        if (isPlaying)
+            playerPause();
+        else
+            playerResume();
+        showcon();
+    }
+
+    private synchronized void setPlaybackUrls(String primaryUrl, List<String> backupUrls) {
+        playbackUrls.clear();
+        playbackUrlIndex = 0;
+        if (primaryUrl != null && !primaryUrl.isEmpty()) playbackUrls.add(primaryUrl);
+        if (backupUrls != null) {
+            for (String backupUrl : backupUrls) {
+                if (backupUrl != null && !backupUrl.isEmpty() && !playbackUrls.contains(backupUrl)) {
+                    playbackUrls.add(backupUrl);
+                }
             }
+        }
+        video_url = primaryUrl;
+        localRuntimeRetryCount = 0;
+        danmakuPausedByBuffering = false;
+        unifiedPlayerFallbackAttempted = false;
+    }
+
+    private long swipeSeekTarget(float x) {
+        long delta = Math.round((x - swipeDownX) / Math.max(1f, layout_control.getWidth()) * Math.max(0, video_all));
+        return Math.max(0L, Math.min(Math.max(0L, video_all), swipeSeekStartPosition + delta));
+    }
+
+    private void updateSwipeSeekHint(float x) {
+        if (swipe_seek_hint == null) return;
+        long target = swipeSeekTarget(x);
+        long delta = target - swipeSeekStartPosition;
+        String sign = delta >= 0 ? "+" : "";
+        swipe_seek_hint.setText(sign + StringUtil.toTime((int) (Math.abs(delta) / 1000)) + "\n" + StringUtil.toTime((int) (target / 1000)));
+        swipe_seek_hint.setVisibility(View.VISIBLE);
+    }
+
+    private synchronized void setDashAudioUrls(String primaryUrl, List<String> backupUrls) {
+        audioPlaybackUrls.clear();
+        audioPlaybackUrlIndex = 0;
+        if (primaryUrl != null && !primaryUrl.isEmpty()) audioPlaybackUrls.add(primaryUrl);
+        if (backupUrls != null) {
+            for (String backupUrl : backupUrls) {
+                if (backupUrl != null && !backupUrl.isEmpty() && !audioPlaybackUrls.contains(backupUrl)) {
+                    audioPlaybackUrls.add(backupUrl);
+                }
+            }
+        }
+        audio_url = primaryUrl == null ? "" : primaryUrl;
+        // 1.1.6: 新视频加载时清零音频恢复重试计数、软解强制标志与本地源重试标记
+        audioRuntimeRetryCount = 0;
+        forceSoftwareDecode = false;
+        localSourceRetried = false;
+    }
+
+    private boolean hasDashAudio() {
+        // 1.1.6: 兼容档关闭 DASH 双播放器（视频+音频分离），走 durl 单播放器，
+        // 避免老设备双解码器/双缓冲的内存与 CPU 负担，以及双播放器同步问题
+        return DeviceProfile.useDashDualPlayer() && audio_url != null && !audio_url.isEmpty();
+    }
+
+    private boolean retryPlaybackWithBackup(String failedUrl, String reason) {
+        final String nextUrl;
+        synchronized (this) {
+            if (!(isOnlineVideo || isLiveMode) || playbackUrls.isEmpty()) return false;
+            String currentUrl = NetWorkUtil.routeUrlForRelay(playbackUrls.get(playbackUrlIndex));
+            if (!failedUrl.equals(currentUrl)) return true;
+            if (playbackUrlIndex + 1 >= playbackUrls.size()) return false;
+            playbackUrlIndex++;
+            nextUrl = playbackUrls.get(playbackUrlIndex);
+            video_url = nextUrl;
+            playbackPrepareAttempt++;
+        }
+
+        Logu.e("player", "switch to backup media url " + playbackUrlIndex + ": " + reason);
+        recordPlayerAction("backup_source", reason, currentQuality);
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            isPrepared = false;
+            isPlaying = false;
+            loading_info.setVisibility(View.VISIBLE);
+            loading_text0.setText("尝试备用线路");
+            loading_text1.setText("");
+            anim_loading.start();
+
+            releasePlaybackPlayers();
+            ijkPlayer = createMediaPlayer();
+            setDisplay();
+        });
+        return true;
+    }
+
+    /** 1.1.6: 用同一 URL 重建播放器重试（硬解 → 软解切换），不更换播放源。 */
+    private void retryPlaybackWithSameSource() {
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            if (isPrepared && ijkPlayer != null && !isLiveMode) {
+                try {
+                    foregroundRestorePosition = Math.max(0L, ijkPlayer.getCurrentPosition());
+                } catch (RuntimeException ignored) {
+                }
+            }
+            resumeAfterPrepare = isPlaying;
+            danmakuPausedByBuffering = false;
+            isPrepared = false;
+            isPlaying = false;
+            loading_info.setVisibility(View.VISIBLE);
+            loading_text0.setText("切换解码方式重试");
+            loading_text1.setText("");
+            anim_loading.start();
+
+            releasePlaybackPlayers();
+            ijkPlayer = createMediaPlayer();
+            setDisplay();
+        });
+    }
+
+    private void showPlaybackLoadFailure() {
+        recordPlayerAction("load_failed", null, currentQuality);
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            releasePlaybackPlayers();
+            isPrepared = false;
+            isPlaying = false;
+            if (loadingTimer != null) {
+                loadingTimer.cancel();
+                loadingTimer = null;
+            }
+            loading_info.setVisibility(View.VISIBLE);
+            loading_text0.setText("视频载入失败");
+            loading_text1.setText("请返回后重试");
+            anim_loading.stop();
+            btn_control.setImageResource(R.drawable.btn_player_play);
+        });
+    }
+
+    private void showPlaybackRuntimeFailure() {
+        recordPlayerAction("playback_interrupted", null, currentQuality);
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            pausePlaybackPlayers();
+            isPlaying = false;
+            if (loadingTimer != null) {
+                loadingTimer.cancel();
+                loadingTimer = null;
+            }
+            loading_info.setVisibility(View.VISIBLE);
+            loading_text0.setText("播放中断");
+            loading_text1.setText("请返回后重试");
+            anim_loading.stop();
+            btn_control.setImageResource(R.drawable.btn_player_play);
+        });
+    }
+
+    /**
+     * The unified player is preferred for DASH, but a CDN can still return a
+     * stream that the device-side ExoPlayer cannot open. Re-fetch a muxed
+     * progressive stream and let the stable compatibility player take over.
+     */
+    private boolean retryUnifiedPlayerWithProgressiveSource(String reason) {
+        if (!(ijkPlayer instanceof UnifiedDashPlayer) || !isOnlineVideo
+                || unifiedPlayerFallbackAttempted || aid <= 0 || cid <= 0) return false;
+        unifiedPlayerFallbackAttempted = true;
+        final long restorePosition = isPrepared && ijkPlayer != null
+                ? Math.max(0L, ijkPlayer.getCurrentPosition()) : Math.max(0L, progress_history);
+        final boolean shouldResume = isPlaying || resumeAfterPrepare;
+        recordPlayerAction("unified_player_fallback", reason, currentQuality);
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            isPrepared = false;
+            isPlaying = false;
+            loading_info.setVisibility(View.VISIBLE);
+            loading_text0.setText("切换兼容播放方式");
+            loading_text1.setText("");
+            anim_loading.start();
+        });
+        CenterThreadPool.run(() -> {
+            PlayerData fallback = new PlayerData();
+            fallback.aid = aid;
+            fallback.cid = cid;
+            fallback.mid = mid;
+            fallback.title = videoTitle == null ? "" : videoTitle;
+            int[] fallbackQualities = {DashData.QN_1080P, DashData.QN_720P,
+                    DashData.QN_480P, DashData.QN_360P};
+            Exception lastError = null;
+            for (int quality : fallbackQualities) {
+                try {
+                    fallback.qn = quality;
+                    PlayerApi.getVideo(fallback, false);
+                    if (fallback.videoUrl != null && !fallback.videoUrl.isEmpty()) break;
+                } catch (Exception error) {
+                    lastError = error;
+                    fallback.videoUrl = "";
+                }
+            }
+            if (fallback.videoUrl == null || fallback.videoUrl.isEmpty()) {
+            recordPlayerAction("unified_fallback_failed",
+                        lastError == null ? "empty progressive source" : lastError.getClass().getSimpleName(),
+                        currentQuality);
+                showPlaybackLoadFailure();
+                return;
+            }
+            final long finalPosition = restorePosition;
+            runOnUiThread(() -> {
+                if (destroyed) return;
+                forceCompatibilityPlayer = true;
+                setPlaybackUrls(fallback.videoUrl, fallback.videoBackupUrls);
+                setDashAudioUrls("", null);
+                currentQuality = fallback.qn;
+                progress_history = finalPosition;
+                resumeAfterPrepare = shouldResume;
+                releasePlaybackPlayers();
+                ijkPlayer = createMediaPlayer();
+                setDisplay();
+                recordPlayerAction("unified_fallback_ready", null, currentQuality);
+            });
         });
         return true;
     }
 
     private void schedulePlaybackPrepareTimeout(String sourceUrl) {
         final int attempt = ++playbackPrepareAttempt;
+        final long timeout;
+        synchronized (this) {
+            // 1.1.6: 超时按设备档位 —— 兼容档 30s / 其余 20s；最后一个备用源再放宽
+            long base = DeviceProfile.prepareTimeoutMs();
+            timeout = playbackUrlIndex + 1 < playbackUrls.size()
+                    ? base : base + PLAYBACK_FINAL_TIMEOUT_MS - PLAYBACK_PRIMARY_TIMEOUT_MS;
+        }
         mainHandler.postDelayed(() -> {
             if (destroyed || isPrepared || attempt != playbackPrepareAttempt) return;
             Logu.e("player", "prepare timeout: " + sourceUrl);
-            if (retryPlaybackThroughRelay(sourceUrl, "prepare timeout")) return;
-            loading_text0.setText("视频载入失败");
-            anim_loading.stop();
-        }, PLAYBACK_PREPARE_TIMEOUT_MS);
+            recordPlayerAction("prepare_timeout", null, currentQuality);
+            if (retryPlaybackWithBackup(sourceUrl, "prepare timeout")) return;
+            showPlaybackLoadFailure();
+        }, timeout);
     }
 
     @SuppressLint("SetTextI18n")
@@ -758,6 +1266,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     };
 
     private void setDisplay() {
+        if (destroyed || ijkPlayer == null) return;
         Logu.v("创建播放器");
         Logu.v("url", video_url);
 
@@ -765,7 +1274,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
         if (ijkPlayer instanceof IjkMediaPlayer) {
             IjkMediaPlayer nativePlayer = (IjkMediaPlayer) ijkPlayer;
+            // 1.1.6: KitKat(Android 4.x) 全路径强制软解（durl 也生效）—— 修复老设备
+            // 硬解 mp4/dash 首源打开失败(-10000)的问题；硬解运行中失败时
+            // forceSoftwareDecode 置位，用同一 URL 走软解重试。
+            boolean legacyDashSoftwareCodec = Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT;
             boolean hardwareCodecEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN
+                    && !legacyDashSoftwareCodec
+                    && !forceSoftwareDecode
+                    && !DeviceProfile.defaultSoftwareCodec()
                     && SharedPreferencesUtil.getBoolean("player_codec",
                     !PlayerCompatibilityUtil.prefersSoftwareCodec());
             hardwareCodecInUse = hardwareCodecEnabled;
@@ -777,6 +1293,10 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec",
                         hardwareCodecEnabled ? 1 : 0);
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48);
+                if (legacyDashSoftwareCodec) {
+                    nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "overlay-format",
+                            IjkMediaPlayer.SDL_FCC_RV16);
+                }
             }
 
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles",
@@ -786,18 +1306,34 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1);
             }
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 4);
-            nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 1);
+            nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", hasDashAudio() ? 0 : 1);
+            // Keep the original lightweight probe. A forced 1 MB probe delays
+            // startup badly on watches and low-bandwidth IoT connections.
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 100);
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "soundtouch", 1);
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1);
 
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "flush_packets");
             nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1);
+            // 1.1.6: 首源连接超时 —— 低端设备 5s 快速失败切备用源，避免长时间黑屏等待
+            nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout",
+                    DeviceProfile.connectTimeoutSec() * 1000000L);
 
             // IJK has its own user agent; Bilibili media URLs require the browser user agent here.
             if (isOnlineVideo) {
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1);
-                nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 15 * 1024 * 1024);
+                nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size",
+                        DeviceProfile.maxBufferBytes());
+                if (!isLiveMode) {
+                    int cachedDuration = legacyDashSoftwareCodec
+                            ? 3000 : DeviceProfile.maxCachedDurationMs();
+                    int minFrames = legacyDashSoftwareCodec
+                            ? 3 : DeviceProfile.minBufferedFrames();
+                    nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                            "max_cached_duration", cachedDuration);
+                    nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                            "min-frames", minFrames);
+                }
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent", USER_AGENT_WEB);
                 Logu.v("设置ua");
             }
@@ -812,9 +1348,13 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 public void run() {
                     Logu.v("循环检测");
                     if (mSurfaceTexture != null) {
+                        IMediaPlayer player = ijkPlayer;
+                        if (destroyed || player == null) {
+                            cancel();
+                            return;
+                        }
                         this.cancel();
-                        Surface surface = new Surface(mSurfaceTexture);
-                        ijkPlayer.setSurface(surface);
+                        bindTextureSurface(mSurfaceTexture);
                         MPPrepare(video_url);
                         Logu.v("设置surfaceTexture成功！");
                     }
@@ -830,16 +1370,25 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 public void run() {
                     Logu.v("循环检测");
                     if (!surfaceHolder.isCreating()) {
+                        IMediaPlayer player = ijkPlayer;
+                        if (destroyed || player == null) {
+                            cancel();
+                            return;
+                        }
                         this.cancel();
                         Logu.v("定时器结束！");
-                        ijkPlayer.setDisplay(surfaceHolder);
+                        player.setDisplay(surfaceHolder);
+                        videoOutputDetached = false;
                         Logu.v("设置surfaceHolder成功！");
                         surfaceHolder.addCallback(new SurfaceHolder.Callback() {
                             @Override
                             public void surfaceCreated(@NonNull SurfaceHolder surfaceHolder) {
-                                if (!destroyed) {
+                                IMediaPlayer currentPlayer = ijkPlayer;
+                                if (!destroyed && currentPlayer != null) {
                                     Logu.v("surface", "重新设置Holder");
-                                    ijkPlayer.setDisplay(surfaceHolder);
+                                    currentPlayer.setDisplay(surfaceHolder);
+                                    videoOutputDetached = false;
+                                    restoreVideoFrameIfNeeded(currentPlayer);
                                 }
                             }
 
@@ -850,8 +1399,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                             @Override
                             public void surfaceDestroyed(@NonNull SurfaceHolder surfaceHolder) {
                                 Logu.v("surface", "Holder没了");
-                                if (isPrepared && !destroyed)
-                                    ijkPlayer.setDisplay(null);
+                                IMediaPlayer currentPlayer = ijkPlayer;
+                                videoOutputDetached = true;
+                                restoreFrameOnNextSurface = true;
+                                if (isPrepared && !destroyed && currentPlayer != null)
+                                    currentPlayer.setDisplay(null);
                             }
                         });
                         Logu.v("添加callback成功！");
@@ -862,10 +1414,401 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
     }
 
+    private void bindTextureSurface(@NonNull SurfaceTexture surfaceTexture) {
+        IMediaPlayer player = ijkPlayer;
+        if (destroyed || player == null) return;
+        releaseTextureSurface();
+        textureSurface = new Surface(surfaceTexture);
+        player.setSurface(textureSurface);
+        videoOutputDetached = false;
+        restoreVideoFrameIfNeeded(player);
+    }
+
+    private void releaseTextureSurface() {
+        if (textureSurface != null) {
+            textureSurface.release();
+            textureSurface = null;
+        }
+    }
+
+    private void restoreVideoOutputIfAvailable() {
+        IMediaPlayer player = ijkPlayer;
+        if (destroyed || player == null || isAudioOnlyMode) return;
+        if (!videoOutputDetached && !restoreFrameOnNextSurface) return;
+        try {
+            if (textureView != null && textureView.isAvailable()) {
+                SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
+                if (surfaceTexture != null) {
+                    mSurfaceTexture = surfaceTexture;
+                    bindTextureSurface(surfaceTexture);
+                    return;
+                }
+            }
+            if (surfaceView != null) {
+                SurfaceHolder holder = surfaceView.getHolder();
+                Surface surface = holder.getSurface();
+                if (surface != null && surface.isValid()) {
+                    player.setDisplay(holder);
+                    videoOutputDetached = false;
+                    restoreVideoFrameIfNeeded(player);
+                }
+            }
+        } catch (RuntimeException error) {
+            Logu.e("player-surface", "恢复视频画面失败: " + error);
+        }
+    }
+
+    private void restoreVideoFrameIfNeeded(IMediaPlayer player) {
+        if (!restoreFrameOnNextSurface || !isActivityVisible || !isPrepared || isAudioOnlyMode) {
+            return;
+        }
+        restoreFrameOnNextSurface = false;
+        try {
+            if (!isLiveMode) {
+                long currentPosition = Math.max(0L, player.getCurrentPosition());
+                long position = ForegroundRestorePolicy.choosePosition(
+                        currentPosition, foregroundRestorePosition, video_all);
+                boolean shouldSeek = ForegroundRestorePolicy.needsSeek(
+                        currentPosition, foregroundRestorePosition);
+                if (shouldSeek) {
+                    progressGuard.recordSeek(position, video_all, SystemClock.elapsedRealtime());
+                    seekPlaybackPlayers(position);
+                    if (hasDanmaku && mDanmakuView != null) {
+                        mDanmakuView.seekTo(position);
+                    }
+                }
+                foregroundRestorePosition = -1L;
+            }
+            if (isPlaying) {
+                startPlaybackPlayers();
+            } else {
+                // IJK does not render a seeked frame on a newly attached surface while paused.
+                // Prime one silent frame, then restore the paused state.
+                player.setVolume(0f, 0f);
+                player.start();
+                if (layout_video != null) {
+                    layout_video.postDelayed(() -> {
+                        IMediaPlayer currentPlayer = ijkPlayer;
+                        if (destroyed || currentPlayer == null || currentPlayer != player) return;
+                        try {
+                            if (!isPlaying) currentPlayer.pause();
+                            currentPlayer.setVolume(1f, 1f);
+                        } catch (RuntimeException error) {
+                            Logu.e("player-surface", "恢复暂停状态失败: " + error);
+                        }
+                    }, 180L);
+                }
+            }
+            Logu.v("player-surface", "已恢复前台视频画面");
+        } catch (RuntimeException error) {
+            restoreFrameOnNextSurface = true;
+            Logu.e("player-surface", "请求视频帧失败: " + error);
+        }
+    }
+
+    /**
+     * Old TextureView/IJK combinations can keep accepting frames after a
+     * background transition while the consumer surface remains black. A
+     * fresh player is the reliable recovery path on those devices; playback
+     * position and the user's play/pause state are restored after prepare.
+     */
+    private void recreatePlayerForForeground() {
+        if (destroyed || isAudioOnlyMode || isLiveMode || !isPrepared
+                || ijkPlayer == null) return;
+        long position = 0L;
+        try {
+            long currentPosition = Math.max(0L, ijkPlayer.getCurrentPosition());
+            position = ForegroundRestorePolicy.choosePosition(
+                    currentPosition, foregroundRestorePosition, video_all);
+        } catch (RuntimeException ignored) {
+        }
+        foregroundRestorePosition = position;
+        resumeAfterPrepare = wasPlayingBeforePause;
+        recordPlayerAction("foreground_player_recreate", null, currentQuality);
+        isPrepared = false;
+        isPlaying = false;
+        videoOutputDetached = false;
+        restoreFrameOnNextSurface = false;
+        loading_info.setVisibility(View.VISIBLE);
+        loading_text0.setText("恢复视频画面");
+        loading_text1.setText("");
+        anim_loading.start();
+        releasePlaybackPlayers();
+        ijkPlayer = createMediaPlayer();
+        setDisplay();
+    }
+
+    private String setPlayerDataSource(IMediaPlayer player, String logicalUrl) throws IOException {
+        String sourceUrl = NetWorkUtil.routeUrlForRelay(logicalUrl);
+        if (isOnlineVideo) {
+            Map<String, String> headers = new HashMap<>();
+            if (NetWorkUtil.shouldAttachBiliCredentials(sourceUrl)) {
+                headers.put("Referer", "https://www.bilibili.com/");
+                // Member-only streams and some signed media hosts require the
+                // current session cookie during the media request as well.
+                headers.put("Cookie", SharedPreferencesUtil.getString(
+                        SharedPreferencesUtil.cookies, ""));
+            }
+            if (sourceUrl.startsWith(NetWorkUtil.BILI_RELAY_BASE + "/")) {
+                headers.put("X-Relay-Token", NetWorkUtil.BILI_RELAY_TOKEN);
+            }
+            if (player instanceof IjkMediaPlayer) {
+                ((IjkMediaPlayer) player).setDataSource(sourceUrl, headers);
+            } else if (player instanceof UnifiedDashPlayer) {
+                ((UnifiedDashPlayer) player).setAudioSource(
+                        NetWorkUtil.routeUrlForRelay(audio_url), headers);
+                player.setDataSource(this, Uri.parse(sourceUrl), headers);
+            } else {
+                Uri platformUri = Uri.parse(sourceUrl);
+                if ("https".equalsIgnoreCase(platformUri.getScheme())
+                        && NetWorkUtil.shouldAttachBiliCredentials(sourceUrl)) {
+                    platformUri = platformUri.buildUpon().scheme("http").build();
+                }
+                player.setDataSource(this, platformUri, headers);
+            }
+        } else if (sourceUrl.startsWith("content://")) {
+            player.setDataSource(this, Uri.parse(sourceUrl), new HashMap<>());
+        } else {
+            player.setDataSource(sourceUrl);
+        }
+        return sourceUrl;
+    }
+
+    private void prepareDashAudioTrack() {
+        releaseDashAudioPlayer();
+        audioTrackPrepared = !hasDashAudio();
+        audioTrackBuffering = false;
+        audioRenderingStarted = false;
+        videoRenderingStarted = false;
+        dashVideoStarted = false;
+        if (!hasDashAudio() || destroyed) return;
+
+        IMediaPlayer audioPlayer = createMediaPlayer();
+        dashAudioPlayer = audioPlayer;
+        final int attempt = ++audioPrepareAttempt;
+        if (audioPlayer instanceof IjkMediaPlayer) {
+            IjkMediaPlayer nativeAudio = (IjkMediaPlayer) audioPlayer;
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "vn", 1);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0);
+            // Long DASH tracks need a real packet buffer. Disabling it causes repeated
+            // audio starvation on longer videos and after seeking or changing speed.
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles",
+                    SharedPreferencesUtil.getBoolean("player_audio", false) ? 1 : 0);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size",
+                    Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT ? 3 * 1024 * 1024 : 12 * 1024 * 1024);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration",
+                    Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT ? 3000 : 12000);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 5);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "soundtouch", 1);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent", USER_AGENT_WEB);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1);
+            nativeAudio.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1);
+        }
+        audioPlayer.setOnPreparedListener(player -> {
+            if (destroyed || player != dashAudioPlayer || attempt != audioPrepareAttempt) return;
+            audioTrackPrepared = true;
+            setPlayerSpeed(player, currentPlaybackSpeed);
+            recordPlayerAction("dash_audio_prepared", null, currentQuality);
+            if (preparationFinalized && dashAudioRecoveryPending) {
+                runOnUiThread(() -> finishDashAudioRecovery(player, attempt));
+            } else {
+                runOnUiThread(this::finishPreparationIfReady);
+            }
+        });
+        audioPlayer.setOnInfoListener((player, what, extra) -> {
+            if (destroyed || player != dashAudioPlayer) return false;
+            if (what == IMediaPlayer.MEDIA_INFO_AUDIO_RENDERING_START
+                    || what == IMediaPlayer.MEDIA_INFO_AUDIO_DECODED_START) {
+                audioRenderingStarted = true;
+                recordPlayerAction("dash_audio_rendering_start", String.valueOf(what), currentQuality);
+                runOnUiThread(this::startDashVideoAfterAudio);
+            } else if (what == IMediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                audioTrackBuffering = true;
+                recordPlayerAction("dash_audio_buffering_start", null, currentQuality);
+                scheduleDashBufferingPause();
+            } else if (what == IMediaPlayer.MEDIA_INFO_BUFFERING_END) {
+                audioTrackBuffering = false;
+                recordPlayerAction("dash_audio_buffering_end", null, currentQuality);
+                resumeAfterDashBuffering();
+            }
+            return false;
+        });
+        audioPlayer.setOnSeekCompleteListener(player -> {
+            if (destroyed || player != dashAudioPlayer) return;
+            if (audioSeekPending && pendingAudioSeekPosition >= 0L) {
+                try {
+                    if (Math.abs(player.getCurrentPosition() - pendingAudioSeekPosition) > 750L) return;
+                } catch (RuntimeException ignored) {
+                    return;
+                }
+            }
+            audioSeekPending = false;
+            pendingAudioSeekPosition = -1L;
+            finishSynchronizedSeekIfReady(synchronizedSeekGeneration);
+        });
+        audioPlayer.setOnErrorListener((player, what, extra) -> {
+            if (player != dashAudioPlayer) return true;
+            String reason = "audio error " + what + "/" + extra;
+            recordPlayerAction("dash_audio_error", reason, currentQuality);
+            // 1.1.6: 运行时（后台播放/听视频）先给短暂网络恢复窗口，同一音频轨延迟重试，
+            // 避免网络一抖就切备用源/直接判"载入失败"
+            if (preparationFinalized && isPrepared && audioRuntimeRetryCount < AUDIO_RUNTIME_MAX_RETRIES) {
+                audioRuntimeRetryCount++;
+                recordPlayerAction("dash_audio_recovery_wait", reason, currentQuality);
+                mainHandler.postDelayed(() -> {
+                    if (destroyed || !isPrepared) return;
+                    prepareDashAudioTrack();
+                }, AUDIO_RUNTIME_RETRY_DELAY_MS);
+                return true;
+            }
+            if (!retryDashAudioWithBackup(reason)) {
+                if (preparationFinalized && isPrepared) showPlaybackRuntimeFailure();
+                else showPlaybackLoadFailure();
+            }
+            return true;
+        });
+        try {
+            setPlayerDataSource(audioPlayer, audio_url);
+            audioPlayer.prepareAsync();
+            scheduleDashAudioPrepareTimeout(audioPlayer, attempt);
+        } catch (IOException | RuntimeException error) {
+            if (!retryDashAudioWithBackup(error.getClass().getSimpleName())) showPlaybackLoadFailure();
+        }
+    }
+
+    private void scheduleDashAudioPrepareTimeout(IMediaPlayer player, int attempt) {
+        long timeout = audioPlaybackUrlIndex + 1 < audioPlaybackUrls.size()
+                ? PLAYBACK_PRIMARY_TIMEOUT_MS : PLAYBACK_FINAL_TIMEOUT_MS;
+        mainHandler.postDelayed(() -> {
+            if (destroyed || audioTrackPrepared || player != dashAudioPlayer
+                    || attempt != audioPrepareAttempt) return;
+            recordPlayerAction("dash_audio_timeout", null, currentQuality);
+            if (!retryDashAudioWithBackup("prepare timeout")) {
+                if (preparationFinalized && isPrepared) showPlaybackRuntimeFailure();
+                else showPlaybackLoadFailure();
+            }
+        }, timeout);
+    }
+
+    private synchronized boolean retryDashAudioWithBackup(String reason) {
+        if (audioPlaybackUrlIndex + 1 >= audioPlaybackUrls.size()) return false;
+        boolean runtimeRecovery = preparationFinalized && isPrepared;
+        audioPlaybackUrlIndex++;
+        audio_url = audioPlaybackUrls.get(audioPlaybackUrlIndex);
+        dashAudioRecoveryPending = runtimeRecovery;
+        recordPlayerAction("dash_audio_backup", reason, currentQuality);
+        runOnUiThread(() -> {
+            if (runtimeRecovery) {
+                dashStartGeneration++;
+                dashVideoStarted = false;
+                try {
+                    if (ijkPlayer != null) ijkPlayer.pause();
+                } catch (RuntimeException ignored) {
+                }
+                loading_info.setVisibility(View.VISIBLE);
+                loading_text0.setText("正在恢复音频");
+                loading_text1.setText("");
+                anim_loading.start();
+            }
+            prepareDashAudioTrack();
+        });
+        return true;
+    }
+
+    private void finishDashAudioRecovery(IMediaPlayer player, int attempt) {
+        if (destroyed || player != dashAudioPlayer || attempt != audioPrepareAttempt) return;
+        dashAudioRecoveryPending = false;
+        boolean aligning = alignDashAudioToVideo("recovery", 0L);
+        if (!aligning && isPlaying) startPlaybackPlayers();
+        loading_info.setVisibility(View.GONE);
+        anim_loading.stop();
+        recordPlayerAction("dash_audio_recovered", null, currentQuality);
+    }
+
+    private void releaseDashAudioPlayer() {
+        audioPrepareAttempt++;
+        IMediaPlayer player = dashAudioPlayer;
+        dashAudioPlayer = null;
+        if (player == null) return;
+        releaseMediaPlayerAsync(player);
+    }
+
+    private void releaseMainPlayer() {
+        IMediaPlayer player = ijkPlayer;
+        ijkPlayer = null;
+        if (player == null) return;
+        try {
+            player.setDisplay(null);
+        } catch (RuntimeException ignored) {
+        }
+        releaseMediaPlayerAsync(player);
+    }
+
+    private void releaseMediaPlayerAsync(IMediaPlayer player) {
+        CenterThreadPool.run(() -> {
+            try {
+                player.stop();
+            } catch (RuntimeException ignored) {
+            }
+            try {
+                player.release();
+            } catch (RuntimeException ignored) {
+            }
+        });
+    }
+
+    private void releasePlaybackPlayers() {
+        dashStartGeneration++;
+        releaseMainPlayer();
+        releaseDashAudioPlayer();
+        videoTrackPrepared = false;
+        audioTrackPrepared = false;
+        preparationFinalized = false;
+        audioRenderingStarted = false;
+        dashVideoStarted = false;
+        dashPlaybackStartedOnce = false;
+        videoTrackBuffering = false;
+        audioTrackBuffering = false;
+        videoBufferingStartedAt = -1L;
+        videoSeekPending = false;
+        audioSeekPending = false;
+        pendingVideoSeekPosition = -1L;
+        pendingAudioSeekPosition = -1L;
+        queuedSynchronizedSeekPosition = -1L;
+        audioOnlySynchronizedSeek = false;
+        resumeAfterSynchronizedSeek = false;
+        dashAudioRecoveryPending = false;
+        cancelDashBufferingPause();
+        dashBufferingPauseApplied = false;
+        synchronizedSeekGeneration++;
+    }
+
     private void MPPrepare(String nowurl) {
+        IMediaPlayer player = ijkPlayer;
+        if (destroyed || player == null) return;
+        // Video, API, image and danmaku traffic all follow the same manual relay mode.
+        videoTrackPrepared = false;
+        audioTrackPrepared = !hasDashAudio();
+        preparationFinalized = false;
+        audioRenderingStarted = false;
+        dashVideoStarted = false;
+        prepareDashAudioTrack();
         String sourceUrl = NetWorkUtil.routeUrlForRelay(nowurl);
-        if (!sourceUrl.equals(nowurl)) video_url = sourceUrl;
-        ijkPlayer.setOnPreparedListener(this);
+        player.setOnPreparedListener(this);
+        player.setOnSeekCompleteListener(mediaPlayer -> {
+            if (destroyed || mediaPlayer != ijkPlayer) return;
+            if (videoSeekPending && pendingVideoSeekPosition >= 0L) {
+                try {
+                    if (Math.abs(mediaPlayer.getCurrentPosition() - pendingVideoSeekPosition) > 750L) return;
+                } catch (RuntimeException ignored) {
+                    return;
+                }
+            }
+            videoSeekPending = false;
+            pendingVideoSeekPosition = -1L;
+            finishSynchronizedSeekIfReady(synchronizedSeekGeneration);
+        });
 
         if (isLiveMode) {
             runOnUiThread(() -> loading_text0.setText("载入直播中"));
@@ -873,48 +1816,24 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         } else
             runOnUiThread(() -> loading_text0.setText("载入视频中"));
         try {
-            if (isOnlineVideo) {
-                Map<String, String> headers = new HashMap<>();
-                if (NetWorkUtil.shouldAttachBiliCredentials(sourceUrl)) {
-                    headers.put("Referer", "https://www.bilibili.com/");
-                    headers.put("Cookie", SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""));
-                }
-                if (sourceUrl.startsWith(NetWorkUtil.BILI_RELAY_BASE + "/"))
-                    headers.put("X-Relay-Token", NetWorkUtil.BILI_RELAY_TOKEN);
-                if (ijkPlayer instanceof IjkMediaPlayer) {
-                    ((IjkMediaPlayer) ijkPlayer).setDataSource(sourceUrl, headers);
-                } else {
-                    Uri platformUri = Uri.parse(sourceUrl);
-                    if ("https".equalsIgnoreCase(platformUri.getScheme())
-                            && NetWorkUtil.shouldAttachBiliCredentials(sourceUrl)) {
-                        platformUri = platformUri.buildUpon().scheme("http").build();
-                    }
-                    ijkPlayer.setDataSource(this, platformUri, headers);
-                }
-            } else if (sourceUrl.startsWith("content://")) {
-                ijkPlayer.setDataSource(this, Uri.parse(sourceUrl), new HashMap<>());
-            } else {
-                ijkPlayer.setDataSource(sourceUrl);
-            }
+            setPlayerDataSource(player, nowurl);
         } catch (IOException e) {
             e.printStackTrace();
-            if (retryPlaybackThroughRelay(sourceUrl, e.toString())) return;
-            runOnUiThread(() -> {
-                loading_text0.setText("视频载入失败");
-                anim_loading.stop();
-            });
+            if (retryPlaybackWithBackup(sourceUrl, e.toString())) return;
+            showPlaybackLoadFailure();
             return;
         }
 
-        ijkPlayer.setOnCompletionListener(iMediaPlayer -> {
+        player.setOnCompletionListener(iMediaPlayer -> {
             finishWatching = true;
             
             if (interactionData != null && interactionData.edges != null && 
                 interactionData.edges.questions != null && !questionShown) {
                 checkEndInteractionQuestions();
-                if (questionShown) {
-                    isPlaying = false;
-                    stopBackgroundPlaybackService();
+                    if (questionShown) {
+                        isPlaying = false;
+                        pausePlaybackPlayers();
+                        stopBackgroundPlaybackService();
                     if (hasDanmaku && mDanmakuView != null) {
                         mDanmakuView.pause();
                     }
@@ -924,15 +1843,17 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             }
             
             if (loop_enabled) {
-                ijkPlayer.seekTo(0);
+                seekPlaybackPlayers(0L);
                 if (hasDanmaku && mDanmakuView != null) {
                     mDanmakuView.seekTo(0L);
                 }
-                ijkPlayer.start();
+                isPlaying = true;
+                startPlaybackPlayers();
             } else if (auto_next_enabled && hasMultiplePages() && currentPageIndex < pagenames.size() - 1) {
                 switchToPage(currentPageIndex + 1);
             } else {
                 isPlaying = false;
+                pausePlaybackPlayers();
                 stopBackgroundPlaybackService();
                 if (hasDanmaku && mDanmakuView != null) {
                     mDanmakuView.pause();
@@ -944,7 +1865,12 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             }
         });
 
-        ijkPlayer.setOnErrorListener((iMediaPlayer, what, extra) -> {
+        player.setOnErrorListener((iMediaPlayer, what, extra) -> {
+            if (destroyed || iMediaPlayer != ijkPlayer) {
+                // A released IJK instance can report its final error asynchronously.
+                // It must never replace the state of the current player.
+                return true;
+            }
             String EReport = "播放器可能遇到错误！\n错误码：" + what + "\n附加：" + extra;
             Logu.e("ijk-err", EReport);
             JSONObject details = new JSONObject();
@@ -952,50 +1878,84 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 details.put("what", what);
                 details.put("extra", extra);
                 details.put("hardware_codec", hardwareCodecInUse);
+                details.put("device_profile", DeviceProfile.get().name());
                 details.put("live", isLiveMode);
-                details.put("relay", NetWorkUtil.isRelayForced());
+                details.put("relay", NetWorkUtil.isRelayActive());
             } catch (Exception ignored) {
             }
             DiagnosticLogManager.record("player_error", details);
-            if (retryPlaybackThroughRelay(sourceUrl, EReport)) return true;
+            if (iMediaPlayer instanceof UnifiedDashPlayer
+                    && retryUnifiedPlayerWithProgressiveSource(EReport)) {
+                return true;
+            }
+            // 1.1.6: 硬解失败 → 先同 URL 软解重试（避免 -10000 后只能换源碰运气），
+            // 软解也失败再走切源/报失败
+            if (hardwareCodecInUse && !forceSoftwareDecode && !isAudioOnlyMode) {
+                forceSoftwareDecode = true;
+                Logu.e("ijk-err", "硬件解码失败，切换软件解码重试: " + EReport);
+                recordPlayerAction("software_codec_retry", EReport, currentQuality);
+                retryPlaybackWithSameSource();
+                return true;
+            }
+            // Errors after prepare are playback interruptions, not load failures. Local cache
+            // has no backup URL, so rebuild the same source at the current position first.
+            if (preparationFinalized && isPrepared) {
+                if (!isOnlineVideo && !isLiveMode && localRuntimeRetryCount < 2) {
+                    localRuntimeRetryCount++;
+                    Logu.e("ijk-err", "本地视频播放异常，同源恢复: " + EReport);
+                    recordPlayerAction("local_runtime_retry", EReport, currentQuality);
+                    retryPlaybackWithSameSource();
+                    return true;
+                }
+                if (retryPlaybackWithBackup(sourceUrl, EReport)) return true;
+                playbackPrepareAttempt++;
+                stopBackgroundPlaybackService();
+                showPlaybackRuntimeFailure();
+                return true;
+            }
+            if (retryPlaybackWithBackup(sourceUrl, EReport)) return true;
             playbackPrepareAttempt++;
             stopBackgroundPlaybackService();
-            // Toast.makeText(PlayerActivity.this, EReport, Toast.LENGTH_LONG).show();
-            return false;
+            showPlaybackLoadFailure();
+            return true;
         });
 
         ijkPlayer.setOnBufferingUpdateListener(
                 (mp, percent) -> seekbar_progress.setSecondaryProgress(percent * video_all / 100));
 
-        if (isOnlineVideo || isLiveMode)
-            ijkPlayer.setOnInfoListener((mp, what, extra) -> {
+        ijkPlayer.setOnInfoListener((mp, what, extra) -> {
                 if (what == IMediaPlayer.MEDIA_INFO_BUFFERING_START) {
-                    runOnUiThread(() -> {
-                        loading_info.setVisibility(View.VISIBLE);
-                        anim_loading.start();
-                        loading_text0.setText("正在缓冲");
-                        showLoadingSpeed();
-                        if (hasDanmaku && mDanmakuView != null && isPlaying) {
-                            mDanmakuView.pause();
-                        }
-                    });
+                    videoTrackBuffering = true;
+                    if (videoBufferingStartedAt < 0L) {
+                        videoBufferingStartedAt = SystemClock.elapsedRealtime();
+                    }
+                    recordPlayerAction("buffering_start", null, currentQuality);
+                    scheduleDashBufferingPause();
+                    scheduleBufferingUi();
                 } else if (what == IMediaPlayer.MEDIA_INFO_BUFFERING_END) {
-                    runOnUiThread(() -> {
-                        if (loadingTimer != null)
-                            loadingTimer.cancel();
-                        loading_info.setVisibility(View.GONE);
-                        anim_loading.stop();
-                        if (hasDanmaku && mDanmakuView != null && isPlaying) {
-                            mDanmakuView.resume();
-                        }
-                    });
+                    videoTrackBuffering = false;
+                    long bufferingDuration = videoBufferingStartedAt < 0L ? -1L
+                            : SystemClock.elapsedRealtime() - videoBufferingStartedAt;
+                    videoBufferingStartedAt = -1L;
+                    recordPlayerAction("buffering_end", null, currentQuality, bufferingDuration);
+                    resumeAfterDashBuffering();
+                    cancelBufferingUi();
+                } else if (what == IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    videoRenderingStarted = true;
+                    recordPlayerAction("video_rendering_start", null, currentQuality);
                 }
 
                 return false;
             });
 
-        ijkPlayer.setScreenOnWhilePlaying(true);
-        ijkPlayer.prepareAsync();
+        player.setScreenOnWhilePlaying(true);
+        if (destroyed || player != ijkPlayer) return;
+        try {
+            player.prepareAsync();
+        } catch (RuntimeException error) {
+            if (!destroyed && player == ijkPlayer) throw error;
+            Logu.e("player-prepare", "播放器已释放，取消本次准备");
+        }
         schedulePlaybackPrepareTimeout(sourceUrl);
         Logu.v("开始准备");
     }
@@ -1003,20 +1963,50 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @SuppressLint("SetTextI18n")
     @Override
     public void onPrepared(IMediaPlayer mediaPlayer) {
+        if (mediaPlayer != ijkPlayer) return;
         playbackPrepareAttempt++;
+        videoTrackPrepared = true;
+        finishPreparationIfReady();
+    }
+
+    private void finishPreparationIfReady() {
+        if (preparationFinalized || !videoTrackPrepared || (hasDashAudio() && !audioTrackPrepared)) return;
+        preparationFinalized = true;
         if (destroyed) {
-            ijkPlayer.release();
+            releasePlaybackPlayers();
             return;
         }
 
         isPrepared = true;
+        recordPlayerAction("prepared", null, currentQuality);
         video_all = (int) ijkPlayer.getDuration();
         progressGuard.reset();
+        danmakuClock.reset(Math.max(0L, ijkPlayer.getCurrentPosition()),
+                SystemClock.elapsedRealtime(), false);
+        lastDanmakuClockSyncAt = -1L;
+
+        // The protobuf endpoint is segmented. Start it only after the player has
+        // reported its real duration; before preparation old devices commonly
+        // report 0 and long videos then load only the first hour of segments.
+        if (isOnlineVideo && hasDanmaku
+                && SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.NEW_DANMAKU_API, true)) {
+            downdanmu();
+        }
 
         changeVideoSize();
 
         if ((isLiveMode || hasDanmaku) && mDanmakuView != null) {
-            mDanmakuView.start();
+            // Let the media decoder establish a stable clock before the
+            // danmaku renderer starts competing for CPU on low-end watches.
+            final IDanmakuView preparedDanmakuView = mDanmakuView;
+            layout_control.postDelayed(() -> {
+                if (!destroyed && preparedDanmakuView == mDanmakuView
+                        && preparedDanmakuView.isPrepared()
+                        && isPrepared && (isPlaying || isLiveMode)) {
+                    preparedDanmakuView.start(Math.max(0L, ijkPlayer.getCurrentPosition()));
+                    syncDanmakuClockToPlayer(isPlaying);
+                }
+            }, 1200L);
         }
         if (SharedPreferencesUtil.getBoolean("player_ui_showDanmakuBtn", true)) {
             isDanmakuVisible = !SharedPreferencesUtil.getBoolean("pref_switch_danmaku", true);
@@ -1095,6 +2085,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
 
         seekbar_progress.setMax(video_all);
+        if (highEnergyEnabled) {
+            highEnergyDataBuilder.reset(video_all);
+            highEnergySegments.clear();
+            seekbar_progress.clearHighEnergyData();
+        }
         progress_str = StringUtil.toTime(video_all / 1000);
 
         if (isAudioOnlyMode) {
@@ -1104,7 +2099,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (SharedPreferencesUtil.getBoolean("player_from_last", true) && !isLiveMode) {
             if (progress_history > 5) {
                 progressGuard.recordSeek(progress_history, video_all, SystemClock.elapsedRealtime());
-                ijkPlayer.seekTo(progress_history);
+                seekPlaybackPlayers(progress_history);
                 if (hasDanmaku && mDanmakuView != null) {
                     mDanmakuView.seekTo(progress_history);
                 }
@@ -1113,10 +2108,30 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             }
         }
 
+        if (foregroundRestorePosition >= 0L && !isLiveMode) {
+            long currentPosition = Math.max(0L, ijkPlayer.getCurrentPosition());
+            if (ForegroundRestorePolicy.needsSeek(currentPosition, foregroundRestorePosition)) {
+                long restorePosition = ForegroundRestorePolicy.choosePosition(
+                        currentPosition, foregroundRestorePosition, video_all);
+                progressGuard.recordSeek(restorePosition, video_all, SystemClock.elapsedRealtime());
+                seekPlaybackPlayers(restorePosition);
+                if (hasDanmaku && mDanmakuView != null) {
+                    mDanmakuView.seekTo(restorePosition);
+                }
+                recordPlayerAction("foreground_position_restored", null, currentQuality);
+            } else {
+                recordPlayerAction("foreground_position_kept", null, currentQuality);
+            }
+            foregroundRestorePosition = -1L;
+        }
+
         loading_info.setVisibility(View.GONE);
         anim_loading.stop();
-        isPlaying = true;
-        btn_control.setImageResource(R.drawable.btn_player_pause);
+        isPlaying = resumeAfterPrepare;
+        danmakuClock.setPlaying(isPlaying && !videoSeekPending && !audioSeekPending,
+                SystemClock.elapsedRealtime());
+        btn_control.setImageResource(isPlaying
+                ? R.drawable.btn_player_pause : R.drawable.btn_player_play);
 
         text_speed.setVisibility(layout_top.getVisibility());
         if (isLiveMode)
@@ -1130,7 +2145,19 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         progressChange();
         onlineChange();
 
-        ijkPlayer.start();
+        setPlaybackSpeed(speed_values[seekbar_speed.getProgress()]);
+        if (isPlaying) {
+            startPlaybackPlayers();
+            // Listening mode intentionally has no video track, so there can be no
+            // video-rendering callback or first frame to wait for.
+            if (!isAudioOnlyMode) {
+                scheduleFirstFrameTimeout(ijkPlayer, playbackUrlIndex);
+            }
+            if (videoTrackBuffering) {
+                scheduleBufferingUi();
+            }
+        }
+        else pausePlaybackPlayers();
         if (!isActivityVisible && backgroundPlaybackActive) {
             startBackgroundPlaybackService();
         }
@@ -1146,6 +2173,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     private void showLoadingSpeed() {
         if (!(ijkPlayer instanceof IjkMediaPlayer)) return;
+        if (loadingTimer != null) loadingTimer.cancel();
         loadingTimer = new Timer();
         loadingTimer.schedule(new TimerTask() {
             @Override
@@ -1161,6 +2189,76 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 });
             }
         }, 0, 500);
+    }
+
+    private void scheduleBufferingUi() {
+        if (mainHandler == null) return;
+        cancelBufferingUi();
+        bufferingUiRunnable = () -> {
+            bufferingUiRunnable = null;
+            if (destroyed || !videoTrackBuffering || !isPrepared || !isPlaying) return;
+            bufferingUiShown = true;
+            loading_info.setVisibility(View.VISIBLE);
+            anim_loading.start();
+            loading_text0.setText("正在缓冲");
+            showLoadingSpeed();
+        };
+        mainHandler.postDelayed(bufferingUiRunnable, 500L);
+        scheduleUnifiedBufferingFallback();
+    }
+
+    private void scheduleUnifiedBufferingFallback() {
+        cancelUnifiedBufferingFallback();
+        if (mainHandler == null || !(ijkPlayer instanceof UnifiedDashPlayer)
+                || !isPrepared || !isPlaying) return;
+        final IMediaPlayer player = ijkPlayer;
+        unifiedBufferingFallbackRunnable = () -> {
+            unifiedBufferingFallbackRunnable = null;
+            if (destroyed || player != ijkPlayer || !isPrepared || !isPlaying
+                    || !videoTrackBuffering) return;
+            recordPlayerAction("unified_buffering_timeout", null, currentQuality);
+            retryUnifiedPlayerWithProgressiveSource("buffering timeout");
+        };
+        mainHandler.postDelayed(unifiedBufferingFallbackRunnable,
+                UNIFIED_BUFFERING_FALLBACK_DELAY_MS);
+    }
+
+    private void cancelUnifiedBufferingFallback() {
+        if (mainHandler != null && unifiedBufferingFallbackRunnable != null) {
+            mainHandler.removeCallbacks(unifiedBufferingFallbackRunnable);
+        }
+        unifiedBufferingFallbackRunnable = null;
+    }
+
+    private void cancelBufferingUi() {
+        cancelUnifiedBufferingFallback();
+        if (mainHandler != null && bufferingUiRunnable != null) {
+            mainHandler.removeCallbacks(bufferingUiRunnable);
+        }
+        bufferingUiRunnable = null;
+        if (!bufferingUiShown) return;
+        bufferingUiShown = false;
+        if (loadingTimer != null) {
+            loadingTimer.cancel();
+            loadingTimer = null;
+        }
+        if (loading_info != null) loading_info.setVisibility(View.GONE);
+        if (anim_loading != null) anim_loading.stop();
+    }
+
+    private void scheduleFirstFrameTimeout(IMediaPlayer player, int sourceIndex) {
+        mainHandler.postDelayed(() -> {
+            if (destroyed || player != ijkPlayer || sourceIndex != playbackUrlIndex
+                    || !isPrepared || !isPlaying || isAudioOnlyMode || videoRenderingStarted) return;
+            // Listening mode intentionally disables video rendering. It must never be
+            // treated as a missing first video frame after a background transition.
+            recordPlayerAction("first_frame_timeout", null, currentQuality);
+            String failedUrl = playbackUrls.isEmpty()
+                    ? video_url : NetWorkUtil.routeUrlForRelay(playbackUrls.get(sourceIndex));
+            if (!retryPlaybackWithBackup(failedUrl, "first frame timeout")) {
+                showPlaybackLoadFailure();
+            }
+        }, 15_000L);
     }
 
     private void changeVideoSize() {
@@ -1221,7 +2319,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     cancel();
                     return;
                 }
-                if (isPrepared && isPlaying && !isSeeking) {
+                if (isPrepared && isPlaying && !isSeeking
+                        && !videoSeekPending && !audioSeekPending) {
                     long currentPosition;
                     try {
                         currentPosition = player.getCurrentPosition();
@@ -1229,8 +2328,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         if (destroyed || ijkPlayer == null) cancel();
                         return;
                     }
-                    long acceptedPosition = progressGuard.accept(
-                            currentPosition, video_all, SystemClock.elapsedRealtime());
+                    long now = SystemClock.elapsedRealtime();
+                    long acceptedPosition = progressGuard.accept(currentPosition, video_all, now);
                     if (acceptedPosition < 0L) {
                         Logu.e("player-progress", "忽略异常播放进度：" + currentPosition);
                         if (!progressAnomalyReported) {
@@ -1246,6 +2345,10 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         }
                         return;
                     }
+                    reconcileDanmakuClock(currentPosition, now);
+                    DanmakuWindowLoader windowLoader = danmakuWindowLoader;
+                    if (windowLoader != null) windowLoader.update(acceptedPosition, video_all);
+                    correctDashAudioDrift(acceptedPosition);
                     video_now = (int) acceptedPosition;
                     if (video_now_last != video_now) { // 检测进度是否在变动
                         video_now_last = video_now;
@@ -1435,72 +2538,111 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void downdanmu() {
-        if (danmaku_url.isEmpty())
+        if (danmaku_url == null || danmaku_url.isEmpty())
             return;
 
         boolean useNewApi = SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.NEW_DANMAKU_API, true);
 
         if (useNewApi) {
-            downdanmuNew();
+            runOnUiThread(() -> {
+                if (destroyed || !isPrepared || ijkPlayer == null || danmakuLoadStarted) return;
+                long duration = ijkPlayer.getDuration();
+                if (duration <= 0) return;
+                danmakuLoadStarted = true;
+                final int generation = danmakuLoadGeneration;
+                final long requestAid = aid;
+                final long requestCid = cid;
+                danmakuWindowLoader = new DanmakuWindowLoader(CenterThreadPool::run,
+                        (index, cancellation) -> {
+                            try {
+                                return DanmakuApi.getVideoDanmakuSegment(
+                                        requestAid, requestCid, index, cancellation);
+                            } catch (Exception error) {
+                                if (!cancellation.isCancelled())
+                                    Logu.e("danmaku-window", "segment=" + index + ": " + error);
+                                throw error;
+                            }
+                        },
+                        (revision, segments) -> mainHandler.post(() -> {
+                            DanmakuWindowLoader loader = danmakuWindowLoader;
+                            if (destroyed || generation != danmakuLoadGeneration
+                                    || loader == null || !loader.isCurrent(revision)) return;
+                            pendingDanmakuWindow = segments;
+                            applyDanmakuWindow();
+                        }), SystemClock::elapsedRealtime);
+                streamDanmaku(null, new ArrayList<>());
+                // History restoration happens later in preparation. Request its destination first.
+                danmakuWindowLoader.update(Math.max(progress_history,
+                        Math.max(0L, ijkPlayer.getCurrentPosition())), duration);
+            });
         } else {
             downdanmuOld();
         }
     }
 
     private void downdanmuOld() {
-        try {
-            Response response = NetWorkUtil.get(danmaku_url, NetWorkUtil.webHeaders);
-            BufferedSink bufferedSink = null;
-            try {
-                if (!danmakuFile.exists())
-                    danmakuFile.createNewFile();
-                Sink sink = Okio.sink(danmakuFile);
-                byte[] decompressBytes = decompress(Objects.requireNonNull(response.body()).bytes());// 调用解压函数进行解压，返回包含解压后数据的byte数组
-                bufferedSink = Okio.buffer(sink);
-                bufferedSink.write(decompressBytes);// 将解压后数据写入文件（sink）中
-                bufferedSink.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                if (bufferedSink != null) {
-                    bufferedSink.close();
-                }
+        final int generation = danmakuLoadGeneration;
+        final String url = danmaku_url;
+        final File file = new File(getCacheDir(), "danmaku-" + cid + "-" + generation + ".xml");
+        if (destroyed || url == null || url.isEmpty()) return;
+        try (Response response = NetWorkUtil.get(url, NetWorkUtil.webHeaders)) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new IOException("Danmaku HTTP " + response.code());
             }
-            streamDanmaku(danmakuFile.toString(), null);
+            try (BufferedSink bufferedSink = Okio.buffer(Okio.sink(file))) {
+                byte[] decompressBytes = decompress(Objects.requireNonNull(response.body()).bytes());// 调用解压函数进行解压，返回包含解压后数据的byte数组
+                bufferedSink.write(decompressBytes);// 将解压后数据写入文件（sink）中
+            }
+            runOnUiThread(() -> {
+                if (!destroyed && generation == danmakuLoadGeneration) {
+                    danmakuFile = file;
+                    streamDanmaku(file.toString(), null);
+                }
+            });
         } catch (Exception e) {
             runOnUiThread(() -> MsgUtil.err(e));
         }
     }
 
-    private void downdanmuNew() {
-        try {
-            int estimatedDuration = 3600;
+    private void stopDanmakuWindow() {
+        DanmakuWindowLoader loader = danmakuWindowLoader;
+        danmakuWindowLoader = null;
+        if (loader != null) loader.close();
+        pendingDanmakuWindow = null;
+        displayedDanmakuSegments.clear();
+        windowDanmakuParser = null;
+    }
 
-            if (ijkPlayer != null && isPrepared) {
-                long duration = ijkPlayer.getDuration();
-                if (duration > 0) {
-                    estimatedDuration = (int) (duration / 1000);
-                }
+    private void applyDanmakuWindow() {
+        if (destroyed || pendingDanmakuWindow == null || windowDanmakuParser == null
+                || mDanmakuView == null || !mDanmakuView.isPrepared()) return;
+        if (!pendingDanmakuWindow.keySet().containsAll(displayedDanmakuSegments)) {
+            // Drop expired segments from the renderer as well as the network cache.
+            mDanmakuView.removeAllDanmakus(true);
+            mDanmakuView.clearDanmakusOnScreen();
+            displayedDanmakuSegments.clear();
+        }
+        for (Map.Entry<Integer, DmSegMobileReply> entry : pendingDanmakuWindow.entrySet()) {
+            updateHighEnergyData(entry.getKey(), entry.getValue());
+            if (displayedDanmakuSegments.contains(entry.getKey())) continue;
+            windowDanmakuParser.setDanmakuSegments(java.util.Collections.singletonList(entry.getValue()));
+            IDanmakuIterator items = windowDanmakuParser.parse().iterator();
+            while (items.hasNext()) mDanmakuView.addDanmaku(items.next());
+            displayedDanmakuSegments.add(entry.getKey());
+            Logu.d("danmaku-window", "shown segment=" + entry.getKey()
+                    + ", count=" + entry.getValue().elems.size());
+        }
+        windowDanmakuParser.setDanmakuSegments(null);
+    }
+
+    private void updateHighEnergyData(int segmentIndex, DmSegMobileReply segment) {
+        if (!highEnergyEnabled || segment == null || video_all <= 0) return;
+        if (!highEnergySegments.add(segmentIndex)) return;
+        if (highEnergyDataBuilder.addSegment(segment)) {
+            HighEnergyData data = highEnergyDataBuilder.snapshot();
+            if (!destroyed && seekbar_progress != null) {
+                seekbar_progress.setHighEnergyData(data.events, data.stepSec);
             }
-
-            Logu.d("新版弹幕", "开始获取新版弹幕，aid=" + aid + ", cid=" + cid);
-
-            java.util.List<DmSegMobileReply> segments = DanmakuApi.getAllVideoDanmaku(aid, cid, estimatedDuration);
-
-            if (segments.isEmpty()) {
-                Logu.w("新版弹幕", "未获取到弹幕，尝试使用旧版接口");
-                CenterThreadPool.run(() -> downdanmuOld());
-                return;
-            }
-
-            Logu.d("新版弹幕", "成功获取 " + segments.size() + " 个弹幕分段");
-
-            streamDanmaku(null, segments);
-        } catch (Exception e) {
-            e.printStackTrace();
-            Logu.e("新版弹幕", "获取失败: " + e.getMessage() + "，回退到旧版接口");
-            runOnUiThread(() -> MsgUtil.toast("新版弹幕获取失败，使用旧版接口"));
-            CenterThreadPool.run(() -> downdanmuOld());
         }
     }
 
@@ -1509,7 +2651,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private BaseDanmakuParser createParser(String stream, java.util.List<DmSegMobileReply> protobufSegments) {
-        if (protobufSegments != null && !protobufSegments.isEmpty()) {
+        if (protobufSegments != null) {
             BiliProtobufDanmakuParser parser = new BiliProtobufDanmakuParser();
             parser.sharedPreferences = SharedPreferencesUtil.getSharedPreferences();
             parser.setDanmakuSegments(protobufSegments);
@@ -1546,20 +2688,25 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
         mContext = DanmakuContext.create();
         HashMap<Integer, Integer> maxLinesPair = new HashMap<>();
-        maxLinesPair.put(BaseDanmaku.TYPE_SCROLL_RL, SharedPreferencesUtil.getInt("player_danmaku_maxline", 15));
+        maxLinesPair.put(BaseDanmaku.TYPE_SCROLL_RL, PlayerSettingsUtil.getDanmakuMaxLine());
         HashMap<Integer, Boolean> overlap = new HashMap<>();
         overlap.put(BaseDanmaku.TYPE_SCROLL_LR, SharedPreferencesUtil.getBoolean("player_danmaku_allowoverlap", true));
         overlap.put(BaseDanmaku.TYPE_FIX_BOTTOM, SharedPreferencesUtil.getBoolean("player_danmaku_allowoverlap", true));
         mContext.setDanmakuStyle(IDisplayer.DANMAKU_STYLE_STROKEN, 1)
                 .setDuplicateMergingEnabled(SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false))
-                .setScrollSpeedFactor(SharedPreferencesUtil.getFloat("player_danmaku_speed", 1.0f))
-                .setScaleTextSize(SharedPreferencesUtil.getFloat("player_danmaku_size", 0.7f))// 缩放值
+                .setScrollSpeedFactor(PlayerSettingsUtil.getDanmakuSpeed())
+                .setScaleTextSize(PlayerSettingsUtil.getDanmakuSize())// 缩放值
                 .setMaximumLines(maxLinesPair)
-                .setDanmakuTransparency(SharedPreferencesUtil.getFloat("player_danmaku_transparency", 0.5f))
+                .setDanmakuTransparency(PlayerSettingsUtil.getDanmakuTransparency())
                 .preventOverlapping(overlap);
 
         BaseDanmakuParser mParser = createParser(danmakuFile, protobufSegments);
+        windowDanmakuParser = danmakuWindowLoader != null
+                && mParser instanceof BiliProtobufDanmakuParser
+                ? (BiliProtobufDanmakuParser) mParser : null;
 
+        final IDanmakuView targetView = mDanmakuView;
+        final int generation = danmakuLoadGeneration;
         mDanmakuView.setCallback(new DrawHandler.Callback() {
             @Override
             public void prepared() {
@@ -1567,14 +2714,26 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 String msg = protobufSegments != null
                         ? "弹幕君准备完毕～(是新来的哦～)"
                         : "弹幕君准备完毕～(*≧ω≦)";
-                addDanmaku(msg, Color.WHITE);
+                runOnUiThread(() -> {
+                    if (destroyed || generation != danmakuLoadGeneration || targetView != mDanmakuView) return;
+                    applyDanmakuWindow();
+                    if (isPrepared && ijkPlayer != null) {
+                        targetView.start(Math.max(0L, ijkPlayer.getCurrentPosition()));
+                        syncDanmakuClockToPlayer(isPlaying);
+                        if (!isPlaying) targetView.pause();
+                        if (!isDanmakuVisible) targetView.hide();
+                    }
+                    addDanmaku(msg, Color.WHITE);
+                });
             }
 
             @Override
             public void updateTimer(DanmakuTimer timer) {
                 if (ijkPlayer != null && isPrepared) {
-                    long currentPos = ijkPlayer.getCurrentPosition();
-                    timer.update(currentPos);
+                    // The media position is sampled by progressChange() at a low
+                    // frequency; do not cross the JNI/media boundary for every
+                    // danmaku draw callback on old watches.
+                    timer.update(danmakuClock.positionAt(SystemClock.elapsedRealtime()));
                 }
             }
 
@@ -1618,6 +2777,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             byte[] buf = new byte[2048];
             while (!decompresser.finished()) {
                 int i = decompresser.inflate(buf);
+                if (i == 0 && !decompresser.finished()) {
+                    throw new IOException("Incomplete danmaku compression stream");
+                }
                 o.write(buf, 0, i);
             }
             output = o.toByteArray();
@@ -1644,7 +2806,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     interactionData.edges.questions != null && !questionShown) {
                     if (!questionShown) {
                         progressGuard.recordSeek(0L, video_all, SystemClock.elapsedRealtime());
-                        ijkPlayer.seekTo(0);
+                        seekPlaybackPlayers(0L);
                         if (hasDanmaku && mDanmakuView != null) {
                             mDanmakuView.seekTo(0L);
                         }
@@ -1652,7 +2814,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     }
                 } else {
                     progressGuard.recordSeek(0L, video_all, SystemClock.elapsedRealtime());
-                    ijkPlayer.seekTo(0);
+                    seekPlaybackPlayers(0L);
                     if (hasDanmaku && mDanmakuView != null) {
                         mDanmakuView.seekTo(0L);
                     }
@@ -1752,10 +2914,12 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void playerPause() {
+        if (ijkPlayer != null && isPrepared) syncDanmakuClockToPlayer(false);
         isPlaying = false;
+        recordPlayerAction("pause", null, currentQuality);
         stopBackgroundPlaybackService();
         if (ijkPlayer != null && isPrepared) {
-            ijkPlayer.pause();
+            pausePlaybackPlayers();
             if (hasDanmaku && mDanmakuView != null) {
                 mDanmakuView.pause();
             }
@@ -1768,9 +2932,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void playerResume() {
+        if (ijkPlayer != null && isPrepared) syncDanmakuClockToPlayer(false);
         isPlaying = true;
+        recordPlayerAction("resume", null, currentQuality);
         if (ijkPlayer != null && isPrepared) {
-            ijkPlayer.start();
+            startPlaybackPlayers();
             if (hasDanmaku && mDanmakuView != null) {
                 mDanmakuView.resume();
             }
@@ -1783,6 +2949,370 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (!isActivityVisible && backgroundPlaybackActive) {
             startBackgroundPlaybackService();
         }
+    }
+
+    private void pausePlaybackPlayers() {
+        danmakuClock.setPlaying(false, SystemClock.elapsedRealtime());
+        dashStartGeneration++;
+        dashVideoStarted = false;
+        try {
+            if (ijkPlayer != null) ijkPlayer.pause();
+        } catch (RuntimeException ignored) {
+        }
+        try {
+            if (dashAudioPlayer != null) dashAudioPlayer.pause();
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void startPlaybackPlayers() {
+        try {
+            if (hasDashAudio() && dashAudioPlayer != null && ijkPlayer != null) {
+                if (videoSeekPending || audioSeekPending) return;
+                if (dashPlaybackStartedOnce && (videoTrackBuffering || audioTrackBuffering)) return;
+                long videoPosition = Math.max(0L, ijkPlayer.getCurrentPosition());
+                long audioPosition = Math.max(0L, dashAudioPlayer.getCurrentPosition());
+                if (SystemClock.elapsedRealtime() >= suppressDashDriftUntil
+                        && Math.abs(audioPosition - videoPosition) > 1000L) {
+                    alignDashAudioToVideo("resume", 1000L);
+                    return;
+                }
+                dashAudioPlayer.start();
+                int generation = ++dashStartGeneration;
+                if (audioRenderingStarted) {
+                    startDashVideoAfterAudio();
+                } else {
+                    // Some old IJK builds do not emit AUDIO_RENDERING_START. Keep only a
+                    // short head start; a long delay lets the independent audio clock drift
+                    // close to a second before the first video frame is shown.
+                    mainHandler.postDelayed(() -> {
+                        if (generation == dashStartGeneration && isPlaying && !dashVideoStarted) {
+                            startDashVideoAfterAudio();
+                        }
+                    }, DASH_START_HEADSTART_MS);
+                }
+                return;
+            }
+            if (ijkPlayer != null) {
+                ijkPlayer.start();
+                danmakuClock.setPlaying(isPlaying, SystemClock.elapsedRealtime());
+            }
+        } catch (RuntimeException error) {
+            recordPlayerAction("dash_start_failed", error.getClass().getSimpleName(), currentQuality);
+        }
+    }
+
+    private void kickPlaybackPlayersAfterSeek(boolean audioOnlySeek) {
+        try {
+            if (hasDashAudio() && dashAudioPlayer != null && ijkPlayer != null) {
+                dashAudioPlayer.start();
+                if (audioOnlySeek) {
+                    dashVideoStarted = false;
+                    recordPlayerAction("dash_audio_seek_buffering_kick", null, currentQuality);
+                    return;
+                }
+                // Keep the same start order as normal playback. Starting both
+                // players in the same call lets the video decoder become the
+                // late side on older IJK builds and produces an audible offset
+                // after a seek, especially on long 60fps streams.
+                int generation = ++dashStartGeneration;
+                if (audioRenderingStarted) {
+                    startDashVideoAfterAudio();
+                } else {
+                    mainHandler.postDelayed(() -> {
+                        if (generation == dashStartGeneration && isPlaying && !dashVideoStarted) {
+                            startDashVideoAfterAudio();
+                        }
+                    }, DASH_START_HEADSTART_MS);
+                }
+                recordPlayerAction("dash_seek_buffering_kick", null, currentQuality);
+                return;
+            }
+            if (ijkPlayer != null) ijkPlayer.start();
+        } catch (RuntimeException error) {
+            recordPlayerAction("dash_seek_buffering_kick_failed",
+                    error.getClass().getSimpleName(), currentQuality);
+        }
+    }
+
+    private void startDashVideoAfterAudio() {
+        if (destroyed || !isPlaying || !isPrepared || !hasDashAudio()
+                || dashAudioPlayer == null || ijkPlayer == null || dashVideoStarted
+                || videoSeekPending || audioSeekPending
+                || (dashPlaybackStartedOnce && (videoTrackBuffering || audioTrackBuffering))) return;
+        try {
+            dashVideoStarted = true;
+            ijkPlayer.start();
+            danmakuClock.setPlaying(true, SystemClock.elapsedRealtime());
+            dashPlaybackStartedOnce = true;
+            recordPlayerAction("dash_video_started_after_audio", null, currentQuality);
+        } catch (RuntimeException error) {
+            dashVideoStarted = false;
+            recordPlayerAction("dash_video_start_failed", error.getClass().getSimpleName(), currentQuality);
+        }
+    }
+
+    private void pauseAudioForDashBuffering() {
+        if (!hasDashAudio() || dashAudioPlayer == null) return;
+        try {
+            dashStartGeneration++;
+            dashVideoStarted = false;
+            dashAudioPlayer.pause();
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void pauseVideoForDashBuffering() {
+        if (ijkPlayer == null) return;
+        try {
+            dashStartGeneration++;
+            dashVideoStarted = false;
+            ijkPlayer.pause();
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private void scheduleDashBufferingPause() {
+        // Single-player playback already keeps audio and video on one clock.
+        // Applying the DASH coordination pause there creates visible stalls on
+        // short network hiccups, especially on Android 8.1 watches.
+        if (!hasDashAudio()) return;
+        runOnUiThread(() -> {
+            if (destroyed || dashBufferingPauseApplied || dashBufferingPauseRunnable != null)
+                return;
+            dashBufferingPauseRunnable = () -> {
+                dashBufferingPauseRunnable = null;
+                if (destroyed || !isPlaying || videoSeekPending || audioSeekPending
+                        || (!videoTrackBuffering && !audioTrackBuffering)) return;
+                dashBufferingPauseApplied = true;
+                pausePlaybackPlayers();
+                recordPlayerAction("dash_coordinated_buffering_pause", null, currentQuality);
+            };
+            mainHandler.postDelayed(dashBufferingPauseRunnable, 350L);
+        });
+    }
+
+    private void cancelDashBufferingPause() {
+        if (dashBufferingPauseRunnable == null || mainHandler == null) return;
+        mainHandler.removeCallbacks(dashBufferingPauseRunnable);
+        dashBufferingPauseRunnable = null;
+    }
+
+    private void resumeAfterDashBuffering() {
+        if (!hasDashAudio()) return;
+        runOnUiThread(() -> {
+            if (destroyed || !isPlaying || videoTrackBuffering || audioTrackBuffering
+                    || videoSeekPending || audioSeekPending) return;
+            cancelDashBufferingPause();
+            boolean needsCoordinatedResume = dashBufferingPauseApplied || !dashVideoStarted;
+            dashBufferingPauseApplied = false;
+            if (!needsCoordinatedResume) return;
+            if (SystemClock.elapsedRealtime() < suppressDashDriftUntil) {
+                startPlaybackPlayers();
+                return;
+            }
+            if (!alignDashAudioToVideo("buffering_end", 1000L)) {
+                startPlaybackPlayers();
+            }
+        });
+    }
+
+    private void seekPlaybackPlayers(long position) {
+        long boundedPosition = Math.max(0L,
+                video_all > 0 ? Math.min(position, video_all) : position);
+        DanmakuWindowLoader windowLoader = danmakuWindowLoader;
+        if (windowLoader != null) windowLoader.update(boundedPosition, video_all);
+        danmakuClock.reset(boundedPosition, SystemClock.elapsedRealtime(), false);
+        lastDanmakuClockSyncAt = -1L;
+        if (videoSeekPending || audioSeekPending) {
+            // IJK can report the previous seek as complete after a newer seekTo call.
+            // Serialize seeks and keep only the user's latest destination.
+            queuedSynchronizedSeekPosition = boundedPosition;
+            resumeAfterSynchronizedSeek = resumeAfterSynchronizedSeek
+                    || (isPlaying && isPrepared);
+            suppressDashDriftUntil = SystemClock.elapsedRealtime() + 3500L;
+            recordPlayerAction("seek_queued", String.valueOf(boundedPosition), currentQuality);
+            return;
+        }
+        beginSynchronizedSeek(boundedPosition);
+    }
+
+    private void beginSynchronizedSeek(long position) {
+        final int generation = ++synchronizedSeekGeneration;
+        danmakuClock.reset(position, SystemClock.elapsedRealtime(), false);
+        audioOnlySynchronizedSeek = false;
+        resumeAfterSynchronizedSeek = resumeAfterSynchronizedSeek
+                || (isPlaying && isPrepared);
+        videoSeekPending = ijkPlayer != null && videoTrackPrepared;
+        audioSeekPending = hasDashAudio() && dashAudioPlayer != null && audioTrackPrepared;
+        pendingVideoSeekPosition = videoSeekPending ? position : -1L;
+        pendingAudioSeekPosition = audioSeekPending ? position : -1L;
+        suppressDashDriftUntil = SystemClock.elapsedRealtime() + 3500L;
+        if (resumeAfterSynchronizedSeek) pausePlaybackPlayers();
+
+        try {
+            if (ijkPlayer != null) ijkPlayer.seekTo(position);
+        } catch (RuntimeException error) {
+            videoSeekPending = false;
+            pendingVideoSeekPosition = -1L;
+            recordPlayerAction("video_seek_failed", error.getClass().getSimpleName(), currentQuality);
+        }
+        if (dashAudioPlayer != null) {
+            try {
+                dashAudioPlayer.seekTo(position);
+            } catch (RuntimeException error) {
+                audioSeekPending = false;
+                pendingAudioSeekPosition = -1L;
+                recordPlayerAction("dash_audio_seek_failed", error.getClass().getSimpleName(), currentQuality);
+            }
+        }
+        finishSynchronizedSeekIfReady(generation);
+        mainHandler.postDelayed(() -> {
+            if (destroyed || generation != synchronizedSeekGeneration
+                    || (!videoSeekPending && !audioSeekPending)) return;
+            videoSeekPending = false;
+            audioSeekPending = false;
+            pendingVideoSeekPosition = -1L;
+            pendingAudioSeekPosition = -1L;
+            recordPlayerAction("dash_seek_timeout", null, currentQuality);
+            finishSynchronizedSeekIfReady(generation);
+        }, 3000L);
+    }
+
+    private boolean alignDashAudioToVideo(String reason, long thresholdMs) {
+        if (!hasDashAudio() || dashAudioPlayer == null || ijkPlayer == null
+                || !audioTrackPrepared || !videoTrackPrepared) return false;
+        try {
+            long videoPosition = Math.max(0L, ijkPlayer.getCurrentPosition());
+            long audioPosition = Math.max(0L, dashAudioPlayer.getCurrentPosition());
+            long drift = audioPosition - videoPosition;
+            if (Math.abs(drift) <= thresholdMs) return false;
+
+            final int generation = ++synchronizedSeekGeneration;
+            audioOnlySynchronizedSeek = true;
+            resumeAfterSynchronizedSeek = isPlaying && isPrepared;
+            videoSeekPending = false;
+            audioSeekPending = true;
+            pendingVideoSeekPosition = -1L;
+            pendingAudioSeekPosition = videoPosition;
+            suppressDashDriftUntil = SystemClock.elapsedRealtime() + 3500L;
+            if (resumeAfterSynchronizedSeek) pausePlaybackPlayers();
+            dashAudioPlayer.seekTo(videoPosition);
+            recordPlayerAction("dash_audio_align_" + reason, String.valueOf(drift), currentQuality);
+            mainHandler.postDelayed(() -> {
+                if (destroyed || generation != synchronizedSeekGeneration || !audioSeekPending) return;
+                audioSeekPending = false;
+                pendingAudioSeekPosition = -1L;
+                recordPlayerAction("dash_audio_align_timeout", reason, currentQuality);
+                finishSynchronizedSeekIfReady(generation);
+            }, 2500L);
+            return true;
+        } catch (RuntimeException error) {
+            videoSeekPending = false;
+            audioSeekPending = false;
+            pendingVideoSeekPosition = -1L;
+            pendingAudioSeekPosition = -1L;
+            resumeAfterSynchronizedSeek = false;
+            recordPlayerAction("dash_audio_align_failed", error.getClass().getSimpleName(), currentQuality);
+            return false;
+        }
+    }
+
+    private void finishSynchronizedSeekIfReady(int generation) {
+        if (destroyed || generation != synchronizedSeekGeneration
+                || videoSeekPending || audioSeekPending) return;
+        if (queuedSynchronizedSeekPosition >= 0L) {
+            long nextPosition = queuedSynchronizedSeekPosition;
+            queuedSynchronizedSeekPosition = -1L;
+            beginSynchronizedSeek(nextPosition);
+            return;
+        }
+        // During initial preparation a history-position seek can begin just before
+        // finishPreparationIfReady marks the session as playing.
+        boolean shouldResume = resumeAfterSynchronizedSeek || isPlaying;
+        boolean audioOnlySeek = audioOnlySynchronizedSeek;
+        audioOnlySynchronizedSeek = false;
+        resumeAfterSynchronizedSeek = false;
+        suppressDashDriftUntil = SystemClock.elapsedRealtime() + 2500L;
+        danmakuClock.setPlaying(isPlaying, SystemClock.elapsedRealtime());
+        if (shouldResume && isPlaying) {
+            if (videoTrackBuffering || audioTrackBuffering) {
+                kickPlaybackPlayersAfterSeek(audioOnlySeek);
+            } else {
+                startPlaybackPlayers();
+            }
+        }
+    }
+
+    private void correctDashAudioDrift(long videoPosition) {
+        if (!hasDashAudio() || dashAudioPlayer == null || !audioTrackPrepared || isSeeking
+                || videoTrackBuffering || audioTrackBuffering
+                || videoSeekPending || audioSeekPending) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now < suppressDashDriftUntil
+                || now - lastDashAudioSyncAt < DASH_DRIFT_CHECK_INTERVAL_MS) return;
+        lastDashAudioSyncAt = now;
+        try {
+            long audioPosition = dashAudioPlayer.getCurrentPosition();
+            long drift = audioPosition - videoPosition;
+            if (Math.abs(drift) > DASH_DRIFT_CORRECTION_THRESHOLD_MS) {
+                runOnUiThread(() -> alignDashAudioToVideo(
+                        Math.abs(drift) >= 1000L ? "large_drift" : "drift",
+                        DASH_DRIFT_CORRECTION_THRESHOLD_MS));
+            }
+        } catch (RuntimeException error) {
+            recordPlayerAction("dash_audio_sync_failed", error.getClass().getSimpleName(), currentQuality);
+        }
+    }
+
+    private void reconcileDanmakuClock(long playerPosition, long now) {
+        if (!hasDanmaku || mDanmakuView == null || !isPlaying
+                || isSeeking || videoSeekPending || audioSeekPending) return;
+        if (lastDanmakuClockSyncAt >= 0L && now - lastDanmakuClockSyncAt < 750L) return;
+        danmakuClock.reconcile(playerPosition, now, 800L);
+        lastDanmakuClockSyncAt = now;
+    }
+
+    private void syncDanmakuClockToPlayer(boolean playing) {
+        if (!hasDanmaku || mDanmakuView == null || ijkPlayer == null || !isPrepared) {
+            danmakuClock.setPlaying(playing, SystemClock.elapsedRealtime());
+            return;
+        }
+        try {
+            danmakuClock.reset(Math.max(0L, ijkPlayer.getCurrentPosition()),
+                    SystemClock.elapsedRealtime(), playing);
+            lastDanmakuClockSyncAt = -1L;
+        } catch (RuntimeException ignored) {
+            danmakuClock.setPlaying(playing, SystemClock.elapsedRealtime());
+        }
+    }
+
+    private void recordPlayerAction(String action, String error, int quality) {
+        recordPlayerAction(action, error, quality, -1L);
+    }
+
+    private void recordPlayerAction(String action, String error, int quality,
+                                    long bufferingDurationMs) {
+        JSONObject details = new JSONObject();
+        try {
+            details.put("action", action);
+            details.put("quality", quality);
+            details.put("prepared", isPrepared);
+            details.put("playing", isPlaying);
+            details.put("live", isLiveMode);
+            details.put("online", isOnlineVideo);
+            details.put("relay", NetWorkUtil.isRelayActive());
+            details.put("device_profile", DeviceProfile.get().name());
+            details.put("player", ijkPlayer instanceof UnifiedDashPlayer
+                    ? "unified" : ijkPlayer instanceof IjkMediaPlayer ? "ijk" : "platform");
+            details.put("source_index", playbackUrlIndex);
+            if (bufferingDurationMs >= 0L) {
+                details.put("buffering_duration_ms", bufferingDurationMs);
+            }
+            if (error != null && !error.isEmpty()) details.put("error", error);
+        } catch (Exception ignored) {
+        }
+        DiagnosticLogManager.record("player_interaction", details);
     }
 
     @Override
@@ -1821,6 +3351,16 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     protected void onPause() {
         super.onPause();
         Logu.v("onPause");
+        stopHardwareVolumeRepeat();
+        wasPlayingBeforePause = isPlaying;
+        foregroundRestoreGeneration++;
+        foregroundRestoreScheduled = false;
+        if (!isLiveMode && isPrepared && ijkPlayer != null) {
+            try {
+                foregroundRestorePosition = Math.max(0L, ijkPlayer.getCurrentPosition());
+            } catch (RuntimeException ignored) {
+            }
+        }
         isActivityVisible = false;
         backgroundPlaybackActive = BackgroundPlaybackPolicy.shouldContinue(
                 ordinaryBackgroundPlaybackEnabled(),
@@ -1834,6 +3374,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (!backgroundPlaybackActive) {
             playerPause();
         } else {
+            recordPlayerAction("background_playback", null, currentQuality);
             startBackgroundPlaybackService();
         }
     }
@@ -1842,11 +3383,36 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     protected void onResume() {
         super.onResume();
         Logu.v("onResume");
+        boolean returningFromBackgroundPlayback = backgroundPlaybackActive;
         isActivityVisible = true;
         backgroundLeaveRequested = false;
         backgroundPlaybackActive = false;
         backgroundTransitionSuppressed = false;
         stopBackgroundPlaybackService();
+        if (returningFromBackgroundPlayback || videoOutputDetached) {
+            recordPlayerAction("foreground_restore", null, currentQuality);
+            restoreFrameOnNextSurface = true;
+            final int generation = ++foregroundRestoreGeneration;
+            if (foregroundRestoreScheduled) return;
+            foregroundRestoreScheduled = true;
+            if (layout_video != null) {
+                layout_video.postDelayed(() -> {
+                    if (destroyed || generation != foregroundRestoreGeneration || !isActivityVisible) return;
+                    restoreVideoOutputIfAvailable();
+                    // Give SurfaceView/TextureView callbacks time to rebind the existing
+                    // decoder. Rebuilding immediately caused a visible position rollback.
+                    layout_video.postDelayed(() -> {
+                        if (destroyed || generation != foregroundRestoreGeneration
+                                || !isActivityVisible) return;
+                        foregroundRestoreScheduled = false;
+                        if (isPrepared && !isAudioOnlyMode && !isLiveMode
+                                && (videoOutputDetached || DeviceProfile.useUnifiedDashPlayer())) {
+                            recreatePlayerForForeground();
+                        }
+                    }, 420L);
+                }, 80L);
+            }
+        }
     }
 
     @Override
@@ -1859,17 +3425,16 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     @Override
     protected void onDestroy() {
-        if (!isFinishing()) {
-            super.onDestroy();
-            return; // 貌似有些设备启动activity会先调用一下onDestroy，头大…… 不super还会报错
-        }
-
         Logu.v("结束");
+        stopHardwareVolumeRepeat();
         if (eventBusInit) {
             EventBus.getDefault().unregister(this);
             eventBusInit = false;
         }
         destroyed = true;
+        stopDanmakuWindow();
+        onLongClick = false;
+        danmakuPausedByBuffering = false;
         backgroundLeaveRequested = false;
         backgroundPlaybackActive = false;
         stopBackgroundPlaybackService();
@@ -1880,10 +3445,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             mDanmakuView.release();
             mDanmakuView = null;
         }
-        if (ijkPlayer != null) {
-            ijkPlayer.release();
-            ijkPlayer = null;
-        }
+        releasePlaybackPlayers();
+        releaseTextureSurface();
 
         if (isOnlineVideo && danmakuFile != null && danmakuFile.exists())
             danmakuFile.delete();
@@ -1925,6 +3488,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
         }
+        bufferingUiRunnable = null;
+        bufferingUiShown = false;
         layout_control.removeCallbacks(hidecon);
         text_volume.removeCallbacks(hideVolume);
         seekbar_progress.removeCallbacks(progressbarEnable);
@@ -2157,8 +3722,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surfaceTexture, int i, int i1) {
                     Logu.v("surfacetexture", "available");
                     mSurfaceTexture = surfaceTexture;
-                    if (isPrepared && ijkPlayer != null)
-                        ijkPlayer.setSurface(new Surface(surfaceTexture));
+                    bindTextureSurface(surfaceTexture);
                 }
 
                 @Override
@@ -2170,9 +3734,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surfaceTexture) {
                     Logu.v("surfacetexture", "destroyed");
                     mSurfaceTexture = null;
+                    videoOutputDetached = true;
+                    restoreFrameOnNextSurface = true;
                     if (ijkPlayer != null)
                         ijkPlayer.setSurface(null);
-                    return true;
+                    releaseTextureSurface();
+                    // Retain the SurfaceTexture on Android 4.x so returning
+                    // from Home does not leave IJK attached to a dead buffer.
+                    return false;
                 }
 
                 @Override
@@ -2195,8 +3764,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         });
 
-        findViewById(R.id.button_sound_add).setOnClickListener(view -> changeVolume(true));
-        findViewById(R.id.button_sound_cut).setOnClickListener(view -> changeVolume(false));
+        setupVolumeButton(findViewById(R.id.button_sound_add), true);
+        setupVolumeButton(findViewById(R.id.button_sound_cut), false);
 
         btn_menu.setOnClickListener(view -> {
             if (menu_opened) {
@@ -2298,7 +3867,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     progressGuard.recordSeek(seekPos, video_all, SystemClock.elapsedRealtime());
                     video_now = seekPos;
                     video_now_last = seekPos;
-                    ijkPlayer.seekTo(seekPos);
+                    seekPlaybackPlayers(seekPos);
                     if (hasDanmaku && mDanmakuView != null) {
                         mDanmakuView.seekTo((long) seekPos);
                     }
@@ -2316,8 +3885,6 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     text_speed.setText(speed_strs[position]);
                     if (ijkPlayer != null)
                         setPlaybackSpeed(speed_values[position]);
-                    if (mDanmakuView != null)
-                        mDanmakuView.setSpeed(speed_values[position]);
                 }
             }
 
@@ -2343,6 +3910,17 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        DiagnosticLogManager.recordKey(this, keyCode);
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (!isPrepared) return super.onKeyDown(keyCode, event);
+            if (heldVolumeKeyCode != keyCode) {
+                stopHardwareVolumeRepeat();
+                heldVolumeKeyCode = keyCode;
+                changeVolume(keyCode == KeyEvent.KEYCODE_VOLUME_UP);
+                if (mainHandler != null) mainHandler.postDelayed(hardwareVolumeRepeat, 450L);
+            }
+            return true;
+        }
         if (isPrepared)
             switch (keyCode) {
                 case KeyEvent.KEYCODE_ENTER:
@@ -2365,16 +3943,105 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         return super.onKeyDown(keyCode, event);
     }
 
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        DiagnosticLogManager.recordKey(this, keyCode);
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (heldVolumeKeyCode == keyCode) stopHardwareVolumeRepeat();
+            return isPrepared;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    private void stopHardwareVolumeRepeat() {
+        heldVolumeKeyCode = KeyEvent.KEYCODE_UNKNOWN;
+        if (mainHandler != null) mainHandler.removeCallbacks(hardwareVolumeRepeat);
+    }
+
+    private void setupVolumeButton(View button, boolean increase) {
+        if (button == null) return;
+        button.setOnTouchListener(new View.OnTouchListener() {
+            private boolean repeating;
+            private final Runnable repeat = new Runnable() {
+                @Override
+                public void run() {
+                    if (!repeating || destroyed || mainHandler == null) return;
+                    changeVolume(increase);
+                    mainHandler.postDelayed(this, 120L);
+                }
+            };
+
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        repeating = true;
+                        changeVolume(increase);
+                        if (mainHandler != null) mainHandler.postDelayed(repeat, 450L);
+                        view.setPressed(true);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        repeating = false;
+                        if (mainHandler != null) mainHandler.removeCallbacks(repeat);
+                        view.setPressed(false);
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        });
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        boolean handled = super.dispatchTouchEvent(event);
+        DiagnosticLogManager.recordTouch(this, event);
+        return handled;
+    }
+
     private void seekToPosition(long position) {
         if (ijkPlayer != null && isPrepared) {
             long boundedPosition = Math.max(0L, video_all > 0 ? Math.min(position, video_all) : position);
             progressGuard.recordSeek(boundedPosition, video_all, SystemClock.elapsedRealtime());
             video_now = (int) boundedPosition;
             video_now_last = video_now;
-            ijkPlayer.seekTo(boundedPosition);
+            seekPlaybackPlayers(boundedPosition);
             if (hasDanmaku && mDanmakuView != null) {
                 mDanmakuView.seekTo(boundedPosition);
             }
+            saveLocalPlaybackProgress(boundedPosition);
+        }
+    }
+
+    private void loadLocalPlaybackProgress() {
+        if (isOnlineVideo || localProgressFolderLocator.isEmpty()) return;
+        try {
+            VideoStorageUtil.Node folder = VideoStorageUtil.fromLocator(this, localProgressFolderLocator);
+            if (folder == null) return;
+            localProgressFile = folder.find(".playback_progress");
+            if (localProgressFile != null) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        localProgressFile.openInput()))) {
+                    progress_history = Math.max(0L, Long.parseLong(reader.readLine().trim()));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void saveLocalPlaybackProgress(long position) {
+        if (isOnlineVideo || localProgressFolderLocator.isEmpty()) return;
+        try {
+            VideoStorageUtil.Node folder = VideoStorageUtil.fromLocator(this, localProgressFolderLocator);
+            if (folder == null) return;
+            if (localProgressFile == null)
+                localProgressFile = folder.getOrCreateFile(".playback_progress", "text/plain");
+            try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
+                    localProgressFile.openOutput(false)))) {
+                writer.write(String.valueOf(Math.max(0L, position)));
+            }
+        } catch (Exception ignored) {
         }
     }
 
@@ -2382,6 +4049,16 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         boolean oldMode = isAudioOnlyMode;
         isAudioOnlyMode = !isAudioOnlyMode;
         // 不保存状态，仅在当前播放会话中切换
+
+        if (hasDashAudio()) {
+            updateAudioOnlyButton();
+            updateAudioOnlyUI();
+            MsgUtil.showMsg(isAudioOnlyMode
+                    ? "已切换到" + getAudioOnlyModeName()
+                    : "已恢复画面");
+            recordPlayerAction(isAudioOnlyMode ? "audio_only_on" : "audio_only_off", null, currentQuality);
+            return;
+        }
 
         if (isPrepared && ijkPlayer != null) {
             final long currentPosition = ijkPlayer.getCurrentPosition();
@@ -2397,10 +4074,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         if (hasDanmaku && mDanmakuView != null) {
                             mDanmakuView.pause();
                         }
-                        if (ijkPlayer != null) {
-                            ijkPlayer.stop();
-                            ijkPlayer.release();
-                        }
+                        releasePlaybackPlayers();
 
                         loading_info.setVisibility(View.VISIBLE);
                         anim_loading.start();
@@ -2409,6 +4083,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                                 : "恢复画面");
                         isPrepared = false;
                         isPlaying = false;
+                        resumeAfterPrepare = wasPlaying;
 
                         updateAudioOnlyButton();
                         updateAudioOnlyUI();
@@ -2533,31 +4208,15 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
      * 加载高能进度条数据
      */
     private void loadHighEnergyData() {
-        if (!SharedPreferencesUtil.getBoolean("player_high_energy", false)) {
+        highEnergyEnabled = SharedPreferencesUtil.getBoolean("player_high_energy", false);
+        if (!highEnergyEnabled) {
             Logu.d("高能进度条", "功能已禁用");
             return;
         }
-
-        CenterThreadPool.run(() -> {
-            try {
-                Logu.d("高能进度条", "开始加载数据 aid=" + aid + " cid=" + cid);
-                HighEnergyData data = PlayerApi.getHighEnergyData(cid, aid);
-
-                if (data != null && data.hasValidData()) {
-                    runOnUiThread(() -> {
-                        if (!destroyed && seekbar_progress != null) {
-                            seekbar_progress.setHighEnergyData(data.events, data.stepSec);
-                            Logu.d("高能进度条", "数据加载成功并设置到进度条");
-                        }
-                    });
-                } else {
-                    Logu.w("高能进度条", "未获取到有效数据");
-                }
-            } catch (Exception e) {
-                Logu.e("高能进度条", "加载失败: " + e.getMessage());
-                e.printStackTrace();
-            }
-        });
+        highEnergyDataBuilder.reset(video_all);
+        highEnergySegments.clear();
+        seekbar_progress.clearHighEnergyData();
+        Logu.d("高能进度条", "改用已加载弹幕分段生成密度数据，视频时长=" + video_all);
     }
 
     private boolean hasMultiplePages() {
@@ -2605,13 +4264,13 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 playerData.cid = newCid;
                 playerData.title = newTitle;
                 playerData.mid = mid;
-                playerData.qn = SharedPreferencesUtil.getInt("play_qn", 16);
+                playerData.qn = SharedPreferencesUtil.getInt("play_qn", 0);
                 playerData.pagenames = pagenames;
                 playerData.cids = cids;
                 playerData.currentPageIndex = currentPageIndex;
 
                 if (isOnlineVideo) {
-                    PlayerApi.getVideo(playerData, false);
+                    PlayerApi.getVideoForPlayback(playerData);
                 } else {
                     runOnUiThread(() -> MsgUtil.showMsg("本地视频暂不支持切换分P"));
                     return;
@@ -2621,18 +4280,20 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     if (destroyed)
                         return;
 
-                    if (ijkPlayer != null) {
-                        ijkPlayer.stop();
-                        ijkPlayer.release();
-                    }
+                    final boolean wasPlaying = isPlaying;
+                    releasePlaybackPlayers();
                     if (mDanmakuView != null) {
                         mDanmakuView.release();
                         mDanmakuView = null;
                     }
 
                     cid = newCid;
-                    video_url = playerData.videoUrl;
+                    setPlaybackUrls(playerData.videoUrl, playerData.videoBackupUrls);
+                    setDashAudioUrls(playerData.audioUrl, playerData.audioBackupUrls);
                     danmaku_url = playerData.danmakuUrl;
+                    danmakuLoadStarted = false;
+                    danmakuLoadGeneration++;
+                    stopDanmakuWindow();
                     text_title.setText(newTitle);
                     videoTitle = newTitle;
 
@@ -2647,6 +4308,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     loading_text0.setText("加载P" + (pageIndex + 1));
                     isPrepared = false;
                     isPlaying = false;
+                    resumeAfterPrepare = wasPlaying;
                     finishWatching = false;
                     progress_history = 0;
                     subtitles = null;
@@ -2730,9 +4392,12 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     private void showQualitySelectorCard() {
         if (qnStrList == null || qnValueList == null || qnStrList.length == 0) {
+            recordPlayerAction("quality_list_empty", null, currentQuality);
             MsgUtil.showMsg("清晰度列表未加载");
             return;
         }
+
+        recordPlayerAction("quality_list_open", null, currentQuality);
 
         runOnUiThread(() -> {
             RecyclerView qualitySelectorRecycler = findViewById(R.id.quality_selector_list);
@@ -2758,6 +4423,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             return;
         }
 
+        recordPlayerAction("quality_switch_requested", null, newQuality);
         MsgUtil.showMsg("正在切换清晰度...");
 
         CenterThreadPool.run(() -> {
@@ -2772,7 +4438,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 playerData.cids = cids;
                 playerData.currentPageIndex = currentPageIndex;
 
-                PlayerApi.getVideo(playerData, false);
+                PlayerApi.getVideoForPlayback(playerData);
 
                 runOnUiThread(() -> {
                     if (destroyed)
@@ -2781,13 +4447,12 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     final long currentPosition = ijkPlayer != null ? ijkPlayer.getCurrentPosition() : 0;
                     final boolean wasPlaying = isPlaying;
 
-                    if (ijkPlayer != null) {
-                        ijkPlayer.stop();
-                        ijkPlayer.release();
-                    }
+                    releasePlaybackPlayers();
 
-                    video_url = playerData.videoUrl;
-                    currentQuality = newQuality;
+                    setPlaybackUrls(playerData.videoUrl, playerData.videoBackupUrls);
+                    setDashAudioUrls(playerData.audioUrl, playerData.audioBackupUrls);
+                    currentQuality = playerData.qn;
+                    recordPlayerAction("quality_source_ready", null, currentQuality);
 
                     if (playerData.qnStrList != null && playerData.qnValueList != null) {
                         qnStrList = playerData.qnStrList;
@@ -2799,6 +4464,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     loading_text0.setText("切换清晰度中");
                     isPrepared = false;
                     isPlaying = false;
+                    resumeAfterPrepare = wasPlaying;
 
                     ijkPlayer = createMediaPlayer();
                     progress_history = currentPosition;
@@ -2806,6 +4472,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     setDisplay();
                 });
             } catch (Exception e) {
+                recordPlayerAction("quality_switch_failed", e.getClass().getSimpleName(), newQuality);
                 runOnUiThread(() -> {
                     MsgUtil.err(e);
                     MsgUtil.showMsg("清晰度切换失败");
@@ -2979,9 +4646,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             currentQuestion = question;
 
             if (question.pauseVideo == 1 && isPlaying) {
-                ijkPlayer.pause();
-                isPlaying = false;
-                btn_control.setImageResource(R.drawable.btn_player_play);
+                playerPause();
             }
 
             if (interactionChoiceLayout == null) {
@@ -3011,9 +4676,27 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     private TextView createChoiceView(InteractionVideoData.InteractionChoice choice) {
         TextView choiceView = (TextView) LayoutInflater.from(this).inflate(R.layout.cell_interaction_choice, null);
+        float scale = PlayerSettingsUtil.getInteractionChoiceScale();
+        choiceView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f * scale);
+        choiceView.setPadding(
+                dp((int) (28f * scale)),
+                dp((int) (18f * scale)),
+                dp((int) (28f * scale)),
+                dp((int) (18f * scale)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        int margin = dp((int) (6f * scale));
+        params.setMargins(dp((int) (20f * scale)), margin, dp((int) (20f * scale)), margin);
+        choiceView.setLayoutParams(params);
         choiceView.setText(choice.option);
         choiceView.setOnClickListener(v -> handleChoiceSelection(choice));
         return choiceView;
+    }
+
+    private int dp(int value) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, value, getResources().getDisplayMetrics());
     }
 
     private void createInteractionChoiceLayout() {
@@ -3154,24 +4837,25 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     }
                 }
                 
-                PlayerApi.getVideo(playerData, false);
+                PlayerApi.getVideoForPlayback(playerData);
                 
                 runOnUiThread(() -> {
                     if (destroyed)
                         return;
                     
-                    if (ijkPlayer != null) {
-                        ijkPlayer.stop();
-                        ijkPlayer.release();
-                    }
+                    releasePlaybackPlayers();
                     if (mDanmakuView != null) {
                         mDanmakuView.release();
                         mDanmakuView = null;
                     }
                     
                     cid = targetCid;
-                    video_url = playerData.videoUrl;
+                    setPlaybackUrls(playerData.videoUrl, playerData.videoBackupUrls);
+                    setDashAudioUrls(playerData.audioUrl, playerData.audioBackupUrls);
                     danmaku_url = playerData.danmakuUrl;
+                    danmakuLoadStarted = false;
+                    danmakuLoadGeneration++;
+                    stopDanmakuWindow();
                     text_title.setText(newData.title);
                     videoTitle = newData.title;
                     currentEdgeId = newData.edgeId;
@@ -3187,6 +4871,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     loading_text0.setText("加载互动分P");
                     isPrepared = false;
                     isPlaying = false;
+                    resumeAfterPrepare = true;
                     finishWatching = false;
                     progress_history = 0;
                     subtitles = null;
@@ -3251,15 +4936,13 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private void resumePlaybackIfPaused() {
         runOnUiThread(() -> {
             if (currentQuestion != null && currentQuestion.pauseVideo == 1 && !isPlaying) {
-                ijkPlayer.start();
-                isPlaying = true;
-                btn_control.setImageResource(R.drawable.btn_player_pause);
+                playerResume();
             }
         });
     }
 
     private int getTargetQuality() {
-        int defaultQn = SharedPreferencesUtil.getInt("play_qn", 16);
+        int defaultQn = SharedPreferencesUtil.getInt("play_qn", 0);
         if (qnValueList == null || qnValueList.length == 0) {
             return currentQuality > 0 ? currentQuality : defaultQn;
         }
@@ -3360,6 +5043,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (isPlaying)
             playerPause();
         if (ijkPlayer != null) {
+            saveLocalPlaybackProgress(Math.max(0L, ijkPlayer.getCurrentPosition()));
             Intent result = new Intent();
             result.putExtra("progress", (int) ijkPlayer.getCurrentPosition());
             Logu.d("进度回传", String.valueOf(ijkPlayer.getCurrentPosition()));

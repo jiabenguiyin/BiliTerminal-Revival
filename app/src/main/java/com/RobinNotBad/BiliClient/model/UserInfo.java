@@ -15,6 +15,9 @@ public class UserInfo implements Parcelable, Serializable {
     public String name;
     public String avatar;
     public String sign;
+    public String sex = "保密";
+    public String birthday = "";
+    public String school = "";
     public int fans;
     public int level;
     public int following;
@@ -157,6 +160,9 @@ public class UserInfo implements Parcelable, Serializable {
         name = in.readString();
         avatar = in.readString();
         sign = in.readString();
+        sex = in.readString();
+        birthday = in.readString();
+        school = in.readString();
         fans = in.readInt();
         level = in.readInt();
         following = in.readInt();
@@ -186,6 +192,9 @@ public class UserInfo implements Parcelable, Serializable {
         dest.writeString(name);
         dest.writeString(avatar);
         dest.writeString(sign);
+        dest.writeString(sex);
+        dest.writeString(birthday);
+        dest.writeString(school);
         dest.writeInt(fans);
         dest.writeInt(level);
         dest.writeInt(following);

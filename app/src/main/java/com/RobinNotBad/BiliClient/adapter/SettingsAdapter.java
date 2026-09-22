@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.model.SettingSection;
+import com.RobinNotBad.BiliClient.util.PlayerSettingsUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
@@ -37,6 +38,7 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             put("title", -2);
             put("switch", 0);
             put("choose", 1);
+            put("choose3", 6);
             put("input_int", 2);
             put("input_float", 3);
             put("input_string", 4);
@@ -62,6 +64,9 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             case 1:
                 return new ChooseHolder(
                         LayoutInflater.from(this.context).inflate(R.layout.cell_setting_choose, parent, false));
+            case 6:
+                return new ThreeChooseHolder(
+                        LayoutInflater.from(this.context).inflate(R.layout.cell_setting_choose3, parent, false));
             case 2:
             case 3:
             case 4:
@@ -102,6 +107,10 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 ChooseHolder chooseHolder = (ChooseHolder) holder;
                 chooseHolder.bind(settingSection);
                 break;
+            case 6:
+                ThreeChooseHolder threeChooseHolder = (ThreeChooseHolder) holder;
+                threeChooseHolder.bind(settingSection);
+                break;
             case 2:
             case 3:
             case 4:
@@ -122,6 +131,14 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     @Override
     public int getItemCount() {
         return list != null ? list.size() : 0;
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        if (holder instanceof InputHolder) {
+            ((InputHolder) holder).unbind();
+        }
+        super.onViewRecycled(holder);
     }
 
     public static class SwitchHolder extends RecyclerView.ViewHolder {
@@ -177,6 +194,7 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
             boolean value = SharedPreferencesUtil.getBoolean(settingSection.id,
                     Boolean.parseBoolean(settingSection.defaultValue));
+            chocola.setOnCheckedChangeListener(null);
             chocola.setChecked(value);
             vanilla.setChecked(!value);
 
@@ -185,10 +203,59 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
     }
 
+    public static class ThreeChooseHolder extends RecyclerView.ViewHolder {
+        final RadioButton first;
+        final RadioButton second;
+        final RadioButton third;
+        final android.widget.RadioGroup group;
+        final TextView name;
+        final TextView desc;
+
+        public ThreeChooseHolder(@NonNull View itemView) {
+            super(itemView);
+            first = itemView.findViewById(R.id.setting_choose3_first);
+            second = itemView.findViewById(R.id.setting_choose3_second);
+            third = itemView.findViewById(R.id.setting_choose3_third);
+            group = itemView.findViewById(R.id.setting_choose3_group);
+            desc = itemView.findViewById(R.id.setting_choose3_desc);
+            name = itemView.findViewById(R.id.setting_choose3_name);
+        }
+
+        public void bind(SettingSection settingSection) {
+            if (settingSection.desc == null || settingSection.desc.isEmpty()) {
+                desc.setVisibility(View.GONE);
+            } else {
+                desc.setText(settingSection.desc);
+                desc.setVisibility(View.VISIBLE);
+            }
+            name.setText(settingSection.name);
+            String[] strings = (String[]) settingSection.extra;
+            first.setText(strings[0]);
+            second.setText(strings[1]);
+            third.setText(strings[2]);
+
+            int selected = SharedPreferencesUtil.getInt(settingSection.id,
+                    Integer.parseInt(settingSection.defaultValue));
+            if (selected < 0 || selected > 2) selected = 0;
+            group.setOnCheckedChangeListener(null);
+            first.setChecked(selected == 0);
+            second.setChecked(selected == 1);
+            third.setChecked(selected == 2);
+            final int[] selectedValue = {selected};
+            group.setOnCheckedChangeListener((radioGroup, checkedId) -> {
+                if (checkedId == R.id.setting_choose3_first) selectedValue[0] = 0;
+                else if (checkedId == R.id.setting_choose3_second) selectedValue[0] = 1;
+                else if (checkedId == R.id.setting_choose3_third) selectedValue[0] = 2;
+                SharedPreferencesUtil.putInt(settingSection.id, selectedValue[0]);
+            });
+        }
+    }
+
     public static class InputHolder extends RecyclerView.ViewHolder {
         final EditText input;
         final TextView name;
         final TextView desc;
+        private TextWatcher currentWatcher;
 
         public InputHolder(@NonNull View itemView) {
             super(itemView);
@@ -197,7 +264,18 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             name = itemView.findViewById(R.id.setting_input_name);
         }
 
+        public void unbind() {
+            if (currentWatcher != null) {
+                input.removeTextChangedListener(currentWatcher);
+                currentWatcher = null;
+            }
+        }
+
         public void bind(SettingSection settingSection) {
+            // RecyclerView reuses this EditText for different settings. Remove the
+            // previous listener before replacing its value, otherwise one edit is
+            // written to every setting that previously occupied this holder.
+            unbind();
             if (settingSection.desc == null || settingSection.desc.isEmpty())
                 desc.setVisibility(View.GONE);
             else {
@@ -211,7 +289,7 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                             Integer.parseInt(settingSection.defaultValue));
                     input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
                     input.setText(String.valueOf(intValue));
-                    input.addTextChangedListener(new TextWatcher() {
+                    currentWatcher = new TextWatcher() {
                         @Override
                         public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
                         }
@@ -227,14 +305,14 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                             } catch (Exception ignored) {
                             }
                         }
-                    });
+                    };
+                    input.addTextChangedListener(currentWatcher);
                     break;
                 case "input_float":
-                    float floatValue = SharedPreferencesUtil.getFloat(settingSection.id,
-                            Float.parseFloat(settingSection.defaultValue));
+                    float floatValue = readFloatValue(settingSection);
                     input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
                     input.setText(String.valueOf(floatValue));
-                    input.addTextChangedListener(new TextWatcher() {
+                    currentWatcher = new TextWatcher() {
                         @Override
                         public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
                         }
@@ -246,18 +324,20 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                         @Override
                         public void afterTextChanged(Editable editable) {
                             try {
+                                float value = Float.parseFloat(editable.toString());
                                 SharedPreferencesUtil.putFloat(settingSection.id,
-                                        Float.parseFloat(editable.toString()));
+                                        PlayerSettingsUtil.normalizeFloat(settingSection.id, value));
                             } catch (Exception ignored) {
                             }
                         }
-                    });
+                    };
+                    input.addTextChangedListener(currentWatcher);
                     break;
                 default:
                     String strValue = SharedPreferencesUtil.getString(settingSection.id, settingSection.defaultValue);
                     input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
                     input.setText(strValue);
-                    input.addTextChangedListener(new TextWatcher() {
+                    currentWatcher = new TextWatcher() {
                         @Override
                         public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
                         }
@@ -270,8 +350,15 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                         public void afterTextChanged(Editable editable) {
                             SharedPreferencesUtil.putString(settingSection.id, editable.toString());
                         }
-                    });
+                    };
+                    input.addTextChangedListener(currentWatcher);
             }
+        }
+
+        private float readFloatValue(SettingSection settingSection) {
+            float defaultValue = Float.parseFloat(settingSection.defaultValue);
+            return PlayerSettingsUtil.normalizeFloat(settingSection.id,
+                    SharedPreferencesUtil.getFloat(settingSection.id, defaultValue));
         }
     }
 

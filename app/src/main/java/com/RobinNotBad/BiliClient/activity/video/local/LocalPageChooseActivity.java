@@ -68,6 +68,9 @@ public class LocalPageChooseActivity extends BaseActivity {
                 if (subtitleFolderLocators != null && position < subtitleFolderLocators.size()) {
                     player.putExtra("local_subtitle_root", subtitleFolderLocators.get(position));
                 }
+                if (pageFolderLocators != null && position < pageFolderLocators.size()) {
+                    player.putExtra("local_progress_folder", pageFolderLocators.get(position));
+                }
                 startActivity(player);
             } catch (ActivityNotFoundException e) {
                 MsgUtil.showMsg("没有找到播放器，请检查是否安装");
@@ -118,6 +121,7 @@ public class LocalPageChooseActivity extends BaseActivity {
         return pages != null && videos != null && danmaku != null && position >= 0
                 && position < pages.size() && position < videos.size() && position < danmaku.size();
     }
+
 
     @Override
     protected void onDestroy() {

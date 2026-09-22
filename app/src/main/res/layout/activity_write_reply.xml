@@ -66,6 +66,53 @@
                 android:inputType="textMultiLine" />
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/pick_image"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="35sp"
+                        android:layout_weight="1"
+                        android:gravity="center_vertical"
+                        android:text="添加图片"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/selected_images"
+                        android:layout_width="wrap_content"
+                        android:layout_height="35sp"
+                        android:gravity="center_vertical"
+                        android:text="未选择图片"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <HorizontalScrollView
+                android:id="@+id/selected_image_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_marginTop="2dp"
+                android:overScrollMode="never"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/selected_image_preview"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/emote"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">

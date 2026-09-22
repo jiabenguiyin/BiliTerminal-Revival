@@ -85,6 +85,7 @@ public class MessageActivity extends InstanceActivity {
 
             sessionsView = findViewById(R.id.sessions_list);
             sessionsView.setNestedScrollingEnabled(false);
+            sessionsView.setItemAnimator(null);
 
             CenterThreadPool.run(() -> {
                 try {
@@ -102,9 +103,11 @@ public class MessageActivity extends InstanceActivity {
                     });
                     ArrayList<Long> uidList = new ArrayList<>();
                     for (PrivateMsgSession item : sessionsList) {
-                        uidList.add(item.talkerUid);
+                        if (!item.hasAccountInfo()) uidList.add(item.talkerUid);
                     }
-                    HashMap<Long, UserInfo> userMap = PrivateMsgApi.getUsersInfo(uidList);
+                    HashMap<Long, UserInfo> userMap = uidList.isEmpty()
+                            ? new HashMap<>()
+                            : PrivateMsgApi.getUsersInfo(uidList);
                     PrivateMsgSessionsAdapter adapter = new PrivateMsgSessionsAdapter(this, sessionsList, userMap);
                     runOnUiThread(() -> {
                         swipeRefreshLayout.setRefreshing(false);

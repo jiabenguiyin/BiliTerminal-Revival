@@ -23,10 +23,10 @@ import java.util.Map;
 public class SettingPlayerChooseActivity extends BaseActivity {
 
     String playerCurr = SharedPreferencesUtil.getString("player", "null");
-    MaterialCardView terminalPlayer, mtvPlayer, aliangPlayer, qn_choose;
+    MaterialCardView terminalPlayer, aliangPlayer, qn_choose;
     ArrayList<MaterialCardView> cardViewList;
     int checkPosition = -1;
-    final String[] playerList = {"null", "terminalPlayer", "mtvPlayer", "aliangPlayer"};
+    final String[] playerList = {"null", "terminalPlayer", "aliangPlayer"};
 
     private boolean just_create = true;
 
@@ -39,7 +39,6 @@ public class SettingPlayerChooseActivity extends BaseActivity {
         asyncInflate(R.layout.activity_setting_player_choose, (layoutView, resId) -> {
 
             terminalPlayer = findViewById(R.id.terminalPlayer);
-            mtvPlayer = findViewById(R.id.mtvPlayer);
             aliangPlayer = findViewById(R.id.aliangPlayer);
             qn_choose = findViewById(R.id.qn_choose);
 
@@ -47,7 +46,6 @@ public class SettingPlayerChooseActivity extends BaseActivity {
 
             cardViewList = new ArrayList<>();
             cardViewList.add(terminalPlayer);
-            cardViewList.add(mtvPlayer);
             cardViewList.add(aliangPlayer);
 
             for (int i = 1; i < playerList.length; i++) {
@@ -83,8 +81,13 @@ public class SettingPlayerChooseActivity extends BaseActivity {
 
     private void updateQn() {
         if (findViewById(R.id.qn_tv) != null) {
-            int savedVal = SharedPreferencesUtil.getInt("play_qn", 16);
-            for (Map.Entry<String, Integer> entry : SettingQualityActivity.qnMap.entrySet()) {
+            int savedVal = SharedPreferencesUtil.getInt("play_qn", 0);
+            Map<String, Integer> qnMap = SettingQualityActivity.getQnMap();
+            if (!qnMap.containsValue(savedVal)) {
+                savedVal = 0;
+                SharedPreferencesUtil.putInt("play_qn", savedVal);
+            }
+            for (Map.Entry<String, Integer> entry : qnMap.entrySet()) {
                 if (entry.getValue() == savedVal) {
                     ((TextView) findViewById(R.id.qn_tv)).setText(entry.getKey());
                     break;
@@ -125,10 +128,6 @@ public class SettingPlayerChooseActivity extends BaseActivity {
                     if (playerCurr.equals("null"))
                         startActivity(new Intent(this, SettingTerminalPlayerActivity.class));
                     break;
-                case "mtvPlayer":
-                    MsgUtil.showDialog("提醒", "不再推荐使用小电视播放器，许多功能已不再支持，推荐使用内置播放器", -1);
-                    break;
-
                 case "aliangPlayer":
                     if (Build.VERSION.SDK_INT <= 19)
                         MsgUtil.showDialog("提醒", "您的安卓版本过低，可能无法使用凉腕播放器，可以使用内置播放器", -1);

@@ -67,6 +67,7 @@ public class LiveInfoActivity extends BaseActivity {
         }
 
         asyncInflate(R.layout.activity_live_info, (layoutView, id) -> {
+            if (isDestroyed()) return;
             ImageView loading = findViewById(R.id.loading);
             View scrollView = findViewById(R.id.scrollView);
             ImageView cover = findViewById(R.id.img_cover);
@@ -86,11 +87,12 @@ public class LiveInfoActivity extends BaseActivity {
 
             AnimationUtils.crossFade(loading, scrollView);
             TerminalContext.getInstance().getLiveInfoByRoomId(room_id).observe(this, (liveInfoResult) -> liveInfoResult.onSuccess((liveInfo) -> {
+                if (isDestroyed()) return;
                 room = liveInfo.getLiveRoom();
                 UserInfo userInfo = liveInfo.getUserInfo();
                 playInfo = liveInfo.getLivePlayInfo();
 
-                Glide.with(this).asDrawable().load(GlideUtil.url(room.user_cover)).placeholder(R.mipmap.placeholder)
+                Glide.with(cover).asDrawable().load(GlideUtil.url(room.user_cover)).placeholder(R.mipmap.placeholder)
                         .transition(GlideUtil.getTransitionOptions())
                         .apply(RequestOptions.bitmapTransform(new RoundedCorners(ToolsUtil.dp2px(4))).sizeMultiplier(0.85f).skipMemoryCache(true).dontAnimate())
                         .diskCacheStrategy(DiskCacheStrategy.NONE)
@@ -161,6 +163,7 @@ public class LiveInfoActivity extends BaseActivity {
                             playerData.mid = SharedPreferencesUtil.getLong("mid", 0);
 
                             runOnUiThread(() -> {
+                                if (isDestroyed()) return;
                                 try {
 
                                     Intent player = PlayerApi.jumpToPlayer(playerData);
@@ -198,6 +201,7 @@ public class LiveInfoActivity extends BaseActivity {
                             try {
                                 playInfo = LiveApi.getRoomPlayInfo(room_id, (int) qualityList.get(index).id);
                                 runOnUiThread(() -> {
+                                    if (isDestroyed()) return;
                                     refresh_host_list();
                                     play.setEnabled(true);
                                 });
@@ -235,8 +239,11 @@ public class LiveInfoActivity extends BaseActivity {
                     MsgUtil.showMsgLong("直播可能只有内置播放器可以正常播放");
 
             }).onFailure((e) -> {
+                if (isDestroyed()) return;
                 runOnUiThread(() -> MsgUtil.showMsg("直播不存在"));
-                CenterThreadPool.runOnUIThreadAfter(1, TimeUnit.MINUTES, () -> MsgUtil.err(e));
+                CenterThreadPool.runOnUIThreadAfter(1, TimeUnit.MINUTES, () -> {
+                    if (!isDestroyed()) MsgUtil.err(e);
+                });
                 finish();
             }));
         });

@@ -30,16 +30,24 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Objects;
 
 import okhttp3.Response;
 
 public class AppInfoApi {
+    private static final String FEEDBACK_GROUP_NOTICE =
+            "\n\n--------------------\n反馈群：1107953621";
+
+    /** Adds the feedback group to update notices without duplicating it. */
+    public static String appendFeedbackGroup(String content) {
+        if (content == null) content = "";
+        return content.contains("1107953621") ? content : content + FEEDBACK_GROUP_NOTICE;
+    }
     private static final String TERMINAL_PRIMARY_API_BASE = "https://jp.031030.xyz";
-    private static final String TERMINAL_BACKUP_API_BASE = "http://121.4.26.60:2000";
+    private static final String ANNOUNCEMENT_CACHE_KEY = "terminal_announcement_cache";
     private static final String[] TERMINAL_API_BASES = new String[]{
-            TERMINAL_PRIMARY_API_BASE,
-            TERMINAL_BACKUP_API_BASE
+            TERMINAL_PRIMARY_API_BASE
     };
 
     public static void check(Context context) {
@@ -62,7 +70,11 @@ public class AppInfoApi {
             int version = BiliTerminal.getVersion();
             int curr = ConfInfoApi.getDateCurr();
 
-            checkAnnouncement();
+            try {
+                checkAnnouncement();
+            } catch (Exception announcementError) {
+                Log.w("terminal-api", "Announcement check failed", announcementError);
+            }
 
             int last_ver = SharedPreferencesUtil.getInt("app_version_last", 0);
             if (last_ver < version) {
@@ -88,7 +100,9 @@ public class AppInfoApi {
                         SharedPreferencesUtil.putInt("paddingH_percent", 7);
                     }
                 }
-                MsgUtil.showText("更新公告", context.getResources().getString(R.string.update_tip) + "\n\n更新细节：\n" + ToolsUtil.getUpdateLog(context));
+                MsgUtil.showText("更新公告", appendFeedbackGroup(
+                        context.getResources().getString(R.string.update_tip)
+                                + "\n\n更新细节：\n" + ToolsUtil.getUpdateLog(context)));
                 if (ToolsUtil.isDebugBuild())
                     MsgUtil.showDialog("警告", context.getString(R.string.warning_debug));
                 SharedPreferencesUtil.putInt("app_version_last", version);
@@ -100,11 +114,11 @@ public class AppInfoApi {
 
                 checkUpdate(context, false);
             }
-        } catch (IOException e) {
-            MsgUtil.showMsg("无法连接到终端公告接口\n也许是服务器宕机了？\n（对软件内容无影响）");
         } catch (Exception e) {
             Log.e("debug-terminal", e.toString());
-            MsgUtil.err("终端接口出现问题（不影响软件内容）", e);
+            // The terminal service is optional. Its outage or an old Android
+            // TLS limitation must never be shown as a Bilibili network failure.
+            Log.w("debug-terminal", "terminal service unavailable; app continues", e);
         }
     }
 
@@ -167,14 +181,31 @@ public class AppInfoApi {
         IOException lastIo = null;
         JSONException lastJson = null;
         for (String base : TERMINAL_API_BASES) {
-            try (Response response = NetWorkUtil.postJson(terminalUrl(base, pathAndQuery), data, customHeaders)) {
-                return new JSONObject(Objects.requireNonNull(response.body()).string());
-            } catch (IOException e) {
-                lastIo = e;
-                Log.e("terminal-api", "POST failed: " + base + " " + e);
-            } catch (JSONException e) {
-                lastJson = e;
-                Log.e("terminal-api", "POST json failed: " + base + " " + e);
+            int attempts = TERMINAL_PRIMARY_API_BASE.equals(base) ? 2 : 1;
+            for (int attempt = 0; attempt < attempts; attempt++) {
+                try (Response response = NetWorkUtil.postJson(terminalUrl(base, pathAndQuery), data, customHeaders)) {
+                    if (response.body() == null) {
+                        throw new IOException("终端接口返回为空");
+                    }
+                    String responseBody = response.body().string();
+                    if (TextUtils.isEmpty(responseBody)) {
+                        throw new IOException("终端接口返回为空");
+                    }
+                    JSONObject result = new JSONObject(responseBody);
+                    // Keep structured server errors (including HTTP 429) so callers
+                    // can distinguish rejection from a real transport failure.
+                    if (!response.isSuccessful() && !result.has("code")) {
+                        throw new IOException("终端接口 HTTP " + response.code());
+                    }
+                    return result;
+                } catch (IOException e) {
+                    lastIo = e;
+                    Log.e("terminal-api", "POST failed: " + base + " attempt=" + (attempt + 1)
+                            + " " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                } catch (JSONException e) {
+                    lastJson = e;
+                    Log.e("terminal-api", "POST json failed: " + base + " attempt=" + (attempt + 1));
+                }
             }
         }
         if (lastJson != null) throw lastJson;
@@ -218,7 +249,8 @@ public class AppInfoApi {
                 checkUpdate(context, need_toast, true);
             }
         } catch (IOException | JSONException e) {
-            MsgUtil.err("检查更新：", e);
+            Log.w("terminal-api", "update check unavailable", e);
+            if (need_toast) MsgUtil.showMsg("更新服务暂不可用，不影响应用使用");
         } catch (Exception e) {
             MsgUtil.showMsg(e.getMessage());
         }
@@ -275,43 +307,66 @@ public class AppInfoApi {
         if (result.getInt("code") != 0) throw new Exception("错误：" + result.getString("msg"));
         JSONArray data = result.getJSONArray("data");
         int maxSeenId = lastAnnouncement;
+        JSONObject newest = null;
         for (int i = 0; i < data.length(); i++) {
             JSONObject item = data.getJSONObject(i);
 
             int id = item.getInt("id");
-            if (id <= lastAnnouncement) {
-                if (id > maxSeenId) maxSeenId = id;
+            if (id > maxSeenId) maxSeenId = id;
+            if (lastAnnouncement < 0) {
+                if (newest == null || id > newest.optInt("id", -1)) newest = item;
                 continue;
             }
+            if (id <= lastAnnouncement) continue;
 
-            if (id > maxSeenId) maxSeenId = id;
             String title = item.getString("title");
             String content = item.getString("content");
             MsgUtil.showText(title, content);
+        }
+        if (lastAnnouncement < 0 && newest != null) {
+            MsgUtil.showText(newest.optString("title", "最新公告"), newest.optString("content", ""));
         }
         if (maxSeenId > lastAnnouncement)
             SharedPreferencesUtil.putInt("app_announcement_last", maxSeenId);
     }
 
     public static ArrayList<Announcement> getAnnouncementList() throws Exception {
-        String url = "/terminal/announcement/get_list";
-        JSONObject result = getTerminalJson(url);
-
-        if (result.getInt("code") != 0) throw new Exception("错误：" + result.getString("msg"));
-        JSONArray data = result.getJSONArray("data");
+        JSONArray data;
+        try {
+            JSONObject result = getTerminalJson("/terminal/announcement/get_list");
+            if (result.optInt("code", -1) != 0)
+                throw new Exception("错误：" + result.optString("msg", "公告接口返回异常"));
+            data = result.optJSONArray("data");
+            if (data == null) throw new JSONException("公告列表为空");
+            SharedPreferencesUtil.putString(ANNOUNCEMENT_CACHE_KEY, data.toString());
+        } catch (Exception freshError) {
+            String cached = SharedPreferencesUtil.getString(ANNOUNCEMENT_CACHE_KEY, "");
+            if (TextUtils.isEmpty(cached)) throw freshError;
+            try {
+                data = new JSONArray(cached);
+                Log.w("terminal-api", "Using cached announcement list", freshError);
+            } catch (JSONException cacheError) {
+                SharedPreferencesUtil.putString(ANNOUNCEMENT_CACHE_KEY, "");
+                throw freshError;
+            }
+        }
 
         @SuppressLint("SimpleDateFormat") SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
 
         ArrayList<Announcement> list = new ArrayList<>();
         for (int i = 0; i < data.length(); i++) {
-            JSONObject section = data.getJSONObject(i);
+            JSONObject section = data.optJSONObject(i);
+            if (section == null) continue;
             Announcement announcement = new Announcement();
-            announcement.id = section.getInt("id");
-            announcement.ctime = sdf.format(section.getLong("ctime") * 1000);
-            announcement.title = section.getString("title");
-            announcement.content = section.getString("content");
+            announcement.id = section.optInt("id", -1);
+            long timestamp = section.optLong("ctime", 0L);
+            if (timestamp > 0L && timestamp < 100000000000L) timestamp *= 1000L;
+            announcement.ctime = timestamp > 0L ? sdf.format(timestamp) : "时间未知";
+            announcement.title = section.optString("title", "未命名公告");
+            announcement.content = section.optString("content", "");
             list.add(announcement);
         }
+        Collections.sort(list, (left, right) -> left.id == right.id ? 0 : (left.id < right.id ? 1 : -1));
         return list;
     }
 
@@ -338,15 +393,56 @@ public class AppInfoApi {
         }
     }
 
-    public static boolean uploadDiagnostics(String installId, JSONArray events) {
+    public static DiagnosticUploadResult uploadDiagnostics(String installId, JSONArray events) {
         try {
             JSONObject payload = new JSONObject();
             payload.put("install_id", installId);
             payload.put("events", events);
             JSONObject result = postTerminalJson("/terminal/upload/diagnostics", payload.toString());
-            return result.optInt("code", -1) == 200;
-        } catch (IOException | JSONException error) {
-            return false;
+            int code = result.optInt("code", -1);
+            if (code == 200) return DiagnosticUploadResult.success();
+            String message = result.optString("msg", "服务器未接受日志");
+            Log.e("terminal-api", "diagnostics rejected: code=" + code + ", message=" + message);
+            return DiagnosticUploadResult.serverRejected(code, message);
+        } catch (IOException error) {
+            Log.e("terminal-api", "diagnostics network failed: " + error.getClass().getSimpleName());
+            return DiagnosticUploadResult.networkError(error.getClass().getSimpleName());
+        } catch (JSONException error) {
+            Log.e("terminal-api", "diagnostics response invalid: " + error.getClass().getSimpleName());
+            return DiagnosticUploadResult.serverRejected(-1, "服务器响应格式异常");
+        }
+    }
+
+    public static final class DiagnosticUploadResult {
+        public enum FailureType {
+            NONE,
+            NETWORK,
+            SERVER_REJECTED
+        }
+
+        public final boolean success;
+        public final FailureType failureType;
+        public final int serverCode;
+        public final String message;
+
+        private DiagnosticUploadResult(boolean success, FailureType failureType,
+                                       int serverCode, String message) {
+            this.success = success;
+            this.failureType = failureType;
+            this.serverCode = serverCode;
+            this.message = message == null ? "" : message;
+        }
+
+        static DiagnosticUploadResult success() {
+            return new DiagnosticUploadResult(true, FailureType.NONE, 200, "");
+        }
+
+        static DiagnosticUploadResult networkError(String message) {
+            return new DiagnosticUploadResult(false, FailureType.NETWORK, -1, message);
+        }
+
+        static DiagnosticUploadResult serverRejected(int code, String message) {
+            return new DiagnosticUploadResult(false, FailureType.SERVER_REJECTED, code, message);
         }
     }
 

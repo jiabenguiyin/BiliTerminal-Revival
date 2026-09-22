@@ -9,3 +9,13 @@
 local.properties
 .androidide
 
+# Local build output, reverse-engineering workspaces and release evidence
+/release/
+/reverse/
+/tools/
+/.gradle-user-home/
+
+# Local signing/configuration files
+*.jks
+*.keystore
+*.pem

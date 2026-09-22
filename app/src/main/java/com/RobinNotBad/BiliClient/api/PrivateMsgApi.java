@@ -18,6 +18,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
@@ -93,6 +94,12 @@ public class PrivateMsgApi {
         return list;
     }
 
+    public static long getRefreshBeginSeqno(List<PrivateMessage> messages) {
+        if (messages == null || messages.isEmpty()) return 0;
+        PrivateMessage latest = messages.get(messages.size() - 1);
+        return latest == null ? 0 : latest.msgSeqno;
+    }
+
     public static JSONArray getEmoteJsonArray(JSONObject allMsgJson) throws JSONException {
         if (allMsgJson.has("e_infos") && !allMsgJson.isNull("e_infos")) {
             return allMsgJson.getJSONArray("e_infos");
@@ -103,13 +110,26 @@ public class PrivateMsgApi {
 
     public static HashMap<Long, UserInfo> getUsersInfo(ArrayList<Long> uidList)
             throws IOException, JSONException {
+        HashMap<Long, UserInfo> userMap = new HashMap<>();
+        if (uidList == null || uidList.isEmpty()) {
+            return userMap;
+        }
+
         StringBuilder userString = new StringBuilder();
         for (Long uid : uidList) {
-            userString.append(uid).append(",");
+            if (uid == null || uid <= 0) {
+                continue;
+            }
+            if (userString.length() > 0) {
+                userString.append(",");
+            }
+            userString.append(uid);
+        }
+        if (userString.length() == 0) {
+            return userMap;
         }
         String url = "https://api.vc.bilibili.com/account/v1/user/cards?uids="
-                + userString.substring(0, userString.length() - 1);
-        HashMap<Long, UserInfo> userMap = new HashMap<>();
+                + userString;
         JSONObject root = NetWorkUtil.getJson(url);
         if (root.has("data") && !root.isNull("data")) {
             JSONArray data = root.getJSONArray("data");
@@ -131,13 +151,32 @@ public class PrivateMsgApi {
         String url =
                 "https://api.vc.bilibili.com/session_svr/v1/session_svr/get_sessions?session_type=1&size=" + size;
         JSONObject root = NetWorkUtil.getJson(url);
+        if (root.optInt("code", -1) != 0) {
+            throw new IOException(root.optString("message",
+                    root.optString("msg", "私信列表加载失败")));
+        }
+        return parseSessions(root);
+    }
+
+    static ArrayList<PrivateMsgSession> parseSessions(JSONObject root) throws JSONException {
         ArrayList<PrivateMsgSession> sessionList = new ArrayList<>();
-        if (root.has("data") && !root.isNull("data")) {
-            JSONArray sessions = root.getJSONObject("data").getJSONArray("session_list");
+        JSONObject data = root.optJSONObject("data");
+        if (data != null) {
+            JSONArray sessions = data.optJSONArray("session_list");
+            if (sessions == null) return sessionList;
             for (int i = 0; i < sessions.length(); ++i) {
                 PrivateMsgSession session = new PrivateMsgSession();
                 JSONObject sessionJson = sessions.getJSONObject(i);
                 session.talkerUid = sessionJson.getLong("talker_id");
+                session.sessionType = sessionJson.optInt("session_type", 1);
+                session.systemMsgType = sessionJson.optInt("system_msg_type", 0);
+
+                JSONObject accountInfo = sessionJson.optJSONObject("account_info");
+                if (accountInfo != null) {
+                    session.accountName = accountInfo.optString("name", "");
+                    session.accountAvatar = accountInfo.optString("pic_url",
+                            accountInfo.optString("face", ""));
+                }
 
                 if (!sessionJson.isNull("last_msg")) {
                     session.contentType = sessionJson.getJSONObject("last_msg").getInt("msg_type");
@@ -148,10 +187,7 @@ public class PrivateMsgApi {
                 }
 
                 session.unread = sessionJson.getInt("unread_count");
-
-                if (!sessionJson.has("account_info") && sessionJson.isNull("account_info"))
-                    sessionList.add(session);
-
+                sessionList.add(session);
             }
         }
         return sessionList;
@@ -185,6 +221,15 @@ public class PrivateMsgApi {
                     PrivateMsgSession session = new PrivateMsgSession();
                     JSONObject sessionJson = sessions.getJSONObject(i);
                     session.talkerUid = sessionJson.getLong("talker_id");
+                    session.sessionType = sessionJson.optInt("session_type", 1);
+                    session.systemMsgType = sessionJson.optInt("system_msg_type", 0);
+
+                    JSONObject accountInfo = sessionJson.optJSONObject("account_info");
+                    if (accountInfo != null) {
+                        session.accountName = accountInfo.optString("name", "");
+                        session.accountAvatar = accountInfo.optString("pic_url",
+                                accountInfo.optString("face", ""));
+                    }
 
                     if (!sessionJson.isNull("last_msg")) {
                         session.contentType = sessionJson.getJSONObject("last_msg").getInt("msg_type");
@@ -242,6 +287,27 @@ public class PrivateMsgApi {
             return new JSONObject(response.body().string());
         }
         return new JSONObject();
+    }
+
+    /** Removes a conversation from the session list without deleting its chat history. */
+    public static JSONObject removeSession(long talkerId) throws IOException, JSONException {
+        String url = "https://api.vc.bilibili.com/session_svr/v1/session_svr/remove_session";
+        String csrf = SharedPreferencesUtil.getString("csrf", "");
+        NetWorkUtil.FormData formData = new NetWorkUtil.FormData()
+                .put("talker_id", talkerId)
+                .put("session_type", 1)
+                .put("csrf_token", csrf)
+                .put("csrf", csrf)
+                .put("build", 0)
+                .put("mobi_app", "web");
+
+        try (Response response = NetWorkUtil.post(url, formData.toString(), NetWorkUtil.webHeaders)) {
+            JSONObject result = new JSONObject(Objects.requireNonNull(response.body()).string());
+            if (result.optInt("code", -1) != 0) {
+                throw new JSONException(result.optString("message", result.optString("msg", "删除私信失败")));
+            }
+            return result;
+        }
     }
 
     private static String getDevId() {

@@ -291,6 +291,7 @@ public class BangumiInfoFragment extends Fragment {
             dialog.dismiss();
         });
         dialog = builder.create();
+        MsgUtil.prepareAlertDialog((AlertDialog) dialog);
 
         return dialog;
     }
@@ -317,6 +318,7 @@ public class BangumiInfoFragment extends Fragment {
             dialog.dismiss();
         });
         dialog = builder.create();
+        MsgUtil.prepareAlertDialog((AlertDialog) dialog);
 
         return dialog;
     }

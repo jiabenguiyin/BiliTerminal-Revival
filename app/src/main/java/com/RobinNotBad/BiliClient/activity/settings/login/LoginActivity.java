@@ -25,7 +25,7 @@ public class LoginActivity extends BaseActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_simple_viewpager);
         Log.e("debug", "进入登录页面");
-        setPageName("登录");
+        setPageName(getIntent().getBooleanExtra("add_account", false) ? "添加账号" : "登录");
 
         boolean from_setup = getIntent().getBooleanExtra("from_setup", false);
 

@@ -9,10 +9,14 @@ import android.graphics.Typeface;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
 
 import com.RobinNotBad.BiliClient.BiliTerminal;
 import com.RobinNotBad.BiliClient.R;
@@ -151,7 +155,13 @@ public class MsgUtil {
 
         String e_str = e.toString();
 
-        if (e instanceof IOException) {
+        if (e instanceof TerminalContext.IllegalTerminalStateException) {
+            String message = e.getMessage();
+            showMsgLong(TextUtils.isEmpty(message)
+                    ? "页面数据暂时不可用，请返回后重试"
+                    : message);
+            return;
+        } else if (e instanceof IOException) {
             showMsg(context.getString(R.string.err_network));
             return;
         } else if (e instanceof JSONException) {
@@ -216,6 +226,52 @@ public class MsgUtil {
         intent.putExtra("wait_time", wait_time);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(intent);
+    }
+
+    /**
+     * Keep platform dialogs usable on watches and devices with large font
+     * scaling. Call this after create() and before show().
+     */
+    public static void prepareAlertDialog(AlertDialog dialog) {
+        if (dialog == null) return;
+        dialog.setOnShowListener(ignored -> {
+            Window window = dialog.getWindow();
+            if (window != null) {
+                int width = BiliTerminal.context.getResources().getDisplayMetrics().widthPixels;
+                int dialogWidth = Math.max(ToolsUtil.dp2px(180), Math.round(width * 0.92f));
+                window.setLayout(Math.min(width, dialogWidth),
+                        WindowManager.LayoutParams.WRAP_CONTENT);
+                window.getDecorView().setMinimumWidth(0);
+            }
+
+            TextView message = dialog.findViewById(android.R.id.message);
+            if (message != null) {
+                message.setTextSize(14);
+                message.setMaxLines(12);
+                message.setVerticalScrollBarEnabled(true);
+                message.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
+            }
+
+            Button[] buttons = {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE),
+                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE),
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+            };
+            for (Button button : buttons) {
+                if (button == null) continue;
+                button.setTextSize(13);
+                button.setMinHeight(ToolsUtil.dp2px(40));
+                button.setMinimumHeight(ToolsUtil.dp2px(40));
+                button.setPadding(ToolsUtil.dp2px(6), 0, ToolsUtil.dp2px(6), 0);
+                button.setMaxLines(1);
+                button.setEllipsize(TextUtils.TruncateAt.END);
+            }
+        });
+    }
+
+    public static int dp(Context context, int value) {
+        if (context == null) return value;
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     public static class Action {

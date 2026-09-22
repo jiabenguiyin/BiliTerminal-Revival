@@ -13,6 +13,7 @@ import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -37,6 +38,7 @@ import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.ToolsUtil;
+import com.RobinNotBad.BiliClient.util.UiConfigurationUtil;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -71,8 +73,10 @@ public class BaseActivity extends AppCompatActivity {
         } catch (org.json.JSONException ignored) {
         }
 
-        int paddingH_percent = SharedPreferencesUtil.getInt("paddingH_percent", 0);
-        int paddingV_percent = SharedPreferencesUtil.getInt("paddingV_percent", 0);
+        int paddingH_percent = UiConfigurationUtil.normalizePadding(
+                SharedPreferencesUtil.getInt("paddingH_percent", 0));
+        int paddingV_percent = UiConfigurationUtil.normalizePadding(
+                SharedPreferencesUtil.getInt("paddingV_percent", 0));
 
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         Display display = windowManager.getDefaultDisplay();
@@ -89,8 +93,8 @@ public class BaseActivity extends AppCompatActivity {
             int paddingB = paddingT;
             if (SharedPreferencesUtil.getBoolean("player_ui_round", false))
                 paddingB += scrH * 0.03;
-            window_width = scrW - paddingH * 2;
-            window_height = scrH - paddingT - paddingB;
+            window_width = Math.max(1, scrW - paddingH * 2);
+            window_height = Math.max(1, scrH - paddingT - paddingB);
             View rootView = this.getWindow().getDecorView().getRootView();
             rootView.setPadding(paddingH, paddingT, paddingH, paddingB);
         } else {
@@ -98,11 +102,8 @@ public class BaseActivity extends AppCompatActivity {
             window_height = scrH;
         }
 
-        // 随便加的
-        int density;
-        if ((density = SharedPreferencesUtil.getInt("density", -1)) >= 72) {
-            setDensity(density);
-        }
+        // Density is applied once in attachBaseContext(). Updating resources
+        // again here used to overwrite the configured scale on small devices.
     }
 
     @Override
@@ -165,12 +166,20 @@ public class BaseActivity extends AppCompatActivity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        DiagnosticLogManager.recordKey(this, keyCode);
         if (keyCode == KeyEvent.KEYCODE_MENU) {
             if (Build.VERSION.SDK_INT < 17 || !isDestroyed()) {
                 finish();
             }
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        boolean handled = super.dispatchTouchEvent(event);
+        DiagnosticLogManager.recordTouch(this, event);
+        return handled;
     }
 
     public void report(Exception e) {
@@ -230,9 +239,13 @@ public class BaseActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT < 17) return;
         Resources resources = getResources();
 
+        targetDensityDpi = UiConfigurationUtil.normalizeDensityForContext(
+                targetDensityDpi, old_context);
+        if (targetDensityDpi < UiConfigurationUtil.MIN_DENSITY_DPI) return;
+
         if (resources.getConfiguration().densityDpi == targetDensityDpi) return;
 
-        Configuration configuration = resources.getConfiguration();
+        Configuration configuration = new Configuration(resources.getConfiguration());
         configuration.densityDpi = targetDensityDpi;
         configuration.fontScale = 1f;
         resources.updateConfiguration(configuration, resources.getDisplayMetrics());

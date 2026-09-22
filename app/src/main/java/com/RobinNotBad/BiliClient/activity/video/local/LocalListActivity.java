@@ -92,6 +92,8 @@ public class LocalListActivity extends InstanceActivity {
             LocalVideo localVideo = new LocalVideo();
             localVideo.title = video.getName();
             localVideo.folderLocator = video.getLocator();
+            VideoStorageUtil.Node progressFile = video.find(".playback_progress");
+            localVideo.progressFileLocator = progressFile == null ? "" : progressFile.getLocator();
             VideoStorageUtil.Node cover = video.find("cover.png");
             localVideo.cover = cover == null ? "" : cover.getUriString();
             localVideo.pageList = new ArrayList<>();

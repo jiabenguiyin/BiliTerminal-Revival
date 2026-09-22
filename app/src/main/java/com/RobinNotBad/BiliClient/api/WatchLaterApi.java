@@ -22,21 +22,27 @@ public class WatchLaterApi {
     public static ArrayList<VideoCard> getWatchLaterList() throws IOException, JSONException {
         String url = "https://api.bilibili.com/x/v2/history/toview/web";
 
-        JSONObject result = NetWorkUtil.getJson(url);
-        JSONObject data = result.getJSONObject("data");
+        return parseWatchLaterList(NetWorkUtil.getJson(url));
+    }
 
-
+    static ArrayList<VideoCard> parseWatchLaterList(JSONObject result) throws JSONException {
         ArrayList<VideoCard> videoCardList = new ArrayList<>();
-        if (!data.isNull("list")) {
-            JSONArray list = data.getJSONArray("list");
+        JSONObject data = result.optJSONObject("data");
+        if (data == null) return videoCardList;
+
+        JSONArray list = data.optJSONArray("list");
+        if (list != null) {
             for (int i = 0; i < list.length(); i++) {
-                JSONObject videoCard = list.getJSONObject(i);
-                long aid = videoCard.getLong("aid");
-                String bvid = videoCard.getString("bvid");
-                String title = videoCard.getString("title");
-                String cover = videoCard.getString("pic");
-                String upName = videoCard.getJSONObject("owner").getString("name");
-                long view = videoCard.getJSONObject("stat").getLong("view");
+                JSONObject videoCard = list.optJSONObject(i);
+                if (videoCard == null) continue;
+                long aid = videoCard.optLong("aid", 0);
+                String bvid = videoCard.optString("bvid", "");
+                String title = videoCard.optString("title", "");
+                String cover = videoCard.optString("pic", "");
+                JSONObject owner = videoCard.optJSONObject("owner");
+                JSONObject stat = videoCard.optJSONObject("stat");
+                String upName = owner == null ? "" : owner.optString("name", "");
+                long view = stat == null ? 0 : stat.optLong("view", 0);
                 String viewStr = StringUtil.toWan(view) + "观看";
                 videoCardList.add(new VideoCard(title, upName, viewStr, cover, aid, bvid));
             }

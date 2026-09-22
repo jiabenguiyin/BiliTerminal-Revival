@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 
 import com.RobinNotBad.BiliClient.model.ContentType;
 import com.RobinNotBad.BiliClient.model.Reply;
+import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.Result;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
@@ -17,6 +18,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -185,22 +187,111 @@ public class ReplyApi {
     }
 
     public static Pair<Integer, Reply> sendReply(long oid, long root, long parent, String text, int type) throws IOException, JSONException {
+        return sendReply(oid, root, parent, text, type, null);
+    }
+
+    public static Pair<Integer, Reply> sendReply(long oid, long root, long parent, String text,
+                                                 int type, String picturesJson) throws IOException, JSONException {
         String url = "https://api.bilibili.com/x/v2/reply/add";
+        String csrf = NetWorkUtil.getInfoFromCookie("bili_jct",
+                SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""));
+        if (csrf.isEmpty()) csrf = SharedPreferencesUtil.getString("csrf", "");
         NetWorkUtil.FormData form = new NetWorkUtil.FormData()
                 .put("oid", oid)
                 .put("type", type)
                 .put("message", text)
                 .put("jsonp", "jsonp")
-                .put("csrf", SharedPreferencesUtil.getString("csrf", ""));
+                .put("csrf", csrf);
+        if (picturesJson != null && !picturesJson.isEmpty()) form.put("pictures", picturesJson);
         if (root != 0) form.put("root", root).put("parent", parent);
         String arg = form.toString();
-        JSONObject result = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(url, arg, NetWorkUtil.webHeaders).body()).string());
+        JSONObject result;
+        int httpStatus;
+        try (okhttp3.Response response = NetWorkUtil.post(url, arg, NetWorkUtil.webHeaders)) {
+            if (!response.isSuccessful() || response.body() == null)
+                throw new IOException("评论接口 HTTP " + response.code());
+            httpStatus = response.code();
+            result = new JSONObject(response.body().string());
+        }
         Log.e("debug-发送评论", result.toString());
         JSONObject reply = null;
         if (result.has("data") && !result.isNull("data") && result.getJSONObject("data").has("reply") && !result.getJSONObject("data").isNull("reply")) {
             reply = result.getJSONObject("data").getJSONObject("reply");
         }
+        JSONObject sendDetails = new JSONObject();
+        sendDetails.put("oid", oid);
+        sendDetails.put("type", type);
+        sendDetails.put("root", root);
+        sendDetails.put("parent", parent);
+        sendDetails.put("http_status", httpStatus);
+        sendDetails.put("code", result.optInt("code", -1));
+        sendDetails.put("message", result.optString("message", ""));
+        sendDetails.put("has_reply", reply != null);
+        if (reply != null) sendDetails.put("rpid", reply.optLong("rpid", 0));
+        DiagnosticLogManager.record("reply_send_result", sendDetails);
         return new Pair<>(result.getInt("code"), reply == null ? null : new Reply(root != 0, reply));
+    }
+
+    /**
+     * The add endpoint can return before a reply is visible to the public
+     * listing. Do not show a local-only comment as successfully published.
+     */
+    public static boolean isReplyVisible(long oid, long rpid, int type)
+            throws IOException, JSONException {
+        if (rpid <= 0) return false;
+        final long[] retryDelays = {250L, 500L, 1000L, 2000L};
+        for (int attempt = 0; attempt < retryDelays.length; attempt++) {
+            ArrayList<Reply> replies = new ArrayList<>();
+            boolean visible = false;
+            String errorName = "";
+            try {
+                Pair<Integer, String> page = getRepliesLazy(oid, rpid, "", type, 2, replies);
+                for (Reply reply : replies) {
+                    if (reply != null && reply.rpid == rpid) {
+                        visible = true;
+                        break;
+                    }
+                    if (reply != null && reply.childMsgList != null) {
+                        for (Reply child : reply.childMsgList) {
+                            if (child != null && child.rpid == rpid) {
+                                visible = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (visible) break;
+                }
+                JSONObject details = new JSONObject();
+                details.put("oid", oid);
+                details.put("type", type);
+                details.put("rpid", rpid);
+                details.put("attempt", attempt + 1);
+                details.put("result", page.first);
+                details.put("reply_count", replies.size());
+                details.put("visible", visible);
+                DiagnosticLogManager.record("reply_visibility_check", details);
+            } catch (Exception error) {
+                errorName = error.getClass().getSimpleName();
+                JSONObject details = new JSONObject();
+                details.put("oid", oid);
+                details.put("type", type);
+                details.put("rpid", rpid);
+                details.put("attempt", attempt + 1);
+                details.put("visible", false);
+                details.put("error", errorName);
+                DiagnosticLogManager.record("reply_visibility_check", details);
+            }
+            if (visible) return true;
+            if (attempt < retryDelays.length - 1) {
+                try {
+                    Thread.sleep(retryDelays[attempt]);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
     }
 
     public static Pair<Integer, Reply> sendReply(long oid, long root, long parent, String text) throws IOException, JSONException {
@@ -212,10 +303,29 @@ public class ReplyApi {
     }
 
     public static int likeReply(long oid, long root, boolean action) throws IOException, JSONException {
+        return likeReply(oid, root, REPLY_TYPE_VIDEO, action);
+    }
+
+    public static int likeReply(long oid, long root, int type, boolean action) throws IOException, JSONException {
         String url = "https://api.bilibili.com/x/v2/reply/action";
-        String arg = "oid=" + oid + "&type=1&rpid=" + root + "&action=" + (action ? "1" : "0") + "&jsonp=jsonp&csrf=" + SharedPreferencesUtil.getString("csrf", "");
+        String arg = "oid=" + oid + "&type=" + type + "&rpid=" + root + "&action=" + (action ? "1" : "0") + "&jsonp=jsonp&csrf=" + SharedPreferencesUtil.getString("csrf", "");
         JSONObject result = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(url, arg, NetWorkUtil.webHeaders).body()).string());
         Log.e("debug-点赞评论", result.toString());
+        return result.getInt("code");
+    }
+
+    public static int hateReply(long oid, long rpid, int type, boolean action) throws IOException, JSONException {
+        String url = "https://api.bilibili.com/x/v2/reply/hate";
+        String reqBody = new NetWorkUtil.FormData()
+                .put("oid", oid)
+                .put("type", type)
+                .put("rpid", rpid)
+                .put("action", action ? 1 : 0)
+                .put("jsonp", "jsonp")
+                .put("csrf", SharedPreferencesUtil.getString("csrf", ""))
+                .toString();
+        JSONObject result = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(url, reqBody, NetWorkUtil.webHeaders).body()).string());
+        Log.e("debug-点踩评论", result.toString());
         return result.getInt("code");
     }
 

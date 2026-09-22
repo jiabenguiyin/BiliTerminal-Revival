@@ -15,6 +15,7 @@ import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
 import com.RobinNotBad.BiliClient.activity.reply.ReplyFragment;
 import com.RobinNotBad.BiliClient.adapter.viewpager.ViewPagerFragmentAdapter;
 import com.RobinNotBad.BiliClient.api.ReplyApi;
+import com.RobinNotBad.BiliClient.api.DynamicApi;
 import com.RobinNotBad.BiliClient.event.ReplyEvent;
 import com.RobinNotBad.BiliClient.helper.TutorialHelper;
 import com.RobinNotBad.BiliClient.util.AnimationUtils;
@@ -88,7 +89,11 @@ public class DynamicInfoActivity extends BaseActivity {
                     });
                     TutorialHelper.showPagerTutorial(this, 2);
                 }).onFailure((e) -> {
-                    MsgUtil.err(e);
+                    if (e instanceof DynamicApi.DynamicNotVisibleException) {
+                        MsgUtil.showMsg("动态已删除或暂时不可见");
+                    } else {
+                        MsgUtil.err(e);
+                    }
                     ((ImageView) findViewById(R.id.loading)).setImageResource(R.mipmap.loading_2233_error);
                 }));
 

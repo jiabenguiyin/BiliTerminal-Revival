@@ -3,6 +3,12 @@ package com.RobinNotBad.BiliClient.activity.user.info;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
+import android.graphics.Color;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import androidx.appcompat.app.AlertDialog;
 import android.view.View;
 
 import androidx.annotation.Nullable;
@@ -14,6 +20,7 @@ import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
 import com.RobinNotBad.BiliClient.adapter.dynamic.DynamicHolder;
 import com.RobinNotBad.BiliClient.adapter.viewpager.ViewPagerFragmentAdapter;
 import com.RobinNotBad.BiliClient.helper.TutorialHelper;
+import com.RobinNotBad.BiliClient.util.MsgUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -56,6 +63,33 @@ public class UserInfoActivity extends BaseActivity {
         viewPager.setAdapter(vpfAdapter);  //没啥好说的，教科书式的ViewPager使用方法
 
         findViewById(R.id.loading).setVisibility(View.GONE);
+        View userVideoSearch = findViewById(R.id.user_video_search);
+        userVideoSearch.setVisibility(View.VISIBLE);
+        userVideoSearch.setOnClickListener(v -> {
+            EditText input = new EditText(this);
+            input.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            input.setSingleLine(true);
+            input.setMinHeight(MsgUtil.dp(this, 42));
+            input.setPadding(MsgUtil.dp(this, 8), 0, MsgUtil.dp(this, 8), 0);
+            input.setTextColor(Color.WHITE);
+            input.setHint("搜索该用户的投稿");
+            FrameLayout inputContainer = new FrameLayout(this);
+            inputContainer.setPadding(MsgUtil.dp(this, 12), 0, MsgUtil.dp(this, 12), 0);
+            inputContainer.addView(input);
+            AlertDialog searchDialog = new AlertDialog.Builder(this)
+                    .setTitle("搜索投稿")
+                    .setView(inputContainer)
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("搜索", (dialog, which) -> {
+                        viewPager.setCurrentItem(1, false);
+                        uvFragment.search(input.getText().toString());
+                    })
+                    .create();
+            MsgUtil.prepareAlertDialog(searchDialog);
+            searchDialog.show();
+        });
 
         TutorialHelper.showPagerTutorial(this, 3);
 

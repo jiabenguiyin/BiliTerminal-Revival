@@ -15,6 +15,7 @@ import android.widget.TextView;
 
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
+import com.RobinNotBad.BiliClient.activity.browser.BrowserActivity;
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
@@ -31,7 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class AboutActivity extends BaseActivity {
-    int eggClick_authorWords = 0, eggClick_toUncle = 0, eggClick_Dev = 0;
+    int eggClick_authorWords = 0, eggClick_toUncle = 0, eggClick_Dev = 0, eggClick_browser = 0;
 
     @SuppressLint({"MissingInflatedId", "SetTextI18n", "InflateParams"})
     @Override
@@ -156,6 +157,13 @@ public class AboutActivity extends BaseActivity {
             });
 
             if (!ToolsUtil.isDebugBuild()) findViewById(R.id.debug_tip).setVisibility(View.GONE);
+            findViewById(R.id.version_name_card).setOnClickListener(view -> {
+                eggClick_browser++;
+                if (eggClick_browser == 7) {
+                    eggClick_browser = 0;
+                    startActivity(new Intent(this, BrowserActivity.class));
+                }
+            });
             findViewById(R.id.version_code_card).setOnClickListener(view -> {
                 if (SharedPreferencesUtil.getBoolean("developer", false)) {
                     MsgUtil.showMsg("已关闭开发者模式！");

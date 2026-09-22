@@ -48,7 +48,6 @@ import com.RobinNotBad.BiliClient.activity.video.collection.CollectionInfoActivi
 import com.RobinNotBad.BiliClient.adapter.user.UpListAdapter;
 import com.RobinNotBad.BiliClient.api.BangumiApi;
 import com.RobinNotBad.BiliClient.api.DynamicApi;
-import com.RobinNotBad.BiliClient.api.HistoryApi;
 import com.RobinNotBad.BiliClient.api.LikeCoinFavApi;
 import com.RobinNotBad.BiliClient.api.PlayerApi;
 import com.RobinNotBad.BiliClient.api.VideoInfoApi;
@@ -290,19 +289,8 @@ public class VideoInfoFragment extends BaseFragment {
 
         playerData = videoInfo.toPlayerData(0);
 
-        // 历史上报只是附加能力，失败时不打断详情页和后续播放。
-        CenterThreadPool.run(() -> {
-            try {
-                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) return;
-                PlayerApi.getVideo(playerData, false);
-                if (playerData == null) return;
-                HistoryApi.reportHistory(videoInfo.aid, playerData.cidHistory, playerData.progress / 1000);
-            } catch (Exception e) {
-                Logu.e("history", "prefetch/report skipped: " + e);
-            } finally {
-                onFinishLoad();
-            }
-        });
+        // 1.1.6: 详情页只负责展示内容；播放地址在用户真正点击播放时再请求，
+        // 避免 Android 4.x 打开详情页时同时拉播放流和评论/相关内容。
 
         //封面
         cover.requestFocus();
@@ -513,6 +501,8 @@ public class VideoInfoFragment extends BaseFragment {
             collectionCard.setVisibility(View.GONE);
         }
 
+        onFinishLoad();
+
         // 一键三连
         rootview.findViewById(R.id.layout_like).setOnLongClickListener(v -> {
             if (SharedPreferencesUtil.getBoolean("like_one_triple", true) &&
@@ -653,7 +643,7 @@ public class VideoInfoFragment extends BaseFragment {
                 VideoStorageUtil.Node fileSign = downPath.find(".DOWNLOADING");
                 MsgUtil.showMsg(fileSign != null ? "已在下载队列\n如有异常，长按可清空文件" : "已下载完成");
             } else {
-                if (videoInfo.pagenames.size() > 1) {
+        if (videoInfo.pagenames.size() > 1) {
                     Intent intent = new Intent();
                     intent.setClass(requireContext(), MultiPageActivity.class)
                             .putExtra("download", 1)
@@ -668,6 +658,7 @@ public class VideoInfoFragment extends BaseFragment {
                 }
             }
         }
+
     }
 
     private void showCover() {

@@ -140,7 +140,7 @@
                     android:textSize="11sp"
                     android:padding="3dp"
                     android:alpha="0.85"
-                        android:text="1.1.1 正式版\n稳定通道"
+                        android:text="1.1.8 正式版\n高能进度条与播放器优化"
                     android:layout_gravity="center"
                     android:gravity="center" />
 
@@ -261,7 +261,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:text="1.1.1 维护组件"
+                        android:text="1.1.8 维护组件 · 2026092102"
                         android:textSize="14sp" />
 
                     <com.google.android.material.card.MaterialCardView
@@ -312,7 +312,7 @@
                                 android:layout_marginBottom="2dp"
                                 android:alpha="0.7"
                                 android:singleLine="true"
-                                android:text="旧设备兼容、动态接口与后台播放维护"
+                                android:text="旧设备兼容、播放器与缓存下载维护"
                                 android:textSize="11sp"
                                 app:layout_constraintBottom_toBottomOf="@+id/robinAvatar"
                                 app:layout_constraintEnd_toEndOf="parent"
@@ -371,7 +371,7 @@
                                 android:layout_marginBottom="2dp"
                                 android:alpha="0.7"
                                 android:singleLine="true"
-                                android:text="直连失败后转发 B 站相关请求"
+                                android:text="按用户设置转发 B 站相关请求"
                                 android:textSize="11sp"
                                 app:layout_constraintBottom_toBottomOf="@+id/moyeAvatar"
                                 app:layout_constraintEnd_toEndOf="parent"
@@ -438,7 +438,7 @@
                                 android:layout_marginBottom="2dp"
                                 android:alpha="0.7"
                                 android:singleLine="true"
-                                android:text="jp.031030.xyz / HTTPS / 断点续传"
+                                android:text="下载重试 / 断点续传 / 低内存适配"
                                 android:textSize="11sp"
                                 app:layout_constraintBottom_toBottomOf="@+id/silentAvatar"
                                 app:layout_constraintEnd_toEndOf="parent"
@@ -675,7 +675,7 @@
                                 android:layout_marginBottom="2dp"
                                 android:alpha="0.7"
                                 android:singleLine="true"
-                                android:text="官方接口优先；弱网失败后自动中继"
+                                android:text="默认直连；可在设置中长期使用中继"
                                 android:textSize="11sp"
                                 app:layout_constraintBottom_toBottomOf="@+id/jankAvatar"
                                 app:layout_constraintEnd_toEndOf="parent"

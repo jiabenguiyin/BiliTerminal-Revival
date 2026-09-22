@@ -16,7 +16,8 @@
   <a href="https://jp.031030.xyz/#updates">更新日志</a> ·
   <a href="https://jp.031030.xyz/#guide">使用说明</a> ·
   <a href="https://jp.031030.xyz/#status">服务状态</a> ·
-  <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/issues">问题反馈</a>
+  <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/issues">GitHub 问题反馈</a> ·
+  <span>反馈群：1107953621</span>
 </p>
 
 > 正式版和测试版安装包统一从[哔哩终端复活版官网](https://jp.031030.xyz/#download)获取。GitHub 仓库用于公开源码、构建记录和问题跟踪。
@@ -73,7 +74,7 @@ Android 5.0 及以上设备可以在设置中选择 SAF 目录作为缓存位置
 
 ## 问题反馈
 
-发现问题时请在 [GitHub Issues](https://github.com/jiabenguiyin/BiliTerminal-Revival/issues) 提交，并尽量附上设备型号、Android 版本、复现步骤、网络类型和日志上传 ID。请勿公开粘贴登录 Cookie、Token 或其他账号凭据。
+发现问题时可以在 [GitHub Issues](https://github.com/jiabenguiyin/BiliTerminal-Revival/issues) 提交，也可以加入反馈群 `1107953621`。请尽量附上设备型号、Android 版本、复现步骤、网络类型和日志上传 ID。请勿公开粘贴登录 Cookie、Token 或其他账号凭据。
 
 服务是否正常可先查看[官网服务状态](https://jp.031030.xyz/#status)。
 

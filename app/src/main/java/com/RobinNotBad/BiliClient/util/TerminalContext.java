@@ -84,6 +84,11 @@ public class TerminalContext {
     }
 
     public void enterVideoDetailPage(Context context, long aid, String bvid, String type, long seekReply) {
+        enterVideoDetailPage(context, aid, bvid, type, seekReply, seekReply);
+    }
+
+    public void enterVideoDetailPage(Context context, long aid, String bvid, String type,
+                                     long seekRoot, long seekReply) {
         //创建intent并填充信息
         Intent intent = new Intent(context, VideoInfoActivity.class);
         intent.putExtra("aid", aid);
@@ -93,6 +98,7 @@ public class TerminalContext {
         if (type != null) {
             intent.putExtra("type", type);
         }
+        intent.putExtra("seekRoot", seekRoot);
         intent.putExtra("seekReply", seekReply);
         //启动activity
         context.startActivity(intent);
@@ -112,7 +118,8 @@ public class TerminalContext {
         } catch (Exception e) {
             return Result.failure(e);
         }
-        return Result.failure(new IllegalTerminalStateException("video object is null"));
+        return Result.failure(new IllegalTerminalStateException(
+                "视频信息为空，可能视频已删除、链接已失效或接口暂时没有返回数据"));
     }
 
     private Result<VideoInfo> fetchVideoInfoByBvId(String bvid, boolean saveToCache) {
@@ -129,7 +136,8 @@ public class TerminalContext {
         } catch (Exception e) {
             return Result.failure(e);
         }
-        return Result.failure(new IllegalTerminalStateException("video object is null"));
+        return Result.failure(new IllegalTerminalStateException(
+                "视频信息为空，可能视频已删除、链接已失效或接口暂时没有返回数据"));
     }
 
     private Result<VideoInfo> fetchVideoInfoByAidOrBvId(long aid, String bvid, boolean saveToCache) {

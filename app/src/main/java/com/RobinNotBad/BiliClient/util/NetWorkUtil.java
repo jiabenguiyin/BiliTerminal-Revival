@@ -2,8 +2,12 @@ package com.RobinNotBad.BiliClient.util;
 
 import android.annotation.SuppressLint;
 import android.os.Build;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
+
+import com.RobinNotBad.BiliClient.BiliTerminal;
+import com.RobinNotBad.BiliClient.R;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -18,6 +22,9 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.security.KeyStore;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -50,12 +57,13 @@ import okhttp3.ResponseBody;
 public class NetWorkUtil {
     private static final AtomicReference<OkHttpClient> INSTANCE = new AtomicReference<>();
     public static volatile boolean BILI_RELAY_ENABLE = true;
-    public static volatile boolean BILI_RELAY_AUTO_FALLBACK = true;
+    /** Retained for hot-config compatibility. Relay routing is always user-controlled. */
+    public static volatile boolean BILI_RELAY_AUTO_FALLBACK = false;
     public static volatile String BILI_RELAY_BASE = "https://jp.031030.xyz/bili-relay";
-    public static volatile String BILI_RELAY_TOKEN = "PUBLIC_RELAY_TOKEN_PLACEHOLDER_";
-    private static volatile int BILI_RELAY_DIRECT_RETRY_COUNT = 2;
-    private static volatile int BILI_RELAY_DIRECT_ATTEMPT_TIMEOUT_SEC = 5;
-    private static volatile boolean BILI_RELAY_FORCED = false;
+    // The production relay token is delivered by the signed server configuration.
+    // Keep public source builds usable without publishing the private token.
+    public static volatile String BILI_RELAY_TOKEN = "";
+    private static volatile boolean BILI_RELAY_SESSION_ENABLED = false;
     private static final List<String> BILI_RELAY_HOSTS = Arrays.asList(
             "bilibili.com",
             "*.bilibili.com",
@@ -90,14 +98,12 @@ public class NetWorkUtil {
         }
     }
 
-    public static void configureRelay(boolean enabled, boolean autoFallback, String baseUrl,
-                                      String token, int directRetryCount, int directTimeoutSeconds) {
+    public static void configureRelay(boolean enabled, boolean ignoredAutoFallback, String baseUrl,
+                                      String token, int ignoredDirectRetryCount, int ignoredDirectTimeoutSeconds) {
         BILI_RELAY_ENABLE = enabled;
-        BILI_RELAY_AUTO_FALLBACK = autoFallback;
+        BILI_RELAY_AUTO_FALLBACK = false;
         BILI_RELAY_BASE = baseUrl;
         BILI_RELAY_TOKEN = token;
-        BILI_RELAY_DIRECT_RETRY_COUNT = directRetryCount;
-        BILI_RELAY_DIRECT_ATTEMPT_TIMEOUT_SEC = directTimeoutSeconds;
     }
 
     private static boolean isRelayHostAllowed(String host) {
@@ -140,35 +146,30 @@ public class NetWorkUtil {
     }
 
     private static boolean shouldRouteUrlForRelay(String url) {
-        return BILI_RELAY_ENABLE && BILI_RELAY_FORCED && isBiliRelayTarget(url);
+        return canUseRelay() && isBiliRelayTarget(url);
     }
 
-    public static boolean isRelayForced() {
-        return BILI_RELAY_FORCED;
+    private static boolean isRelayAlwaysOn() {
+        return SharedPreferencesUtil.getBoolean("relay_always_on", false);
     }
 
-    public static boolean forceRelayFallback(String reason) {
-        boolean changed = !BILI_RELAY_FORCED;
-        BILI_RELAY_FORCED = true;
-        if (changed) {
-            Logu.e("bili-relay", "switch to relay: " + reason);
-            JSONObject details = new JSONObject();
-            try {
-                details.put("reason", relayFailureCategory(reason));
-            } catch (JSONException ignored) {
-            }
-            DiagnosticLogManager.record("relay_fallback", details);
-        }
-        return changed;
+    public static boolean canUseRelay() {
+        return BILI_RELAY_ENABLE && (isRelayAlwaysOn() || BILI_RELAY_SESSION_ENABLED);
     }
 
-    private static String relayFailureCategory(String reason) {
-        String text = reason == null ? "" : reason.toLowerCase();
-        if (text.contains("ssl") || text.contains("handshake")) return "tls";
-        if (text.contains("timeout")) return "timeout";
-        if (text.contains("reset")) return "connection_reset";
-        if (text.contains("unknownhost") || text.contains("dns")) return "dns";
-        return "network";
+    /** Enable relay for this process only, without changing the persistent setting. */
+    public static void enableRelayForSession() {
+        BILI_RELAY_SESSION_ENABLED = true;
+        Logu.e("bili-relay", "relay enabled for current session");
+    }
+
+    public static void disableRelayForSession() {
+        BILI_RELAY_SESSION_ENABLED = false;
+        Logu.e("bili-relay", "session relay disabled");
+    }
+
+    public static boolean isRelayActive() {
+        return canUseRelay();
     }
 
     public static String routeUrlForRelay(String url) {
@@ -289,12 +290,81 @@ public class NetWorkUtil {
             if (systemTrustManager == null) {
                 throw new IllegalStateException("No system X509TrustManager");
             }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                systemTrustManager = withLegacyIsrgRoot(systemTrustManager);
+            }
             final SSLSocketFactory sslSocketFactory = new SSLSocketFactoryCompat(systemTrustManager);
             okhttpBuilder.sslSocketFactory(sslSocketFactory, systemTrustManager);
         } catch (Exception e) {
             Logu.e("network", "TLS compatibility setup failed: " + e);
         }
         return okhttpBuilder;
+    }
+
+    private static X509TrustManager withLegacyIsrgRoot(X509TrustManager systemTrustManager)
+            throws Exception {
+        CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+        X509Certificate isrgRoot;
+        try (InputStream input = BiliTerminal.context.getResources()
+                .openRawResource(R.raw.isrg_root_x1)) {
+            isrgRoot = (X509Certificate) certificateFactory.generateCertificate(input);
+        }
+
+        KeyStore legacyRoots = KeyStore.getInstance(KeyStore.getDefaultType());
+        legacyRoots.load(null, null);
+        legacyRoots.setCertificateEntry("isrg-root-x1", isrgRoot);
+
+        TrustManagerFactory legacyFactory = TrustManagerFactory.getInstance(
+                TrustManagerFactory.getDefaultAlgorithm());
+        legacyFactory.init(legacyRoots);
+        X509TrustManager legacyTrustManager = null;
+        for (TrustManager trustManager : legacyFactory.getTrustManagers()) {
+            if (trustManager instanceof X509TrustManager) {
+                legacyTrustManager = (X509TrustManager) trustManager;
+                break;
+            }
+        }
+        if (legacyTrustManager == null) {
+            throw new IllegalStateException("No legacy X509TrustManager");
+        }
+        return new CompositeTrustManager(systemTrustManager, legacyTrustManager);
+    }
+
+    private static final class CompositeTrustManager implements X509TrustManager {
+        private final X509TrustManager system;
+        private final X509TrustManager legacy;
+
+        CompositeTrustManager(X509TrustManager system, X509TrustManager legacy) {
+            this.system = system;
+            this.legacy = legacy;
+        }
+
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType)
+                throws CertificateException {
+            system.checkClientTrusted(chain, authType);
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType)
+                throws CertificateException {
+            try {
+                system.checkServerTrusted(chain, authType);
+            } catch (CertificateException systemError) {
+                legacy.checkServerTrusted(chain, authType);
+            }
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            X509Certificate[] systemIssuers = system.getAcceptedIssuers();
+            X509Certificate[] legacyIssuers = legacy.getAcceptedIssuers();
+            X509Certificate[] combined = Arrays.copyOf(systemIssuers,
+                    systemIssuers.length + legacyIssuers.length);
+            System.arraycopy(legacyIssuers, 0, combined, systemIssuers.length,
+                    legacyIssuers.length);
+            return combined;
+        }
     }
 
     public static JSONObject getJson(String url) throws IOException, JSONException {
@@ -304,12 +374,6 @@ public class NetWorkUtil {
     public static JSONObject getJson(String url, ArrayList<String> headers) throws IOException, JSONException {
         try (Response response = get(url, headers)) {
             String bodyText = readJsonBodyText(url, response);
-            if (shouldRetryJsonByRelay(url, response, bodyText)) {
-                forceRelayFallback("direct GET returned html: " + compactUrl(url));
-                try (Response relayResponse = executeGet(url, headers, null, true, getOkHttpInstance())) {
-                    return parseJsonText(url, relayResponse, readJsonBodyText(url, relayResponse));
-                }
-            }
             return parseJsonText(url, response, bodyText);
         }
     }
@@ -329,14 +393,6 @@ public class NetWorkUtil {
         return new JSONObject(trimmed);
     }
 
-    private static boolean shouldRetryJsonByRelay(String url, Response response, String bodyText) {
-        return BILI_RELAY_ENABLE
-                && BILI_RELAY_AUTO_FALLBACK
-                && !BILI_RELAY_FORCED
-                && isBiliRelayTarget(url)
-                && isHtmlResponse(response, bodyText == null ? "" : bodyText.trim());
-    }
-
     private static boolean isHtmlResponse(Response response, String trimmedBody) {
         String contentType = response.header("Content-Type");
         if (contentType != null && contentType.toLowerCase().contains("text/html")) return true;
@@ -346,7 +402,7 @@ public class NetWorkUtil {
 
     private static String compactUrl(String url) {
         URI uri = parseUri(url);
-        if (uri == null || uri.getHost() == null) return url;
+        if (uri == null || uri.getHost() == null) return "invalid-endpoint";
         String path = uri.getRawPath();
         if (path == null || path.isEmpty()) path = "/";
         return uri.getHost().toLowerCase() + path;
@@ -361,10 +417,7 @@ public class NetWorkUtil {
     }
 
     public static Response get(String url, ArrayList<String> headers, RedirectHandler redirectHandler) throws IOException {
-        Logu.d("get-url", url);
-        if (shouldTryDirectBeforeRelay(url)) {
-            return getWithAutoRelay(url, headers, redirectHandler);
-        }
+        Logu.d("get-url", compactUrl(url));
         return executeGet(url, headers, redirectHandler, shouldRouteUrlForRelay(url), getOkHttpInstance());
     }
 
@@ -373,86 +426,73 @@ public class NetWorkUtil {
     }
 
     public static Response getDownload(String url, ArrayList<String> headers) throws IOException {
-        Logu.d("download-url", url);
-        if (shouldTryDirectBeforeRelay(url)) {
-            try {
-                return executeGet(url, headers, null, false, getOkHttpInstance());
-            } catch (IOException e) {
-                forceRelayFallback("download direct failed: " + e);
-                return executeGet(url, headers, null, true, getOkHttpInstance());
-            }
-        }
+        Logu.d("download-url", compactUrl(url));
         return executeGet(url, headers, null, shouldRouteUrlForRelay(url), getOkHttpInstance());
     }
 
-    private static boolean shouldTryDirectBeforeRelay(String url) {
-        return BILI_RELAY_ENABLE && BILI_RELAY_AUTO_FALLBACK && !BILI_RELAY_FORCED && isBiliRelayTarget(url);
-    }
-
-    private static OkHttpClient getDirectProbeClient() {
-        return getOkHttpInstance().newBuilder()
-                .connectTimeout(BILI_RELAY_DIRECT_ATTEMPT_TIMEOUT_SEC, TimeUnit.SECONDS)
-                .writeTimeout(BILI_RELAY_DIRECT_ATTEMPT_TIMEOUT_SEC, TimeUnit.SECONDS)
-                .readTimeout(BILI_RELAY_DIRECT_ATTEMPT_TIMEOUT_SEC, TimeUnit.SECONDS)
-                .callTimeout(BILI_RELAY_DIRECT_ATTEMPT_TIMEOUT_SEC, TimeUnit.SECONDS)
-                .build();
-    }
-
     public static boolean prepareBiliRoute() throws IOException, JSONException {
-        if (!BILI_RELAY_ENABLE || BILI_RELAY_FORCED) return BILI_RELAY_FORCED;
-        getJson("https://api.bilibili.com/x/web-interface/nav", webHeaders);
-        return BILI_RELAY_FORCED;
-    }
+        JSONObject response = getJson("https://api.bilibili.com/x/web-interface/nav", webHeaders);
+        if (!response.has("code")) throw new IOException("B 站接口没有返回有效状态");
 
-    private static Response getWithAutoRelay(String url, ArrayList<String> headers, RedirectHandler redirectHandler) throws IOException {
-        IOException lastException = null;
-        OkHttpClient directProbeClient = getDirectProbeClient();
-        for (int i = 1; i <= BILI_RELAY_DIRECT_RETRY_COUNT; i++) {
+        // This probe only verifies that the current route reaches Bilibili. Login,
+        // risk-control and account errors are still valid Bilibili JSON responses
+        // and must not be reclassified as an offline or carrier-blocked network.
+        int code = response.optInt("code", Integer.MIN_VALUE);
+        if (code != 0) {
+            JSONObject details = new JSONObject();
             try {
-                return executeGet(url, headers, redirectHandler, false, directProbeClient);
-            } catch (IOException e) {
-                lastException = e;
-                Logu.e("bili-relay", "direct GET failed " + i + "/" + BILI_RELAY_DIRECT_RETRY_COUNT + ": " + e);
+                details.put("code", code);
+                details.put("relay", isRelayActive());
+            } catch (JSONException ignored) {
             }
+            DiagnosticLogManager.record("startup_route_api_response", details);
         }
-        forceRelayFallback(lastException == null ? "direct GET failed" : lastException.toString());
-        return executeGet(url, headers, redirectHandler, true, getOkHttpInstance());
+        return isRelayActive();
     }
 
     private static Response executeGet(String url, List<String> headers, RedirectHandler redirectHandler, boolean useRelay, OkHttpClient client) throws IOException {
+        return executeGet(url, headers, redirectHandler, useRelay, client, null);
+    }
+
+    public static Response getCancellable(String url, List<String> headers,
+                                          RequestCancellation cancellation) throws IOException {
+        return executeGet(url, headers, null, shouldRouteUrlForRelay(url),
+                getOkHttpInstance(), cancellation);
+    }
+
+    private static Response executeGet(String url, List<String> headers, RedirectHandler redirectHandler,
+                                       boolean useRelay, OkHttpClient client,
+                                       RequestCancellation cancellation) throws IOException {
+        long startedAt = SystemClock.elapsedRealtime();
         Request.Builder requestBuilder = new Request.Builder().url(useRelay ? relayUrl(url) : url).get();
         addRelayHeaders(requestBuilder, url, useRelay);
         addSafeHeaders(requestBuilder, headers, url);
         if (redirectHandler != null) requestBuilder.tag(RedirectHandler.class, redirectHandler);
         Request request = requestBuilder.build();
-        return client.newCall(request).execute();
+        try {
+            okhttp3.Call call = client.newCall(request);
+            if (cancellation != null) cancellation.attach(call);
+            Response response = call.execute();
+            DiagnosticLogManager.recordNetwork("GET", url, response.code(), useRelay,
+                    SystemClock.elapsedRealtime() - startedAt, null);
+            return response;
+        } catch (IOException error) {
+            DiagnosticLogManager.recordNetwork("GET", url, -1, useRelay,
+                    SystemClock.elapsedRealtime() - startedAt, error.getClass().getSimpleName());
+            throw error;
+        }
     }
 
     public static Response post(String url, String data, List<String> headers, String contentType) throws IOException {
-        Logu.d("post-url", url);
-        Logu.d("post-data", data);
-        if (shouldTryDirectBeforeRelay(url)) {
-            return postWithAutoRelay(url, data, headers, contentType);
+        if (!isDiagnosticUploadUrl(url)) {
+            Logu.d("post-url", compactUrl(url));
         }
         return executePost(url, data, headers, contentType, shouldRouteUrlForRelay(url), getOkHttpInstance());
     }
 
-    private static Response postWithAutoRelay(String url, String data, List<String> headers, String contentType) throws IOException {
-        IOException lastException = null;
-        OkHttpClient directProbeClient = getDirectProbeClient();
-        for (int i = 1; i <= BILI_RELAY_DIRECT_RETRY_COUNT; i++) {
-            try {
-                return executePost(url, data, headers, contentType, false, directProbeClient);
-            } catch (IOException e) {
-                lastException = e;
-                Logu.e("bili-relay", "direct POST failed " + i + "/" + BILI_RELAY_DIRECT_RETRY_COUNT + ": " + e);
-            }
-        }
-        forceRelayFallback(lastException == null ? "direct POST failed" : lastException.toString());
-        return executePost(url, data, headers, contentType, true, getOkHttpInstance());
-    }
-
     private static Response executePost(String url, String data, List<String> headers, String contentType, boolean useRelay, OkHttpClient client) throws IOException {
+        long startedAt = SystemClock.elapsedRealtime();
+        boolean diagnosticUpload = isDiagnosticUploadUrl(url);
         RequestBody body = RequestBody.create(MediaType.parse(contentType + "; charset=utf-8"), data);
         Request.Builder requestBuilder = new Request.Builder().url(useRelay ? relayUrl(url) : url).post(body);
         addRelayHeaders(requestBuilder, url, useRelay);
@@ -465,7 +505,24 @@ public class NetWorkUtil {
             requestBuilder.addHeader(key, val);
         }
         Request request = requestBuilder.build();
-        return client.newCall(request).execute();
+        try {
+            Response response = client.newCall(request).execute();
+            if (!diagnosticUpload) {
+                DiagnosticLogManager.recordNetwork("POST", url, response.code(), useRelay,
+                        SystemClock.elapsedRealtime() - startedAt, null);
+            }
+            return response;
+        } catch (IOException error) {
+            if (!diagnosticUpload) {
+                DiagnosticLogManager.recordNetwork("POST", url, -1, useRelay,
+                        SystemClock.elapsedRealtime() - startedAt, error.getClass().getSimpleName());
+            }
+            throw error;
+        }
+    }
+
+    private static boolean isDiagnosticUploadUrl(String url) {
+        return url != null && url.endsWith("/terminal/upload/diagnostics");
     }
 
     public static Response post(String url, String data, List<String> headers) throws IOException {
@@ -478,6 +535,35 @@ public class NetWorkUtil {
 
     public static Response postJson(String url, String data) throws IOException {
         return post(url, data, webHeaders, "application/json");
+    }
+
+    /** Posts a multipart body using the current global relay mode. */
+    public static Response postMultipart(String url, RequestBody body, List<String> headers) throws IOException {
+        return executeMultipart(url, body, headers, shouldRouteUrlForRelay(url), getOkHttpInstance());
+    }
+
+    public static Response postMultipart(String url, RequestBody body) throws IOException {
+        return postMultipart(url, body, webHeaders);
+    }
+
+    private static Response executeMultipart(String url, RequestBody body, List<String> headers,
+                                             boolean useRelay, OkHttpClient client) throws IOException {
+        long startedAt = SystemClock.elapsedRealtime();
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(useRelay ? relayUrl(url) : url)
+                .post(body);
+        addRelayHeaders(requestBuilder, url, useRelay);
+        addSafeHeaders(requestBuilder, headers, url);
+        try {
+            Response response = client.newCall(requestBuilder.build()).execute();
+            DiagnosticLogManager.recordNetwork("MULTIPART", url, response.code(), useRelay,
+                    SystemClock.elapsedRealtime() - startedAt, null);
+            return response;
+        } catch (IOException error) {
+            DiagnosticLogManager.recordNetwork("MULTIPART", url, -1, useRelay,
+                    SystemClock.elapsedRealtime() - startedAt, error.getClass().getSimpleName());
+            throw error;
+        }
     }
 
     public static Response post(String url, String data) throws IOException {
@@ -493,7 +579,6 @@ public class NetWorkUtil {
             requestBuilder.addHeader(key, headers.get(i + 1));
         }
     }
-
 
     public static byte[] readStream(InputStream inStream) throws IOException {
         ByteArrayOutputStream outStream = new ByteArrayOutputStream();
@@ -529,24 +614,33 @@ public class NetWorkUtil {
         return new Cookies(cookie).getOrDefault(name, "");
     }
 
-    private static synchronized void saveCookiesFromResponse(Response response) {
+    private static void saveCookiesFromResponse(Response response) {
+        synchronized (AccountManager.class) {
         String logicalHost = response.request().header("X-Relay-Target-Host");
         if (logicalHost == null || logicalHost.trim().isEmpty()) {
             logicalHost = response.request().url().host();
         }
         logicalHost = logicalHost.toLowerCase();
         if (!isBilibiliCookieHost(logicalHost)) return;
+        // Refresh responses must be validated and persisted with their refresh token as one unit.
+        if (response.request().url().encodedPath().contains("/cookie/refresh")
+                || response.request().url().encodedPath().contains("/confirm/refresh")) return;
 
         List<String> newCookies = response.headers("Set-Cookie");
         if (newCookies.isEmpty()) return;
 
         String oldCookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        String sentCookies = response.request().header("Cookie");
+        if (sentCookies == null) sentCookies = "";
+        if (!getInfoFromCookie("SESSDATA", sentCookies).equals(getInfoFromCookie("SESSDATA", oldCookies))
+                || !getInfoFromCookie("DedeUserID", sentCookies).equals(getInfoFromCookie("DedeUserID", oldCookies)))
+            return;
         String mergedCookies = CookieMergeUtil.merge(oldCookies, newCookies,
                 "passport.bilibili.com".equals(logicalHost));
         if (mergedCookies.equals(oldCookies)) return;
 
-        SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, mergedCookies);
-        refreshHeaders();
+        AccountManager.syncCurrentCookies(mergedCookies);
+        }
     }
 
     /**
@@ -556,7 +650,7 @@ public class NetWorkUtil {
      * @param val 值
      */
     public static void putCookie(String key, String val) {
-        synchronized (NetWorkUtil.class) {
+        synchronized (AccountManager.class) {
             Cookies cookies = new Cookies(SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""));
             cookies.set(key, val);
             SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, cookies.toString());
@@ -570,7 +664,7 @@ public class NetWorkUtil {
      * @param cookies cookies
      */
     public static void setCookies(Cookies cookies) {
-        synchronized (NetWorkUtil.class) {
+        synchronized (AccountManager.class) {
             SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, cookies.toString());
             refreshHeaders();
         }
@@ -582,7 +676,7 @@ public class NetWorkUtil {
      * @return 存储的Cookies
      */
     public static Cookies getCookies() {
-        synchronized (NetWorkUtil.class) {
+        synchronized (AccountManager.class) {
             return new Cookies(SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""));
         }
     }

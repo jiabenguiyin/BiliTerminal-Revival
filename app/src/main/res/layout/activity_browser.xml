@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="4dp"
+        android:paddingTop="3dp"
+        android:paddingRight="4dp"
+        android:paddingBottom="3dp">
+
+        <EditText
+            android:id="@+id/browser_address"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/background_searchbar"
+            android:ellipsize="end"
+            android:hint="网址或搜索内容"
+            android:imeOptions="actionGo"
+            android:inputType="textUri"
+            android:paddingLeft="8dp"
+            android:paddingRight="8dp"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:textSize="12sp" />
+
+        <ImageButton
+            android:id="@+id/browser_go"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="打开"
+            android:padding="8dp"
+            app:srcCompat="@drawable/icon_search" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingLeft="4dp"
+        android:paddingRight="4dp">
+
+        <ImageButton
+            android:id="@+id/browser_back"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="后退"
+            android:padding="10dp"
+            app:srcCompat="@drawable/arrow_back" />
+
+        <ImageButton
+            android:id="@+id/browser_forward"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="前进"
+            android:padding="9dp"
+            app:srcCompat="@drawable/arrow_forward" />
+
+        <ImageButton
+            android:id="@+id/browser_home"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="主页"
+            android:padding="8dp"
+            app:srcCompat="@drawable/icon_home" />
+
+        <ImageButton
+            android:id="@+id/browser_refresh"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="刷新"
+            android:padding="9dp"
+            app:srcCompat="@drawable/icon_refresh" />
+
+        <ImageButton
+            android:id="@+id/browser_external"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="使用其他应用打开"
+            android:padding="9dp"
+            app:srcCompat="@drawable/icon_open_external" />
+
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/browser_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:max="100"
+        android:visibility="gone" />
+
+    <WebView
+        android:id="@+id/browser_webview"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+</LinearLayout>

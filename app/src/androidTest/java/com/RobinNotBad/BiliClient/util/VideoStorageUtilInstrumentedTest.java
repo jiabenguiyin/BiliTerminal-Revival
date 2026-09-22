@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.filters.SdkSuppress;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.RobinNotBad.BiliClient.helper.sql.DownloadSqlHelper;
@@ -24,6 +25,7 @@ import static org.junit.Assert.assertTrue;
 public class VideoStorageUtilInstrumentedTest {
 
     @Test
+    @SdkSuppress(minSdkVersion = 21)
     public void testSafWriteAppendReadAndDelete() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         assertTrue("The test requires a selected SAF directory", VideoStorageUtil.isSafMode());

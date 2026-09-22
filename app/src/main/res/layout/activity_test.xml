@@ -53,7 +53,7 @@
 
 
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/crash"
+                android:id="@+id/deepseek"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -61,17 +61,18 @@
 
                 <TextView
                     android:layout_width="match_parent"
-                    android:layout_height="35sp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="40dp"
                     android:layout_marginHorizontal="8dp"
                     android:gravity="center_vertical|right"
-                    android:text="deepseek猫娘请求测试"
+                    android:text="DeepSeek 猫娘对话测试"
                     android:textSize="13sp"
                     app:drawableEndCompat="@drawable/arrow_forward" />
             </com.google.android.material.card.MaterialCardView>
 
 
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/opus"
+                android:id="@+id/developer_profile"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -79,10 +80,11 @@
 
                 <TextView
                     android:layout_width="match_parent"
-                    android:layout_height="35sp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="40dp"
                     android:layout_marginHorizontal="8dp"
                     android:gravity="center_vertical|right"
-                    android:text="opus请求测试"
+                    android:text="作者的主页"
                     android:textSize="13sp"
                     app:drawableEndCompat="@drawable/arrow_forward" />
             </com.google.android.material.card.MaterialCardView>
@@ -94,17 +96,36 @@
                 android:text="如果你不是开发者，你不需要知道这个页面是用来干什么的。\n——当然，知道一点也无妨，这是一个简易的网络请求工具。"
                 android:textSize="12sp" />
 
-            <EditText
-                android:id="@+id/input_link"
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:background="@drawable/background_edittext"
-                android:hint="在这里输入请求链接"
-                android:minHeight="40dp"
-                android:padding="8dp"
-                android:text=""
-                android:textSize="13sp" />
+                android:layout_marginTop="4dp">
+
+                <EditText
+                    android:id="@+id/input_link"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/background_edittext"
+                    android:hint="在这里输入请求链接"
+                    android:minHeight="40dp"
+                    android:paddingLeft="8dp"
+                    android:paddingTop="8dp"
+                    android:paddingRight="48dp"
+                    android:paddingBottom="8dp"
+                    android:text=""
+                    android:textSize="13sp" />
+
+                <ImageButton
+                    android:id="@+id/deepseek_toggle_key_visibility"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="center_vertical|right"
+                    android:background="@drawable/background_button_compat"
+                    android:contentDescription="显示密钥"
+                    android:padding="10dp"
+                    android:src="@android:drawable/ic_menu_view"
+                    android:visibility="gone" />
+            </FrameLayout>
 
             <EditText
                 android:id="@+id/input_data"
@@ -118,6 +139,38 @@
                 android:text=""
                 android:textSize="13sp"
                 android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/deepseek_actions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:visibility="gone">
+                <ImageButton
+                    android:id="@+id/deepseek_forget_key"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="12dp"
+                    android:background="@drawable/background_button_compat"
+                    android:contentDescription="清除密钥"
+                    app:srcCompat="@drawable/icon_delete" />
+                <ImageButton
+                    android:id="@+id/deepseek_reset_chat"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="12dp"
+                    android:background="@drawable/background_button_compat"
+                    android:contentDescription="清空对话"
+                    app:srcCompat="@drawable/icon_refresh" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/deepseek_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:visibility="gone"
+                android:accessibilityLiveRegion="polite" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switch_wbi"
@@ -133,6 +186,14 @@
                 android:background="#00000000"
                 android:text="使用POST方式" />
 
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switch_deepseek_model"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#00000000"
+                android:text="使用 DeepSeek V4 Pro（默认 Flash）"
+                android:visibility="gone" />
+
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/request"
                 android:layout_width="match_parent"
@@ -140,8 +201,10 @@
                 android:layout_marginTop="4dp">
 
                 <TextView
+                    android:id="@+id/request_label"
                     android:layout_width="match_parent"
-                    android:layout_height="35sp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="44dp"
                     android:layout_marginHorizontal="8dp"
                     android:gravity="center_vertical|right"
                     android:text="Go Request!"

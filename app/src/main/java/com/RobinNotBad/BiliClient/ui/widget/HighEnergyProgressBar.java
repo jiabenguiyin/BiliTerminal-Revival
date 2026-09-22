@@ -53,7 +53,7 @@ public class HighEnergyProgressBar extends androidx.appcompat.widget.AppCompatSe
      */
     public void setHighEnergyData(float[] data, int stepSec) {
         this.highEnergyData = data;
-        this.stepSec = stepSec;
+        this.stepSec = Math.max(1, stepSec);
         invalidate();
     }
 
@@ -103,6 +103,7 @@ public class HighEnergyProgressBar extends androidx.appcompat.widget.AppCompatSe
         }
 
         float startX = getPaddingLeft();
+        float endX = startX + width;
         float baselineY = getPaddingTop() + height;
         float maxWaveHeight = height * 0.8f;
 
@@ -115,7 +116,7 @@ public class HighEnergyProgressBar extends androidx.appcompat.widget.AppCompatSe
             if (time > max)
                 break;
 
-            float x = startX + (float) time / max * width;
+            float x = startX + Math.min(1f, (float) time / max) * width;
 
             float density = highEnergyData[i] / maxValue;
             density = (float) Math.pow(density, 0.7);
@@ -133,9 +134,7 @@ public class HighEnergyProgressBar extends androidx.appcompat.widget.AppCompatSe
         }
 
         if (pathStarted) {
-            int lastIndex = Math.min(highEnergyData.length - 1, (int) (max / (stepSec * 1000f)));
-            float lastX = startX + (float) Math.min(lastIndex * stepSec * 1000, max) / max * width;
-            fillPath.lineTo(lastX, baselineY);
+            fillPath.lineTo(endX, baselineY);
             fillPath.close();
 
             canvas.drawPath(fillPath, fillPaint);

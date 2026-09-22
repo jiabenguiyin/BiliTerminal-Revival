@@ -34,6 +34,14 @@ public class SSLSocketFactoryCompat extends SSLSocketFactory {
                     for (String protocol : socket.getSupportedProtocols())
                         if (!protocol.toUpperCase().contains("SSL"))
                             protocols.add(protocol);
+                    // Old Android advertises TLS 1.0/1.1 first. Modern HTTPS
+                    // endpoints commonly reject that ClientHello, so prefer
+                    // TLS 1.2 when the platform provides it.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP
+                            && protocols.contains("TLSv1.2")) {
+                        protocols.clear();
+                        protocols.add("TLSv1.2");
+                    }
                     SSLSocketFactoryCompat.protocols = protocols.toArray(new String[0]);
                     /* set up reasonable cipher suites */
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
@@ -46,7 +54,8 @@ public class SSLSocketFactoryCompat extends SSLSocketFactory {
                                 "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
                                 "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
                                 "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
-                                "TLS_ECHDE_RSA_WITH_AES_128_GCM_SHA256",
+                                "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+                                "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
                                 // maximum interoperability
                                 "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
                                 "TLS_RSA_WITH_AES_128_CBC_SHA",

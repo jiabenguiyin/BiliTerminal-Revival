@@ -27,14 +27,12 @@ import java.util.List;
 
 public final class HotConfigManager {
     private static final String[] CONFIG_URLS = new String[]{
-            "https://jp.031030.xyz/terminal/config/get",
-            "http://121.4.26.60:2000/terminal/config/get"
+            "https://jp.031030.xyz/terminal/config/get"
     };
     private static final String[] UPDATE_MANIFEST_URLS = new String[]{
-            "https://jp.031030.xyz/terminal/update/manifest",
-            "http://121.4.26.60:2000/terminal/update/manifest"
+            "https://jp.031030.xyz/terminal/update/manifest"
     };
-    private static final List<String> TRUSTED_HOSTS = Arrays.asList("jp.031030.xyz", "121.4.26.60");
+    private static final List<String> TRUSTED_HOSTS = Arrays.asList("jp.031030.xyz");
     private static final String CACHE_KEY = "terminal_hot_config_envelope";
     private static final String LAST_CHECK_KEY = "terminal_hot_config_last_check";
     private static final long REFRESH_INTERVAL_MS = 6L * 60L * 60L * 1000L;
@@ -147,7 +145,7 @@ public final class HotConfigManager {
             String relayBase = trustedUrl(relay.optString("base_url", NetWorkUtil.BILI_RELAY_BASE));
             NetWorkUtil.configureRelay(
                     relay.optBoolean("enabled", true),
-                    relay.optBoolean("auto_fallback", true),
+                    false,
                     relayBase,
                     relay.optString("token", NetWorkUtil.BILI_RELAY_TOKEN),
                     clamp(relay.optInt("direct_retry_count", 2), 1, 3),
@@ -175,9 +173,8 @@ public final class HotConfigManager {
             URI uri = new URI(value);
             String scheme = uri.getScheme();
             String host = uri.getHost();
-            boolean trustedBackupHttp = "http".equalsIgnoreCase(scheme) && "121.4.26.60".equalsIgnoreCase(host);
             boolean trustedPrimaryHttps = "https".equalsIgnoreCase(scheme);
-            if ((!trustedPrimaryHttps && !trustedBackupHttp)
+            if (!trustedPrimaryHttps
                     || host == null
                     || !TRUSTED_HOSTS.contains(host.toLowerCase())) {
                 throw new SecurityException("untrusted hot config URL");

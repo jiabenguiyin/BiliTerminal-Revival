@@ -205,7 +205,7 @@
                         android:layout_marginRight="6dp"
                         android:layout_marginEnd="6dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitCenter"
                         android:src="@drawable/icon_menu" />
 
@@ -214,7 +214,7 @@
                         android:layout_width="32dp"
                         android:layout_height="37dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitCenter"
                         android:src="@mipmap/soundcut" />
 
@@ -225,7 +225,7 @@
                         android:layout_marginLeft="6dp"
                         android:layout_marginStart="6dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitCenter"
                         android:src="@drawable/btn_player_play" />
 
@@ -236,7 +236,7 @@
                         android:layout_marginLeft="6dp"
                         android:layout_marginStart="6dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitCenter"
                         android:src="@mipmap/soundadd" />
 
@@ -247,7 +247,7 @@
                         android:layout_marginLeft="6dp"
                         android:layout_marginStart="6dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitCenter"
                         android:src="@drawable/icon_folder"
                         android:visibility="gone" />
@@ -292,7 +292,7 @@
                         android:layout_width="28dp"
                         android:layout_height="28dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitXY"
                         android:src="@drawable/send" />
 
@@ -301,7 +301,7 @@
                         android:layout_width="28dp"
                         android:layout_height="28dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitXY"
                         android:src="@mipmap/subtitle_off" />
 
@@ -310,7 +310,7 @@
                         android:layout_width="28dp"
                         android:layout_height="28dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitXY"
                         android:src="@mipmap/loopoff" />
 
@@ -319,7 +319,7 @@
                         android:layout_width="28dp"
                         android:layout_height="28dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitXY"
                         android:src="@drawable/icon_play_16"
                         android:visibility="gone" />
@@ -329,7 +329,7 @@
                         android:layout_width="28dp"
                         android:layout_height="28dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitXY"
                         android:src="@drawable/icon_auto_next_off"
                         android:visibility="gone" />
@@ -339,7 +339,7 @@
                         android:layout_width="28dp"
                         android:layout_height="28dp"
                         android:adjustViewBounds="true"
-                        android:background="?android:attr/selectableItemBackground"
+                        android:background="@drawable/background_button_compat"
                         android:scaleType="fitXY"
                         android:src="@drawable/icon_folder"
                         android:visibility="gone" />
@@ -358,7 +358,7 @@
                     android:layout_width="28dp"
                     android:layout_height="28dp"
                     android:adjustViewBounds="true"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:background="@drawable/background_button_compat"
                     android:scaleType="fitXY"
                     android:src="@mipmap/danmakuoff" />
 
@@ -367,7 +367,7 @@
                     android:layout_width="28dp"
                     android:layout_height="28dp"
                     android:adjustViewBounds="true"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:background="@drawable/background_button_compat"
                     android:scaleType="fitXY"
                     android:src="@mipmap/rotate" />
 
@@ -376,7 +376,7 @@
                     android:layout_width="28dp"
                     android:layout_height="28dp"
                     android:adjustViewBounds="true"
-                    android:background="?android:attr/selectableItemBackground"
+                    android:background="@drawable/background_button_compat"
                     android:scaleType="fitXY"
                     android:src="@mipmap/morehide" />
             </LinearLayout>
@@ -393,7 +393,7 @@
             android:layout_marginStart="4dp"
             android:layout_marginBottom="4dp"
             android:adjustViewBounds="true"
-            android:background="?android:attr/selectableItemBackground"
+            android:background="@drawable/background_button_compat"
             android:scaleType="fitCenter"
             android:src="@drawable/icon_debug"
             android:visibility="gone" />
@@ -541,6 +541,18 @@
         android:textSize="13sp"
         android:visibility="gone" />
 
+    <TextView
+        android:id="@+id/swipe_seek_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:background="@drawable/background_grey_cardview"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:textColor="#ffffffff"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
     <RelativeLayout
         android:id="@+id/card_bg"
         android:layout_width="match_parent"
@@ -673,7 +685,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="3dp"
-                android:text="选择清晰度"
+                android:text="选择清晰度（当前视频可用）"
                 android:textSize="14sp" />
 
             <com.RobinNotBad.BiliClient.ui.widget.RotaryRecyclerView

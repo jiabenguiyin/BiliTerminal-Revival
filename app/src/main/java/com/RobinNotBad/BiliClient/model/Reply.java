@@ -34,6 +34,7 @@ public class Reply implements Serializable {
     public boolean upLiked;
     public boolean upReplied;
     public boolean liked;
+    public boolean hated;
     public int childCount;
     public boolean isDynamic;
     public ArrayList<Reply> childMsgList = new ArrayList<>();
@@ -83,7 +84,9 @@ public class Reply implements Serializable {
         if (isTop) StringUtil.setTopSpan(messageSpannable);
 
         this.likeCount = replyJson.getInt("like");
-        this.liked = replyJson.getInt("action") == 1;
+        int action = replyJson.optInt("action", 0);
+        this.liked = action == 1;
+        this.hated = action == 2;
 
         if (content.has("emote") && !content.isNull("emote")) {
             ArrayList<Emote> emoteList = new ArrayList<>();

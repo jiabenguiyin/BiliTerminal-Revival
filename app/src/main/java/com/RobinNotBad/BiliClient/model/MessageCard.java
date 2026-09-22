@@ -17,6 +17,9 @@ public class MessageCard {
     public Reply replyInfo = null;
     public Reply dynamicInfo = null;
     public long subjectId;
+    /** Content id from item.uri/item_id; subjectId remains the reply oid. */
+    public long contentId;
+    public String itemUri;
     public int businessId;
     public String itemType;
     public int getType;

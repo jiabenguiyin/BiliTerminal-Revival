@@ -1,6 +1,7 @@
 package com.RobinNotBad.BiliClient;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
@@ -8,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.DisplayMetrics;
 
 import androidx.annotation.Nullable;
@@ -17,13 +19,17 @@ import com.RobinNotBad.BiliClient.activity.base.InstanceActivity;
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
 import com.RobinNotBad.BiliClient.api.DynamicApi;
 import com.RobinNotBad.BiliClient.api.MessageApi;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
+import com.RobinNotBad.BiliClient.util.DeviceProfile;
 import com.RobinNotBad.BiliClient.util.HotConfigManager;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.PlayerCompatibilityUtil;
+import com.RobinNotBad.BiliClient.util.PlayerSettingsUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.TerminalContext;
+import com.RobinNotBad.BiliClient.util.UiConfigurationUtil;
 
 import org.json.JSONException;
 
@@ -53,7 +59,16 @@ public class BiliTerminal extends Application {
             context = this;
             ErrorCatch.getInstance().init(context);
             SharedPreferencesUtil.sharedPreferences = getSharedPreferences("default", MODE_PRIVATE);
+            AccountManager.migrateCurrentAccount();
+            PlayerSettingsUtil.repairStoredValues();
+            UiConfigurationUtil.repairStoredValues(this);
+            String savedPlayer = SharedPreferencesUtil.getString("player", "null");
+            if ("mtvPlayer".equals(savedPlayer)) {
+                SharedPreferencesUtil.putString("player", "terminalPlayer");
+            }
             DiagnosticLogManager.initialize(this);
+            DeviceProfile.init(this);
+            registerDiagnosticLifecycleCallbacks();
             if (!SharedPreferencesUtil.sharedPreferences.contains("player_background_opt_in_migrated")) {
                 SharedPreferencesUtil.sharedPreferences.edit()
                         .putBoolean("player_background", false)
@@ -70,12 +85,50 @@ public class BiliTerminal extends Application {
             }
             context = getFitDisplayContext(this);
 
-            boolean debugBuild = isDebugBuild();
-            Logu.LOGV_ENABLED = SharedPreferencesUtil.getBoolean("dev_logv", debugBuild);
-            Logu.LOGD_ENABLED = SharedPreferencesUtil.getBoolean("dev_logd", debugBuild);
-            Logu.LOGI_ENABLED = SharedPreferencesUtil.getBoolean("dev_logi", debugBuild);
+            Logu.LOGV_ENABLED = SharedPreferencesUtil.getBoolean("dev_logv", true);
+            Logu.LOGD_ENABLED = SharedPreferencesUtil.getBoolean("dev_logd", true);
+            Logu.LOGI_ENABLED = SharedPreferencesUtil.getBoolean("dev_logi", true);
 
         }
+    }
+
+    private void registerDiagnosticLifecycleCallbacks() {
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+                DiagnosticLogManager.recordLifecycle(activity, "created");
+            }
+
+            @Override
+            public void onActivityStarted(Activity activity) {
+                DiagnosticLogManager.recordLifecycle(activity, "started");
+            }
+
+            @Override
+            public void onActivityResumed(Activity activity) {
+                DiagnosticLogManager.recordLifecycle(activity, "resumed");
+            }
+
+            @Override
+            public void onActivityPaused(Activity activity) {
+                DiagnosticLogManager.recordLifecycle(activity, "paused");
+            }
+
+            @Override
+            public void onActivityStopped(Activity activity) {
+                DiagnosticLogManager.recordLifecycle(activity, "stopped");
+            }
+
+            @Override
+            public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+                DiagnosticLogManager.recordLifecycle(activity, "state_saved");
+            }
+
+            @Override
+            public void onActivityDestroyed(Activity activity) {
+                DiagnosticLogManager.recordLifecycle(activity, "destroyed");
+            }
+        });
     }
 
     /** Starts optional network work after the first activity has rendered. */
@@ -113,6 +166,10 @@ public class BiliTerminal extends Application {
         });
     }
 
+    public static synchronized void prepareForAccountChange() {
+        deferredInitializationStarted = false;
+    }
+
     /** Keeps old Dalvik startup independent from coroutine initialization. */
     public static void runBackgroundCompat(Runnable runnable) {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
@@ -138,13 +195,22 @@ public class BiliTerminal extends Application {
      * @param old The origin context.
      */
     public static Context getFitDisplayContext(Context old) {
-        float dpiTimes = SharedPreferencesUtil.getFloat("dpi", 1.0F);
+        float dpiTimes = UiConfigurationUtil.normalizeScale(
+                SharedPreferencesUtil.getFloat("dpi", UiConfigurationUtil.DEFAULT_SCALE));
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) return old;
-        if (!DPI_FORCE_CHANGE && dpiTimes == 1.0F) return old;
         try {
             DisplayMetrics displayMetrics = old.getResources().getDisplayMetrics();
-            Configuration configuration = old.getResources().getConfiguration();
-            configuration.densityDpi = (int) (displayMetrics.densityDpi * dpiTimes);
+            Configuration configuration = new Configuration(old.getResources().getConfiguration());
+            int baseDensity = Math.max(UiConfigurationUtil.MIN_DENSITY_DPI, displayMetrics.densityDpi);
+            int storedDensity = SharedPreferencesUtil.getInt("density", -1);
+            int shortestSide = Math.min(displayMetrics.widthPixels, displayMetrics.heightPixels);
+            int densityBase = storedDensity >= UiConfigurationUtil.MIN_DENSITY_DPI
+                    ? UiConfigurationUtil.normalizeDensity(storedDensity, baseDensity, shortestSide)
+                    : baseDensity;
+            int fittedDensity = UiConfigurationUtil.densityForScale(
+                    dpiTimes, densityBase, shortestSide);
+            if (!DPI_FORCE_CHANGE && fittedDensity == displayMetrics.densityDpi) return old;
+            configuration.densityDpi = fittedDensity;
             return old.createConfigurationContext(configuration);
         } catch (Exception e) {
             //MsgUtil.err(e,old);

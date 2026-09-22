@@ -8,6 +8,7 @@ import com.RobinNotBad.BiliClient.activity.base.RefreshListActivity;
 import com.RobinNotBad.BiliClient.adapter.SettingsAdapter;
 import com.RobinNotBad.BiliClient.model.SettingSection;
 import com.RobinNotBad.BiliClient.util.PlayerCompatibilityUtil;
+import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,9 +38,19 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
                         getString(R.string.desc_audio_only), "false"));
                 add(new SettingSection("switch", "视频可缩放", "player_scale",
                         getString(R.string.desc_scale), "true"));
+                add(new SettingSection("switch", "左右滑动调节进度", SharedPreferencesUtil.PLAYER_SWIPE_SEEK,
+                        getString(R.string.desc_swipe_seek), "false"));
+                add(new SettingSection("choose3", "双击优先操作", "player_double_tap_mode",
+                        getString(R.string.desc_double_tap_action), "1",
+                        new String[]{"暂停/继续播放", "复原画面", "放大时复原，否则暂停"}));
+                add(new SettingSection("input_float", "互动视频选项按钮大小", "player_interaction_choice_scale",
+                        getString(R.string.desc_interaction_choice_scale), "0.7"));
                 add(new SettingSection("switch", "缩放时可移动", "player_doublemove",
                         getString(R.string.desc_doublemove),
                         "true"));
+                add(new SettingSection("choose", "缩放后移动方式", "player_singlemove",
+                        getString(R.string.desc_move_mode), "true",
+                        new String[]{"单指移动", "双指移动"}));
 
                 add(new SettingSection("divider", "", "", "", ""));
 

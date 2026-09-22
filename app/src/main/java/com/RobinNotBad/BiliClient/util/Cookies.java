@@ -3,6 +3,7 @@ package com.RobinNotBad.BiliClient.util;
 import androidx.annotation.NonNull;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 public class Cookies {
@@ -27,11 +28,13 @@ public class Cookies {
     }
 
     public void set(String key, String value) {
-        cookieMap.put(key, value);
+        String existingKey = findKey(key);
+        cookieMap.put(existingKey == null ? key : existingKey, value);
     }
 
     public String get(String key) {
-        return cookieMap.get(key);
+        String existingKey = findKey(key);
+        return existingKey == null ? null : cookieMap.get(existingKey);
     }
 
     public String getOrDefault(String key, String defaultVal) {
@@ -40,11 +43,21 @@ public class Cookies {
     }
 
     public boolean containsKey(String key) {
-        return cookieMap.containsKey(key);
+        return findKey(key) != null;
     }
 
     public void remove(String key) {
-        cookieMap.remove(key);
+        String existingKey = findKey(key);
+        if (existingKey != null) cookieMap.remove(existingKey);
+    }
+
+    private String findKey(String key) {
+        if (key == null) return null;
+        String wanted = key.toLowerCase(Locale.US);
+        for (String existing : cookieMap.keySet()) {
+            if (existing.toLowerCase(Locale.US).equals(wanted)) return existing;
+        }
+        return null;
     }
 
     @NonNull

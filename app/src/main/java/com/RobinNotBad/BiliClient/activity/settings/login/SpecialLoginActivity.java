@@ -14,6 +14,7 @@ import com.RobinNotBad.BiliClient.BiliTerminal;
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.SplashActivity;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.Logu;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
@@ -54,11 +55,8 @@ public class SpecialLoginActivity extends BaseActivity {
                 try {
                     JSONObject jsonObject = new JSONObject(loginInfo);
                     String cookies = jsonObject.getString("cookies");
-                    SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, Long.parseLong(NetWorkUtil.getInfoFromCookie("DedeUserID", cookies)));
-                    SharedPreferencesUtil.putString(SharedPreferencesUtil.csrf, NetWorkUtil.getInfoFromCookie("bili_jct", cookies));
-                    SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, cookies);
-                    SharedPreferencesUtil.putString(SharedPreferencesUtil.refresh_token, jsonObject.getString("refresh_token"));
-                    SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.cookie_refresh, true);
+                    if (!AccountManager.saveLogin(cookies, jsonObject.getString("refresh_token")))
+                        throw new JSONException("Invalid or unsaved login");
                     runOnUiThread(() -> MsgUtil.showMsg("登录成功！"));
                     SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.setup, true);
 
@@ -91,12 +89,8 @@ public class SpecialLoginActivity extends BaseActivity {
                     try {
                         JSONObject input = new JSONObject(textInput.getText().toString());
                         String cookies = input.getString("cookies");
-                        SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, cookies);
-                        SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid,
-                                Long.parseLong(NetWorkUtil.getInfoFromCookie("DedeUserID", cookies)));
-                        SharedPreferencesUtil.putString(SharedPreferencesUtil.csrf,
-                                NetWorkUtil.getInfoFromCookie("bili_jct", cookies));
-                        SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.cookie_refresh, true);
+                        if (!AccountManager.saveLogin(cookies, input.optString("refresh_token", "")))
+                            throw new JSONException("Invalid or unsaved login");
                         runOnUiThread(() -> MsgUtil.showMsg("导入cookies成功"));
 
                         NetWorkUtil.refreshHeaders();

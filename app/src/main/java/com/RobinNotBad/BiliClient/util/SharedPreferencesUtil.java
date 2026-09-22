@@ -30,6 +30,8 @@ public class SharedPreferencesUtil {
     public static final String PLAYER_MEDIA_SESSION_ENABLE = "player_media_session_enable";
     public static final String HOME_SWIPE_DISMISS_DISABLE = "home_swipe_dismiss_disable";
     public static final String DIAGNOSTIC_LOG_UPLOAD_ENABLE = "diagnostic_log_upload_enable";
+    public static final String DEVICE_PROFILE_OVERRIDE = "device_profile_override";
+    public static final String PLAYER_SWIPE_SEEK = "player_swipe_seek";
 
     public static String cookies = "cookies";
     public static String mid = "mid";
@@ -61,7 +63,19 @@ public class SharedPreferencesUtil {
     }
 
     public static int getInt(String key, int def) {
-        return sharedPreferences.getInt(key, def);
+        try {
+            return sharedPreferences.getInt(key, def);
+        } catch (ClassCastException ignored) {
+            Object value = sharedPreferences.getAll().get(key);
+            if (value instanceof Number) return ((Number) value).intValue();
+            if (value instanceof String) {
+                try {
+                    return Integer.parseInt((String) value);
+                } catch (Exception ignoredValue) {
+                }
+            }
+            return def;
+        }
     }
 
     public static void putInt(String key, int value) {
@@ -89,7 +103,19 @@ public class SharedPreferencesUtil {
     }
 
     public static float getFloat(String key, float def) {
-        return sharedPreferences.getFloat(key, def);
+        try {
+            return sharedPreferences.getFloat(key, def);
+        } catch (ClassCastException ignored) {
+            Object value = sharedPreferences.getAll().get(key);
+            if (value instanceof Number) return ((Number) value).floatValue();
+            if (value instanceof String) {
+                try {
+                    return Float.parseFloat((String) value);
+                } catch (Exception ignoredValue) {
+                }
+            }
+            return def;
+        }
     }
 
     public static void removeValue(String key) {

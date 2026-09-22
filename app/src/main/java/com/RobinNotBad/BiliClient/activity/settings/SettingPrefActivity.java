@@ -34,6 +34,12 @@ public class SettingPrefActivity extends RefreshListActivity {
                 add(new SettingSection("switch", "默认搜索内容", SharedPreferencesUtil.SEARCH_DEFAULT_CONTENT_ENABLE,
                         getString(R.string.desc_search_default_content_enable), "false"));
                 add(new SettingSection("switch", "识别链接", "link_enable", getString(R.string.desc_link_enable), "true"));
+                add(new SettingSection("switch", "始终使用中继", "relay_always_on",
+                        "关闭后 B 站流量全部直连，开启后全部经过中继；不会自动切换。启动失败时也可手动选择仅本次启用。", "false"));
+                add(new SettingSection("title", "设备性能", "", "", ""));
+                add(new SettingSection("choose3", "设备性能模式", SharedPreferencesUtil.DEVICE_PROFILE_OVERRIDE,
+                        getString(R.string.desc_device_profile_override), "0",
+                        new String[]{"自动判断", "强制兼容", "强制高性能"}));
                 add(new SettingSection("switch", "新动态数量检查", SharedPreferencesUtil.DYNAMIC_UPDATE_CHECK_ENABLE,
                         getString(R.string.desc_dynamic_update_check_enable), "true"));
                 add(new SettingSection("switch", "消息数量检查", SharedPreferencesUtil.MESSAGE_UPDATE_CHECK_ENABLE,

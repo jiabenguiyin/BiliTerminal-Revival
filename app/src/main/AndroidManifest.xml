@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-sdk tools:overrideLibrary="com.itsaky.androidide.logsender" />
+    <uses-sdk tools:overrideLibrary="com.itsaky.androidide.logsender,com.google.android.exoplayer2.core,com.google.android.exoplayer2.upstream,com.google.android.exoplayer2.decoder,com.google.android.exoplayer2.extractor,com.google.android.exoplayer2.database,com.google.android.exoplayer2.common" />
 
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission
@@ -369,6 +369,16 @@
             android:label="我的"
             android:screenOrientation="locked" />
         <activity
+            android:name=".activity.user.AccountSwitchActivity"
+            android:exported="false"
+            android:label="切换账号"
+            android:screenOrientation="locked" />
+        <activity
+            android:name=".activity.user.EditProfileActivity"
+            android:exported="false"
+            android:label="编辑个人资料"
+            android:screenOrientation="locked" />
+        <activity
             android:name=".activity.user.MedalWallActivity"
             android:exported="false"
             android:label="粉丝勋章"
@@ -387,6 +397,12 @@
             android:name=".activity.settings.AboutActivity"
             android:exported="false"
             android:label="关于"
+            android:screenOrientation="locked" />
+        <activity
+            android:name=".activity.browser.BrowserActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="网页"
             android:screenOrientation="locked" />
         <activity
             android:name=".activity.settings.SettingMainActivity"
