@@ -12,10 +12,10 @@
 </p>
 
 <p align="center">
-  <a href="https://jp.031030.xyz/">https://jp.031030.xyz/</a> ·
-  <a href="https://jp.031030.xyz/#updates">https://jp.031030.xyz/#updates</a> ·
-  <a href="https://jp.031030.xyz/#guide">https://jp.031030.xyz/#guide</a> ·
-  <a href="https://jp.031030.xyz/#status">https://jp.031030.xyz/#status</a> ·
+  <a href="https://jp.031030.xyz/">官网与下载</a> ·
+  <a href="https://jp.031030.xyz/#updates">更新日志</a> ·
+  <a href="https://jp.031030.xyz/#guide">使用说明</a> ·
+  <a href="https://jp.031030.xyz/#status">服务状态</a> ·
   <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/issues">GitHub 问题反馈</a> ·
   <span>反馈群：1107953621</span>
 </p>
