@@ -16,6 +16,7 @@
   <a href="https://jp.031030.xyz/#updates">更新日志</a> ·
   <a href="https://jp.031030.xyz/#guide">使用说明</a> ·
   <a href="https://jp.031030.xyz/#status">服务状态</a> ·
+  <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/releases">Releases</a> ·
   <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/issues">GitHub 问题反馈</a> ·
   <span>反馈群：1107953621</span>
 </p>
@@ -49,6 +50,8 @@
 当前正式版：`1.2.2` · `2026102001`
 
 最新版本号、发布日期、文件大小和校验值均以 [https://jp.031030.xyz/](https://jp.031030.xyz/) 实时数据为准。
+
+GitHub 发布页：[https://github.com/jiabenguiyin/BiliTerminal-Revival/releases](https://github.com/jiabenguiyin/BiliTerminal-Revival/releases)
 
 ## 最新更新
 
