@@ -25,9 +25,9 @@ android {
         minSdk 14
         //noinspection ExpiredTargetSdkVersion
         targetSdk 26
-        // 1.1.8 正式版本号
-        versionCode 2026092102
-        versionName "1.1.8"
+        // 正式版 v1.2.2 / 2026102001（与当前发布 APK 的 Manifest 一致）
+        versionCode 2026102001
+        versionName "1.2.2"
 
         if (betaVer) {
             versionName += "-BETA" + betaVer
