@@ -19,7 +19,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Build and test
         run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon
