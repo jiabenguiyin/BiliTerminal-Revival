@@ -514,9 +514,46 @@ public class AndroidDisplayer extends AbsDisplayer<Canvas, Typeface> {
         if (HAS_STROKE) {
             applyPaintConfig(danmaku, paint, true);
         }
+        wrapFixedTopDanmaku(danmaku, paint);
         calcPaintWH(danmaku, paint, fromWorkerThread);
         if (HAS_STROKE) {
             applyPaintConfig(danmaku, paint, false);
+        }
+    }
+
+    private void wrapFixedTopDanmaku(BaseDanmaku danmaku, TextPaint paint) {
+        if (danmaku == null || danmaku.getType() != BaseDanmaku.TYPE_FIX_TOP
+                || danmaku.text == null || danmaku.lines != null || width <= 0) return;
+
+        String text = String.valueOf(danmaku.text)
+                .replace(BaseDanmaku.DANMAKU_BR_CHAR, "\n")
+                .replace("\r", "");
+        int maxWidth = Math.max(1, width - danmaku.padding * 2 - 8);
+        java.util.ArrayList<String> wrappedLines = new java.util.ArrayList<>();
+        String[] paragraphs = text.split("\\n", -1);
+        for (String paragraph : paragraphs) {
+            if (paragraph.length() == 0) {
+                wrappedLines.add("");
+                continue;
+            }
+
+            StringBuilder line = new StringBuilder();
+            for (int index = 0; index < paragraph.length();) {
+                int codePoint = paragraph.codePointAt(index);
+                String unit = new String(Character.toChars(codePoint));
+                index += Character.charCount(codePoint);
+                String candidate = line.length() == 0 ? unit : line.toString() + unit;
+                if (line.length() > 0 && paint.measureText(candidate) > maxWidth) {
+                    wrappedLines.add(line.toString());
+                    line.setLength(0);
+                }
+                line.append(unit);
+            }
+            if (line.length() > 0) wrappedLines.add(line.toString());
+        }
+
+        if (wrappedLines.size() > 1) {
+            danmaku.lines = wrappedLines.toArray(new String[wrappedLines.size()]);
         }
     }
 

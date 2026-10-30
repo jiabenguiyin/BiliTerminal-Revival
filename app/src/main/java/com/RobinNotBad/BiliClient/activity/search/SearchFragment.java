@@ -86,7 +86,7 @@ public class SearchFragment extends Fragment {
     }
 
     public void setAdapter(RecyclerView.Adapter<?> adapter) {
-        runOnUiThread(() -> recyclerView.setAdapter(adapter));
+        runOnUiThread(() -> { if (recyclerView != null) recyclerView.setAdapter(adapter); });
     }
 
     public void setOnRefreshListener(SwipeRefreshLayout.OnRefreshListener listener) {
@@ -94,7 +94,7 @@ public class SearchFragment extends Fragment {
     }
 
     public void setRefreshing(boolean bool) {
-        runOnUiThread(() -> swipeRefreshLayout.setRefreshing(bool));
+        runOnUiThread(() -> { if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(bool); });
     }
 
     public void setOnLoadMoreListener(OnLoadMoreListener loadMore) {
@@ -164,12 +164,19 @@ public class SearchFragment extends Fragment {
     }
 
     public void refresh() {
-        if (!refreshable) return;
+        if (!refreshable || refreshListener == null || getView() == null) return;
         refreshable = false;
         setRefreshing(true);
         refreshListener.onRefresh();
     }
 
     protected void refreshInternal() {
+    }
+
+    @Override public void onResume() {
+        super.onResume();
+        if (getActivity() instanceof SearchActivity) {
+            ((SearchActivity) getActivity()).onSearchFragmentReady(this);
+        }
     }
 }

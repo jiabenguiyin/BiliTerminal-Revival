@@ -287,6 +287,7 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 case "input_int":
                     int intValue = SharedPreferencesUtil.getInt(settingSection.id,
                             Integer.parseInt(settingSection.defaultValue));
+                    intValue = PlayerSettingsUtil.normalizeInt(settingSection.id, intValue);
                     input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
                     input.setText(String.valueOf(intValue));
                     currentWatcher = new TextWatcher() {
@@ -301,7 +302,9 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                         @Override
                         public void afterTextChanged(Editable editable) {
                             try {
-                                SharedPreferencesUtil.putInt(settingSection.id, Integer.parseInt(editable.toString()));
+                                SharedPreferencesUtil.putInt(settingSection.id,
+                                        PlayerSettingsUtil.normalizeInt(settingSection.id,
+                                                Integer.parseInt(editable.toString())));
                             } catch (Exception ignored) {
                             }
                         }

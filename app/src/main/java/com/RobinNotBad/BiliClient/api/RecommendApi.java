@@ -26,13 +26,27 @@ public class RecommendApi {
     private static final long UNIQ_ID = (long) (new Random().nextDouble() * (1500000000000L - 1300000000000L));
 
     public static void getRecommend(List<VideoCard> videoCardList) throws IOException, JSONException {
+        getRecommend(videoCardList, 0);
+    }
+
+    public static void getRecommend(List<VideoCard> videoCardList, int freshIndex)
+            throws IOException, JSONException {
         String url = ("https://api.bilibili.com/x/web-interface/wbi/index/top/feed/rcmd");
-        url += new NetWorkUtil.FormData().setUrlParam(true)
+        NetWorkUtil.FormData params = new NetWorkUtil.FormData().setUrlParam(true)
                 .put("web_location", 1430650)
                 .put("feed_version", "V8")
                 .put("homepage_ver", 1)
                 .put("uniq_id", UNIQ_ID)
-                .put("screen", "1100-2056");
+                .put("screen", "1100-2056")
+                .put("ps", 20)
+                .put("fetch_row", 4)
+                .put("y_num", 4)
+                .put("last_y_num", 5)
+                .put("fresh_type", 4)
+                .put("fresh_idx", Math.max(0, freshIndex))
+                .put("fresh_idx_1h", Math.max(0, freshIndex))
+                .put("brush", Math.max(0, freshIndex));
+        url += params;
 
         JSONObject result = NetWorkUtil.getJson(ConfInfoApi.signWBI(url));  //得到一整个json
 

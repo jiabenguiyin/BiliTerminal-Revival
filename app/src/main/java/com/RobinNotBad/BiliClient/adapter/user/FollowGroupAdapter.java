@@ -38,9 +38,14 @@ public class FollowGroupAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
     final List<GroupItem> groupList;
     final Map<Integer, Boolean> expandedMap;
     private OnGroupExpandListener expandListener;
+    private OnUserLongClickListener userLongClickListener;
 
     public interface OnGroupExpandListener {
         void onGroupExpand(int tagid);
+    }
+
+    public interface OnUserLongClickListener {
+        boolean onUserLongClick(UserInfo user);
     }
 
     public FollowGroupAdapter(Context context) {
@@ -51,6 +56,23 @@ public class FollowGroupAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
 
     public void setOnGroupExpandListener(OnGroupExpandListener listener) {
         this.expandListener = listener;
+    }
+
+    public void setOnUserLongClickListener(OnUserLongClickListener listener) {
+        this.userLongClickListener = listener;
+    }
+
+    public void removeUser(long mid) {
+        for (GroupItem group : groupList) {
+            for (int i = group.users.size() - 1; i >= 0; i--) {
+                UserInfo user = group.users.get(i);
+                if (user != null && user.mid == mid) {
+                    group.users.remove(i);
+                    group.tag.count = Math.max(0, group.tag.count - 1);
+                }
+            }
+        }
+        notifyDataSetChanged();
     }
 
     public void addGroup(FollowTag tag, List<UserInfo> users) {
@@ -271,6 +293,9 @@ public class FollowGroupAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
                         context.startActivity(intent);
                     });
                 }
+                userHolder.itemView.setOnLongClickListener(view ->
+                        userLongClickListener != null
+                                && userLongClickListener.onUserLongClick(user));
             }
         }
     }

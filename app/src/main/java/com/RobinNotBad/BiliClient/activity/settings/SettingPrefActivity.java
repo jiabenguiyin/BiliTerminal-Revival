@@ -59,6 +59,8 @@ public class SettingPrefActivity extends RefreshListActivity {
                         "true"));
                 add(new SettingSection("switch", "请求JPG格式图片", "image_request_jpg",
                         getString(R.string.desc_img_request_jpg), "false"));
+                add(new SettingSection("switch", "保留已安装的更新包", SharedPreferencesUtil.KEEP_UPDATE_PACKAGE,
+                        "开启后，安装新版本时不会自动删除已使用的更新 APK；可以在更新页面手动删除。", "false"));
 
                 add(new SettingSection("title", "视觉", "", "", ""));
                 add(new SettingSection("switch", "加载渐入渐出动画", SharedPreferencesUtil.LOAD_TRANSITION,

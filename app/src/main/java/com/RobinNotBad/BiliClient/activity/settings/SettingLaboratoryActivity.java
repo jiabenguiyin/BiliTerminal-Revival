@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 
 import androidx.appcompat.app.AlertDialog;
 
@@ -12,6 +13,7 @@ import com.RobinNotBad.BiliClient.BiliTerminal;
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.RefreshListActivity;
 import com.RobinNotBad.BiliClient.adapter.SettingsAdapter;
+import com.RobinNotBad.BiliClient.api.AppRecommendApi;
 import com.RobinNotBad.BiliClient.model.SettingSection;
 import com.RobinNotBad.BiliClient.service.DownloadService;
 import com.RobinNotBad.BiliClient.util.FileUtil;
@@ -42,6 +44,14 @@ public class SettingLaboratoryActivity extends RefreshListActivity {
                         getString(R.string.desc_new_danmaku_api), "true"));
                 add(new SettingSection("switch", "私信未读标记", SharedPreferencesUtil.PRIVATE_MSG_UNREAD_BADGE_ENABLE,
                         getString(R.string.desc_private_msg_unread_badge_enable), "false"));
+                add(new SettingSection("title", "推荐", "", "", ""));
+                add(new SettingSection("switch", "App 个性化推荐", SharedPreferencesUtil.APP_RECOMMEND_EXPERIMENT,
+                        "需先绑定 App 推荐账号才能获取个性化内容。未绑定时显示公共 App 推荐；接口无结果时回退 Web 推荐。", "false"));
+                add(new SettingSection("action", "绑定 App 推荐账号", "",
+                        getAppRecommendCredentialDescription(), "",
+                        (View.OnClickListener) view -> new AppRecommendBindingDialog(
+                                SettingLaboratoryActivity.this,
+                                SettingLaboratoryActivity.this::recreate).show()));
 
                 add(new SettingSection("title", "下载", "", "", ""));
                 add(new SettingSection("switch", "使用旧版下载器", "dev_download_old",
@@ -86,6 +96,20 @@ public class SettingLaboratoryActivity extends RefreshListActivity {
         SettingsAdapter adapter = new SettingsAdapter(this, sectionList);
         setAdapter(adapter);
         setRefreshing(false);
+    }
+
+    private String getAppRecommendCredentialDescription() {
+        String key = SharedPreferencesUtil.getString(
+                SharedPreferencesUtil.APP_RECOMMEND_ACCESS_KEY, "");
+        long expiresAt = SharedPreferencesUtil.getLong(
+                SharedPreferencesUtil.APP_RECOMMEND_ACCESS_KEY_EXPIRES_AT, 0L);
+        if (!key.isEmpty() && (expiresAt == 0L || System.currentTimeMillis() < expiresAt)) {
+            return "已绑定，可重新扫码更换账号";
+        }
+        if (AppRecommendApi.hasAccessKey()) {
+            return "已绑定 App 推荐账号；可重新扫码更换账号";
+        }
+        return "个性化推荐需扫码绑定 App 账号；普通网页登录 Cookie 不适用于此接口";
     }
 
     private void showStorageLocationDialog() {

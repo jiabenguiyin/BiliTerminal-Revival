@@ -2,6 +2,11 @@
 
 <resources xmlns:tools="http://schemas.android.com/tools">
 
+    <style name="SearchCategoryText" parent="TextAppearance.Design.Tab">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
     <style name="CardStyle" parent="Widget.MaterialComponents.CardView">
         <item name="rippleColor" tools:ignore="PrivateResource">@color/mtrl_btn_ripple_color</item>
         <item name="android:foreground">@drawable/background_button_compat</item>

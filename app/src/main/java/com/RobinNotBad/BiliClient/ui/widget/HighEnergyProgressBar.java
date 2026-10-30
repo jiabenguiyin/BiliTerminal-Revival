@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.os.Looper;
 import android.util.AttributeSet;
 
 import androidx.annotation.Nullable;
@@ -52,25 +53,41 @@ public class HighEnergyProgressBar extends androidx.appcompat.widget.AppCompatSe
      * @param stepSec 采样间隔（秒）
      */
     public void setHighEnergyData(float[] data, int stepSec) {
-        this.highEnergyData = data;
-        this.stepSec = Math.max(1, stepSec);
-        invalidate();
+        float[] snapshot = data == null ? null : data.clone();
+        int safeStepSec = Math.max(1, stepSec);
+        runOnViewThread(() -> {
+            this.highEnergyData = snapshot;
+            this.stepSec = safeStepSec;
+            invalidate();
+        });
     }
 
     /**
      * 设置是否显示高能进度条
      */
     public void setShowHighEnergy(boolean show) {
-        this.showHighEnergy = show;
-        invalidate();
+        runOnViewThread(() -> {
+            this.showHighEnergy = show;
+            invalidate();
+        });
     }
 
     /**
      * 清除高能数据
      */
     public void clearHighEnergyData() {
-        this.highEnergyData = null;
-        invalidate();
+        runOnViewThread(() -> {
+            this.highEnergyData = null;
+            invalidate();
+        });
+    }
+
+    private void runOnViewThread(Runnable action) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action.run();
+        } else {
+            post(action);
+        }
     }
 
     @Override

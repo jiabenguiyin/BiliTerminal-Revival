@@ -332,6 +332,12 @@
             android:label="收藏夹列表"
             android:screenOrientation="locked" />
         <activity
+            android:name=".activity.user.favorite.FavoriteFolderEditActivity"
+            android:exported="false"
+            android:label="编辑收藏夹"
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="locked" />
+        <activity
             android:name=".activity.user.info.UserInfoActivity"
             android:exported="false"
             android:label="用户信息"

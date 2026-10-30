@@ -44,6 +44,7 @@ public class ImageViewerActivity extends BaseActivity {
                 Intent downloadIntent = new Intent(this, DownloadActivity.class)
                         .putExtra("link", imageList.get(viewPager.getCurrentItem()))
                         .putExtra("path", FileUtil.getPicturePath().getAbsolutePath())
+                        .putExtra("media_scan", true)
                         .putExtra("type", 0);
                 startActivity(downloadIntent);
             } else {
@@ -53,7 +54,8 @@ public class ImageViewerActivity extends BaseActivity {
         });
 
         viewPager.setOffscreenPageLimit(1);
-        viewPager.setAdapter(new ImageViewerPagerAdapter(imageList));
+        viewPager.setAdapter(new ImageViewerPagerAdapter(
+                imageList, getIntent().getBooleanExtra("loadOriginal", false)));
         viewPager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
             @Override
             public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {

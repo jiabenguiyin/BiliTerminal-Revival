@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -230,7 +231,7 @@ public class Danmakus implements IDanmakus {
     }
 
     @Override
-    public void clear() {
+    public synchronized void clear() {
         if (items != null) {
             items.clear();
             mSize = 0;
@@ -244,23 +245,31 @@ public class Danmakus implements IDanmakus {
     }
 
     @Override
-    public BaseDanmaku first() {
-        if (items != null && !items.isEmpty()) {
-            if (mSortType == ST_BY_LIST) {
-                return ((ArrayList<BaseDanmaku>) items).get(0);
+    public synchronized BaseDanmaku first() {
+        try {
+            if (items != null && !items.isEmpty()) {
+                if (mSortType == ST_BY_LIST) {
+                    return ((ArrayList<BaseDanmaku>) items).get(0);
+                }
+                return ((SortedSet<BaseDanmaku>) items).first();
             }
-            return ((SortedSet<BaseDanmaku>) items).first();
+        } catch (NoSuchElementException | IndexOutOfBoundsException ignored) {
+            // The renderer can clear the collection between the empty check and first().
         }
         return null;
     }
 
     @Override
-    public BaseDanmaku last() {
-        if (items != null && !items.isEmpty()) {
-            if (mSortType == ST_BY_LIST) {
-                return ((ArrayList<BaseDanmaku>) items).get(items.size() - 1);
+    public synchronized BaseDanmaku last() {
+        try {
+            if (items != null && !items.isEmpty()) {
+                if (mSortType == ST_BY_LIST) {
+                    return ((ArrayList<BaseDanmaku>) items).get(items.size() - 1);
+                }
+                return ((SortedSet<BaseDanmaku>) items).last();
             }
-            return ((SortedSet<BaseDanmaku>) items).last();
+        } catch (NoSuchElementException | IndexOutOfBoundsException ignored) {
+            // The renderer can clear the collection between the empty check and last().
         }
         return null;
     }

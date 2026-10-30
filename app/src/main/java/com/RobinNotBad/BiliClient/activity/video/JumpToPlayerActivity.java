@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.widget.TextView;
 
@@ -20,7 +21,6 @@ import com.RobinNotBad.BiliClient.api.PlayerApi;
 import com.RobinNotBad.BiliClient.model.PlayerData;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.Logu;
-import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 import org.json.JSONException;
@@ -45,17 +45,35 @@ public class JumpToPlayerActivity extends BaseActivity {
                 int progress = result.getIntExtra("progress", 0);
                 Logu.d("进度回调", String.valueOf(progress));
 
+                // History reporting is auxiliary. Do not keep the transition
+                // page open or show an error when a weak network drops it.
+                finish();
                 CenterThreadPool.run(() -> {
-                    if (playerData.mid != 0 && playerData.aid != 0) try {
-                        HistoryApi.reportHistory(playerData.aid, playerData.cid, progress / 1000);
-                    } catch (Exception e) {
-                        MsgUtil.err("进度上报：", e);
-                    }
-                    finish();
+                    reportHistoryBestEffort(progress / 1000);
                 });
             }
         }
     });
+
+    private void reportHistoryBestEffort(long progressSeconds) {
+        if (playerData == null || playerData.mid == 0 || playerData.aid == 0) return;
+
+        Exception lastError = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                HistoryApi.reportHistory(playerData.aid, playerData.cid, progressSeconds);
+                Logu.d("进度上报", "成功");
+                return;
+            } catch (Exception e) {
+                lastError = e;
+                if (attempt == 0) SystemClock.sleep(500L);
+            }
+        }
+
+        // Reporting must never turn a successful playback into a visible error.
+        Logu.e("进度上报", "后台上报失败，已忽略: "
+                + (lastError == null ? "unknown" : lastError.toString()));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

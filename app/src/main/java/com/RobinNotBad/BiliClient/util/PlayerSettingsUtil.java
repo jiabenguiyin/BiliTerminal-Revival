@@ -11,6 +11,8 @@ public final class PlayerSettingsUtil {
     private static final String DANMAKU_SIZE = "player_danmaku_size";
     private static final String DANMAKU_TRANSPARENCY = "player_danmaku_transparency";
     private static final String DANMAKU_SPEED = "player_danmaku_speed";
+    public static final String LIVE_DANMAKU_DURATION_FACTOR = "player_live_danmaku_duration_factor";
+    private static final String VOLUME_STEP = "player_volume_step";
 
     private PlayerSettingsUtil() {
     }
@@ -23,6 +25,8 @@ public final class PlayerSettingsUtil {
         writeFloatIfInvalid(DANMAKU_SIZE, 0.7f, 0.1f, 3.0f);
         writeFloatIfInvalid(DANMAKU_TRANSPARENCY, 0.5f, 0.0f, 1.0f);
         writeFloatIfInvalid(DANMAKU_SPEED, 1.0f, 0.1f, 5.0f);
+        writeFloatIfInvalid(LIVE_DANMAKU_DURATION_FACTOR, 2.0f, 1.0f, 3.0f);
+        writeIntIfInvalid(VOLUME_STEP, 5, 1, 30);
     }
 
     /** Migrates the old boolean without changing the user's existing behavior. */
@@ -58,6 +62,21 @@ public final class PlayerSettingsUtil {
         return normalizeFloat(DANMAKU_SPEED, readFloatValue(DANMAKU_SPEED, 1.0f));
     }
 
+    public static float getDanmakuDurationFactor(boolean live) {
+        return live ? normalizeFloat(LIVE_DANMAKU_DURATION_FACTOR,
+                readFloatValue(LIVE_DANMAKU_DURATION_FACTOR, 2.0f)) : getDanmakuSpeed();
+    }
+
+    /** Volume gesture/button step as a percentage of the device media volume range. */
+    public static int getVolumeStep() {
+        return getInt(VOLUME_STEP, 5, 1, 30);
+    }
+
+    public static int normalizeInt(String key, int value) {
+        if (VOLUME_STEP.equals(key)) return Math.max(1, Math.min(30, value));
+        return value;
+    }
+
     public static float normalizeFloat(String key, float value) {
         float fallback;
         float min;
@@ -78,6 +97,10 @@ public final class PlayerSettingsUtil {
             fallback = 1.0f;
             min = 0.1f;
             max = 5.0f;
+        } else if (LIVE_DANMAKU_DURATION_FACTOR.equals(key)) {
+            fallback = 2.0f;
+            min = 1.0f;
+            max = 3.0f;
         } else {
             return value;
         }

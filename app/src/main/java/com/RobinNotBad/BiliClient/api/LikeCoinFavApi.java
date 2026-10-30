@@ -45,10 +45,17 @@ public class LikeCoinFavApi {
     }
 
     public static int favorite(long aid, long fid) throws IOException, JSONException {
-        String strMid = String.valueOf(SharedPreferencesUtil.getLong("mid", 0));
-        String addFid = fid + strMid.substring(strMid.length() - 2);
         String url = "https://api.bilibili.com/medialist/gateway/coll/resource/deal";
-        String per = "rid=" + aid + "&type=2&add_media_ids=" + addFid + "&del_media_ids=&csrf=" + SharedPreferencesUtil.getString("csrf", "");
+        String mid = SharedPreferencesUtil.sharedPreferences == null
+                ? "0" : String.valueOf(SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0));
+        String suffix = mid.length() >= 2 ? mid.substring(mid.length() - 2) : mid;
+        String per = new NetWorkUtil.FormData()
+                .put("rid", aid)
+                .put("type", 2)
+                .put("add_media_ids", String.valueOf(fid) + suffix)
+                .put("del_media_ids", "")
+                .put("csrf", SharedPreferencesUtil.getString("csrf", ""))
+                .toString();
 
         JSONObject result = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(url, per, NetWorkUtil.webHeaders).body()).string());
         Log.e("debug-添加收藏", result.toString());

@@ -1,0 +1,4 @@
+<resources>
+    <string name="dynamic_comments">评论</string>
+    <string name="dynamic_comment_count">评论，%1$s条</string>
+</resources>

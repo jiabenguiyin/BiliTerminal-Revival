@@ -9,8 +9,10 @@ import androidx.annotation.NonNull;
 
 import com.RobinNotBad.BiliClient.adapter.user.UserListAdapter;
 import com.RobinNotBad.BiliClient.api.SearchApi;
+import com.RobinNotBad.BiliClient.api.UserInfoApi;
 import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
+import com.RobinNotBad.BiliClient.util.SearchQueryUtil;
 
 import org.json.JSONArray;
 
@@ -52,6 +54,28 @@ public class SearchUserFragment extends SearchFragment {
         CenterThreadPool.run(() -> {
             Log.e("debug", "加载下一页");
             try {
+                Long uid = SearchQueryUtil.parseUserUid(keyword);
+                if (uid != null) {
+                    if (page > 1) {
+                        bottom = true;
+                        setRefreshing(false);
+                        return;
+                    }
+                    UserInfo user = UserInfoApi.getUserInfo(uid);
+                    if (user != null && user.mid == uid) {
+                        showEmptyView(false);
+                        CenterThreadPool.runOnUiThread(() -> {
+                            userInfoList.add(user);
+                            userInfoAdapter.notifyItemInserted(userInfoList.size() - 1);
+                        });
+                    } else {
+                        setBottom(true);
+                    }
+                    bottom = true;
+                    setRefreshing(false);
+                    return;
+                }
+
                 JSONArray result = (JSONArray) SearchApi.searchType(keyword, page, "bili_user");
                 if (result != null) {
                     if (page == 1) showEmptyView(false);
@@ -61,7 +85,7 @@ public class SearchUserFragment extends SearchFragment {
                     CenterThreadPool.runOnUiThread(() -> {
                         int lastSize = userInfoList.size();
                         userInfoList.addAll(list);
-                        userInfoAdapter.notifyItemRangeInserted(lastSize + 1, userInfoList.size() - lastSize);
+                        userInfoAdapter.notifyItemRangeInserted(lastSize, userInfoList.size() - lastSize);
                     });
                 } else setBottom(true);
             } catch (Exception e) {

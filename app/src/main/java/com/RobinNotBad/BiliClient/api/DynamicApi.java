@@ -353,14 +353,14 @@ public class DynamicApi {
     }
 
     public static long getDynamicList(List<Dynamic> dynamicList, long offset, long mid, String type) throws IOException, JSONException {
-        String url = "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/"
-                + (mid == 0 ? "all?type=" + type : "space?platform=web&web_location=333.1387&timezone_offset=-480&host_mid=" + mid)
-                + (offset == 0 ? "" : "&offset=" + offset)
-                + "&features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,forwardListHidden,decorationCard,commentsNewVersion,onlyfansAssetsV2,ugcDelete,onlyfansQaCard,avatarAutoTheme,sunflowerStyle,eva3CardOpus,eva3CardVideo,eva3CardComment";
+        boolean filteredFollowFeed = mid == 0 && type != null && !type.isEmpty() && !"all".equals(type);
+        String url = buildDynamicListUrl(offset, mid, type, filteredFollowFeed);
 
 
         String signedUrl = ConfInfoApi.signWBI(DmImgParamUtil.getDmImgParamsUrl(url));
-        String routeId = mid == 0 ? "dynamic_feed_all" : "dynamic_feed_space";
+        String routeId = mid == 0
+                ? (filteredFollowFeed ? "dynamic_feed_all_filtered" : "dynamic_feed_all")
+                : "dynamic_feed_space";
         List<Dynamic> parsed = new ArrayList<>();
         long offsetNew;
         try {
@@ -381,13 +381,46 @@ public class DynamicApi {
         return offsetNew;
     }
 
+    /**
+     * The desktop feed currently accepts the list shape but may ignore the
+     * category filter. Use the legacy follow-feed endpoint for filtered tabs;
+     * keep the desktop endpoint for the unfiltered feed and user spaces.
+     */
+    static String buildDynamicListUrl(long offset, long mid, String type, boolean filteredFollowFeed) {
+        String url;
+        if (mid == 0 && filteredFollowFeed) {
+            url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type="
+                    + (type == null ? "all" : type);
+        } else if (mid == 0) {
+            url = "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/all?type="
+                    + (type == null ? "all" : type);
+        } else {
+            url = "https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space"
+                    + "?platform=web&web_location=333.1387&timezone_offset=-480&host_mid=" + mid;
+        }
+        if (offset != 0) url += "&offset=" + offset;
+        return url + "&features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,forwardListHidden,"
+                + "decorationCard,commentsNewVersion,onlyfansAssetsV2,ugcDelete,onlyfansQaCard,avatarAutoTheme,"
+                + "sunflowerStyle,eva3CardOpus,eva3CardVideo,eva3CardComment";
+    }
+
     private static long parseDynamicListResponse(JSONObject all, List<Dynamic> output, long mid) throws JSONException {
-        if (all.getInt("code") != 0) {
+        int responseCode = all.optInt("code", -1);
+        if (responseCode != 0) {
+            // Filtered feeds such as "追番" can legitimately return an empty
+            // result for accounts with no followed series. Treat only the
+            // known empty-feed responses as an empty page.
+            if (isEmptyFilteredFeedResponse(all)) return -1;
             throw new JSONException(all.optString("message", "动态接口错误"));
         }
-        JSONObject data = all.getJSONObject("data");
-        boolean hasMore = data.getBoolean("has_more");
-        long offsetNew = hasMore ? Long.parseLong(data.getString("offset")) : -1;
+        JSONObject data = all.optJSONObject("data");
+        // Filtered feeds may return code=0 with null/empty data when the
+        // account follows no content in that category. Treat it as an empty
+        // terminal page instead of asking JSONObject for missing fields.
+        if (data == null) return -1;
+        boolean hasMore = data.optBoolean("has_more", false);
+        String rawOffset = data.optString("offset", "");
+        long offsetNew = hasMore && !rawOffset.isEmpty() ? parseLong(rawOffset) : -1;
 
         if (mid == 0) {
             long updateBaseline = data.optLong("update_baseline", -1);
@@ -398,7 +431,8 @@ public class DynamicApi {
             }
         }
 
-        JSONArray items = data.getJSONArray("items");
+        JSONArray items = data.optJSONArray("items");
+        if (items == null) return offsetNew;
         int outputSizeBefore = output.size();
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
@@ -413,6 +447,22 @@ public class DynamicApi {
             throw new JSONException("no valid dynamic items");
         }
         return offsetNew;
+    }
+
+    private static boolean isEmptyFilteredFeedResponse(JSONObject response) {
+        int code = response.optInt("code", -1);
+        String message = response.optString("message", "");
+        // The legacy filtered feed reports an empty follow list as a normal
+        // business failure for some accounts, including -101 (not logged in)
+        // and -404/-412/-500. The filtered tab has no useful fallback data in
+        // these cases, so render an empty page instead of a JSON error dialog.
+        return (code == -101 || code == -404 || code == -412 || code == -500)
+                && (message.isEmpty()
+                || message.contains("暂无")
+                || message.contains("没有")
+                || message.contains("追番")
+                || message.contains("番剧")
+                || message.contains("登录"));
     }
 
     public static Dynamic getDynamic(long id) throws JSONException, IOException {

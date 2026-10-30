@@ -4,6 +4,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.util.DisplayMetrics;
 
 import com.RobinNotBad.BiliClient.model.DashData;
 
@@ -22,6 +23,10 @@ import com.RobinNotBad.BiliClient.model.DashData;
  *   HIGH_END 高性能档 —— 高端能力判断（当前仍使用单播放器）
  */
 public final class DeviceProfile {
+
+    private static final int WATCH_MAX_SHORT_SIDE_PX = 480;
+    private static final int WATCH_MAX_LONG_SIDE_PX = 640;
+    private static final int COMPAT_DANMAKU_LIMIT = 2000;
 
     public static final int OVERRIDE_AUTO = 0;
     public static final int OVERRIDE_COMPAT = 1;
@@ -57,6 +62,16 @@ public final class DeviceProfile {
         return tier;
     }
 
+    public static boolean requiresSoftwarePlayerRotation() {
+        return requiresSoftwarePlayerRotation(Build.MODEL, Build.MANUFACTURER, Build.VERSION.SDK_INT);
+    }
+
+    static boolean requiresSoftwarePlayerRotation(String model, String manufacturer, int sdk) {
+        return sdk <= Build.VERSION_CODES.KITKAT
+                && "a15".equalsIgnoreCase(model == null ? "" : model.trim())
+                && (manufacturer != null && manufacturer.toLowerCase().contains("spreadtrum"));
+    }
+
     private static Tier getOverride() {
         if (SharedPreferencesUtil.sharedPreferences == null) return null;
         switch (SharedPreferencesUtil.getInt(SharedPreferencesUtil.DEVICE_PROFILE_OVERRIDE,
@@ -87,11 +102,40 @@ public final class DeviceProfile {
             watch = context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_WATCH);
         } catch (Throwable ignored) {
         }
+        int widthPixels = 0;
+        int heightPixels = 0;
+        try {
+            DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            widthPixels = metrics.widthPixels;
+            heightPixels = metrics.heightPixels;
+        } catch (Throwable ignored) {
+        }
+        watch = watch || isWatchLike(Build.MODEL, Build.BRAND, Build.MANUFACTURER,
+                Build.PRODUCT, widthPixels, heightPixels);
         return classify(sdk, memClassMb, cores, watch);
     }
 
     private static Tier detectWithoutContext() {
-        return classify(Build.VERSION.SDK_INT, 0, Runtime.getRuntime().availableProcessors());
+        boolean watch = isWatchLike(Build.MODEL, Build.BRAND, Build.MANUFACTURER,
+                Build.PRODUCT, 0, 0);
+        return classify(Build.VERSION.SDK_INT, 0, Runtime.getRuntime().availableProcessors(), watch);
+    }
+
+    static boolean isWatchLike(String model, String brand, String manufacturer,
+                               String product, int widthPixels, int heightPixels) {
+        String identity = ((model == null ? "" : model) + " "
+                + (brand == null ? "" : brand) + " "
+                + (manufacturer == null ? "" : manufacturer) + " "
+                + (product == null ? "" : product)).toLowerCase();
+        if (identity.contains("watch") || identity.contains("smartwatch")
+                || identity.contains("wear") || identity.contains("aqsh")
+                || identity.contains("dove_evb")) {
+            return true;
+        }
+        if (widthPixels <= 0 || heightPixels <= 0) return false;
+        int shortSide = Math.min(widthPixels, heightPixels);
+        int longSide = Math.max(widthPixels, heightPixels);
+        return shortSide <= WATCH_MAX_SHORT_SIDE_PX && longSide <= WATCH_MAX_LONG_SIDE_PX;
     }
 
     static Tier classify(int sdk, int memClassMb, int cores) {
@@ -102,8 +146,10 @@ public final class DeviceProfile {
         // Android 8.1 watch hardware is especially sensitive to two decoders,
         // two network buffers and the extra synchronization thread.
         if (watch) return Tier.COMPAT;
-        // Android 4.x 一律兼容档：老设备硬解兼容差、内存小、跑不动双播放器
-        if (sdk <= Build.VERSION_CODES.KITKAT) return Tier.COMPAT;
+        // Android 7 and older stay on the established progressive/IJK path.
+        // The unified DASH player has caused playback regressions on these legacy
+        // codec stacks even when the device reports ample memory.
+        if (sdk <= Build.VERSION_CODES.N_MR1) return Tier.COMPAT;
         // 低内存设备（老安卓 5/6/7 手表、低配机）归兼容档
         if (memClassMb > 0 && memClassMb <= 128) return Tier.COMPAT;
         if (memClassMb > 0 && memClassMb <= 192 && cores > 0 && cores <= 2) return Tier.COMPAT;
@@ -193,6 +239,16 @@ public final class DeviceProfile {
     /** IJK 开始播放前至少缓存的帧数。 */
     public static int minBufferedFrames() {
         return get() == Tier.COMPAT ? 5 : 8;
+    }
+
+    /** 兼容档只预取当前弹幕分段，避免小屏设备同时持有两段弹幕。 */
+    public static int danmakuWindowRadius() {
+        return get() == Tier.COMPAT ? 0 : 1;
+    }
+
+    /** 兼容档限制单段弹幕的渲染数量，保留完整响应供高能进度条使用。 */
+    public static int maxDanmakuPerSegment() {
+        return get() == Tier.COMPAT ? COMPAT_DANMAKU_LIMIT : 0;
     }
 
     /** 诊断上报节流：兼容档每批最多上报条数（0 表示不限制）。 */

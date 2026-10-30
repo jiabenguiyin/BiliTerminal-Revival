@@ -15,11 +15,15 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
 
+import okhttp3.HttpUrl;
+
 //搜索API 自己写的
 //逐渐感觉拆json是个很爽的事（
 //2023-07-14
 
 public class SearchApi {
+    public static final String TYPE_BANGUMI = "media_bangumi";
+    public static final String TYPE_FILM = "media_ft";
 
     public static String seid = "";
     public static String search_keyword = "";
@@ -70,6 +74,70 @@ public class SearchApi {
             return data.get("result"); // 其实这还不是我们要的结果，下面的函数对它进行再次拆解 这里做了判空
         else
             return null;
+    }
+
+    /** PGC searches have independent pagination and must not share the mutable video search keyword. */
+    public static MediaSearchResult searchMedia(String keyword, int page, String type)
+            throws IOException, JSONException {
+        validateMediaType(type);
+        HttpUrl url = new HttpUrl.Builder().scheme("https").host("api.bilibili.com")
+                .addPathSegments("x/web-interface/wbi/search/type")
+                .addQueryParameter("keyword", keyword)
+                .addQueryParameter("page", String.valueOf(Math.max(1, page)))
+                .addQueryParameter("search_type", type).build();
+        return parseMediaSearchResponse(NetWorkUtil.getJson(ConfInfoApi.signWBI(url.toString())), page, type);
+    }
+
+    public static MediaSearchResult parseMediaSearchResponse(JSONObject response, int page, String type)
+            throws IOException {
+        validateMediaType(type);
+        int code = response.optInt("code", -1);
+        if (code != 0) throw new IOException("搜索失败（" + code + "）：" + response.optString("message", "请稍后重试"));
+        JSONObject data = response.optJSONObject("data");
+        if (data == null) throw new IOException("搜索返回内容异常，请稍后重试");
+        JSONArray result = data.optJSONArray("result");
+        if (result == null && data.has("v_voucher")) throw new IOException("搜索需要验证，请稍后重试");
+        boolean omittedEmptyResult = !data.has("result") && data.optInt("numResults", -1) == 0;
+        if (result == null && !omittedEmptyResult && (!data.has("result") || !data.isNull("result"))) {
+            throw new IOException("搜索返回内容异常，请稍后重试");
+        }
+        ArrayList<VideoCard> cards = new ArrayList<>();
+        if (result != null) {
+            for (int i = 0; i < result.length(); i++) {
+                JSONObject item = result.optJSONObject(i);
+                if (item == null || item.optLong("media_id", 0) <= 0) continue;
+                String title = StringUtil.htmlToString(item.optString("title", "")
+                        .replace("<em class=\"keyword\">", "").replace("</em>", ""));
+                if (title.trim().isEmpty()) continue;
+                String cover = item.optString("cover", "");
+                if (cover.startsWith("//")) cover = "https:" + cover;
+                if (!cover.startsWith("https://") && !cover.startsWith("http://")) cover = "";
+                String index = item.optString("index_show", "");
+                JSONObject newEpisode = item.optJSONObject("new_ep");
+                if (index.isEmpty() && newEpisode != null) index = newEpisode.optString("index_show", "");
+                cards.add(new VideoCard(title, item.optString("areas", ""), index, cover,
+                        item.optLong("media_id"), item.optString("season_id", ""), type));
+            }
+        }
+        int pages = data.optInt("numPages", -1);
+        boolean hasMore = !cards.isEmpty() && (pages < 1 || Math.max(1, page) < pages);
+        return new MediaSearchResult(cards, hasMore);
+    }
+
+    private static void validateMediaType(String type) {
+        if (!TYPE_BANGUMI.equals(type) && !TYPE_FILM.equals(type)) {
+            throw new IllegalArgumentException("Unsupported media search type: " + type);
+        }
+    }
+
+    public static final class MediaSearchResult {
+        public final ArrayList<VideoCard> items;
+        public final boolean hasMore;
+
+        private MediaSearchResult(ArrayList<VideoCard> items, boolean hasMore) {
+            this.items = items;
+            this.hasMore = hasMore;
+        }
     }
 
     public static void getVideosFromSearchResult(JSONArray input, ArrayList<VideoCard> videoCardList, boolean first)

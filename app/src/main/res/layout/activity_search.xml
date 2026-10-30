@@ -16,7 +16,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/top" />
+        app:layout_constraintTop_toBottomOf="@id/searchbar" />
 
     <com.RobinNotBad.BiliClient.ui.widget.RotaryRecyclerView
         android:id="@+id/history_recyclerview"
@@ -58,7 +58,7 @@
         android:layout_marginTop="2dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/top">
+        app:layout_constraintTop_toBottomOf="@id/search_categories">
 
         <EditText
             android:id="@+id/keywordInput"
@@ -90,6 +90,20 @@
             app:layout_constraintTop_toTopOf="@+id/keywordInput" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/search_categories"
+        android:layout_width="0dp"
+        android:layout_height="36dp"
+        android:background="?android:attr/colorBackground"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/top"
+        app:tabMode="scrollable"
+        app:tabMinWidth="48dp"
+        app:tabPaddingStart="10dp"
+        app:tabPaddingEnd="10dp"
+        app:tabTextAppearance="@style/SearchCategoryText" />
 
     <RelativeLayout
         android:id="@+id/top"
@@ -137,6 +151,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/top" />
+        app:layout_constraintTop_toBottomOf="@id/searchbar" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

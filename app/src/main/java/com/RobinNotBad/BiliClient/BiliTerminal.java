@@ -135,6 +135,9 @@ public class BiliTerminal extends Application {
     public static synchronized void startDeferredInitialization() {
         if (deferredInitializationStarted) return;
         deferredInitializationStarted = true;
+        // Apply a previously verified relay configuration before SplashActivity
+        // probes Bilibili on a separate background task.
+        HotConfigManager.applyCachedConfig();
         runBackgroundCompat(() -> {
             try {
                 HotConfigManager.initialize();

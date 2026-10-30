@@ -1,0 +1,8 @@
+<resources>
+    <string name="reply_pin">置顶评论</string>
+    <string name="reply_unpin">取消置顶</string>
+    <string name="reply_pin_confirm">将这条评论置顶？已有置顶评论时，请先取消原置顶。</string>
+    <string name="reply_unpin_confirm">取消这条评论的置顶？</string>
+    <string name="reply_pin_success">置顶成功</string>
+    <string name="reply_unpin_success">已取消置顶</string>
+</resources>

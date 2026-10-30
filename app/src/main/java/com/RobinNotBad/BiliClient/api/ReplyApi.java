@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 
 import com.RobinNotBad.BiliClient.model.ContentType;
 import com.RobinNotBad.BiliClient.model.Reply;
+import com.RobinNotBad.BiliClient.util.ReplyStateSync;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.Result;
@@ -21,6 +22,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import okhttp3.Response;
 
 //腕上哔哩那边注释里写了一连串的麻烦麻烦麻烦，顿时预感不妙
 //其实还好
@@ -86,7 +89,7 @@ public class ReplyApi {
      * @throws IOException   网络异常
      */
     public static int getReplies(long originId, long rpid, int pageNumber, ContentType type, int sort, List<Reply> replyArrayList) throws JSONException, IOException {
-
+        long account = ReplyStateSync.account(), read = ReplyStateSync.STORE.beginRead();
         String url = "https://api.bilibili.com/x/v2/reply" + (rpid == 0 ? "" : "/reply") + "?pn=" + pageNumber
                 + "&type=" + type.getTypeCode() + "&oid=" + originId + "&sort=" + sort + (rpid == 0 ? "" : ("&root=" + rpid));
         JSONObject all = NetWorkUtil.getJson(url);
@@ -97,11 +100,14 @@ public class ReplyApi {
         if (all.getInt("code") == 0 && !all.isNull("data")) {
             JSONObject data = all.getJSONObject("data");
             JSONObject page = data.getJSONObject("page");
+            if (data.optJSONObject("root") != null)
+                ReplyStateSync.observe(new Reply(true, data.getJSONObject("root")), type.getTypeCode(), originId, account, read);
+            if (rpid == 0 && pageNumber == 1) analyzeTopReplies(data, replyArrayList);
+            ReplyStateSync.observe(replyArrayList, type.getTypeCode(), originId, account, read);
             if (!data.isNull("replies") && page.getInt("size") > 0) {
-                if (rpid == 0 && data.has("top_replies") && page.getInt("num") == 1)
-                    analyzeReplyArray(true, data.getJSONArray("top_replies"), replyArrayList);
                 JSONArray replies = data.getJSONArray("replies");
                 analyzeReplyArray(rpid == 0, replies, replyArrayList);
+                ReplyStateSync.observe(replyArrayList, type.getTypeCode(), originId, account, read);
                 if (replyArrayList.size() == size) return 1;
                 else return 0;
             } else return 1;
@@ -109,6 +115,7 @@ public class ReplyApi {
     }
 
     public static Result<Reply> getRootReply(ContentType contentType, long originId, long rpid) {
+        long account = ReplyStateSync.account(), read = ReplyStateSync.STORE.beginRead();
         String url = "https://api.bilibili.com/x/v2/reply/reply" + "?type=" + contentType.getTypeCode() + "&oid=" + originId + "&root=" + rpid;
         try {
             JSONObject json = NetWorkUtil.getJson(url);
@@ -119,7 +126,10 @@ public class ReplyApi {
             if (data.isNull("root")) {
                 return Result.failure(new Exception("未找到根评论"));
             }
-            return Result.success(new Reply(true, data.getJSONObject("root")));
+            Reply reply = new Reply(true, data.getJSONObject("root"));
+            if (!ReplyStateSync.observe(reply, contentType.getTypeCode(), originId, account, read))
+                return Result.failure(new Exception("评论已删除或账号已切换，请重新打开评论区"));
+            return Result.success(reply);
         } catch (Exception e) {
             return Result.failure(e);
         }
@@ -138,7 +148,7 @@ public class ReplyApi {
      */
     @NonNull
     public static Pair<Integer, String> getRepliesLazy(long oid, long rpid, String pagination, int type, int sort, List<Reply> replyArrayList) throws JSONException, IOException {
-
+        long account = ReplyStateSync.account(), read = ReplyStateSync.STORE.beginRead();
         NetWorkUtil.FormData reqData = new NetWorkUtil.FormData()
                 .setUrlParam(true)
                 .put("type", type)
@@ -159,11 +169,12 @@ public class ReplyApi {
         if (all.getInt("code") == 0 && !all.isNull("data")) {
             JSONObject data = all.getJSONObject("data");
             JSONObject cursor = data.getJSONObject("cursor");
+            if (rpid <= 0 && cursor.optBoolean("is_begin", true)) analyzeTopReplies(data, replyArrayList);
+            ReplyStateSync.observe(replyArrayList, type, oid, account, read);
             if (!data.isNull("replies") && data.getJSONArray("replies").length() > 0) {
-                if (rpid <= 0 && data.has("top_replies") && !data.isNull("top_replies") && cursor.getBoolean("is_begin"))
-                    analyzeReplyArray(true, data.getJSONArray("top_replies"), replyArrayList);
                 JSONArray replies = data.getJSONArray("replies");
                 analyzeReplyArray(true, replies, replyArrayList);
+                ReplyStateSync.observe(replyArrayList, type, oid, account, read);
                 JSONObject paginationReply = cursor.optJSONObject("pagination_reply");
                 String nextOffset = paginationReply == null ? null : paginationReply.optString("next_offset");
                 if (cursor.optBoolean("is_end", false) || TextUtils.isEmpty(nextOffset)) {
@@ -171,9 +182,6 @@ public class ReplyApi {
                 } else {
                     return new Pair<>(0, nextOffset);
                 }
-            } else if (rpid <= 0 && data.has("top_replies") && !data.isNull("top_replies") && cursor.getBoolean("is_begin")) {
-                analyzeReplyArray(true, data.getJSONArray("top_replies"), replyArrayList);
-                return new Pair<>(1, "");
             } else return new Pair<>(1, "");
         } else return new Pair<>(-1, "");
     }  //-1错误,0正常，1到底了
@@ -181,8 +189,30 @@ public class ReplyApi {
     public static void analyzeReplyArray(boolean isRoot, JSONArray replies, List<Reply> replyArrayList) throws JSONException {
         for (int i = 0; i < replies.length(); i++) {
             JSONObject reply = replies.getJSONObject(i);
+            if (containsReply(replyArrayList, reply.optLong("rpid"))) continue;
             Reply replyReturn = new Reply(isRoot, reply);
             replyArrayList.add(replyReturn);
+        }
+    }
+
+    private static boolean containsReply(List<Reply> replies, long rpid) {
+        for (Reply reply : replies) if (reply.rpid == rpid) return true;
+        return false;
+    }
+
+    static void analyzeTopReplies(JSONObject data, List<Reply> output) throws JSONException {
+        JSONArray top = data.optJSONArray("top_replies");
+        JSONObject upper = data.optJSONObject("upper");
+        if ((top == null || top.length() == 0) && upper != null && upper.optJSONObject("top") != null) {
+            top = new JSONArray().put(upper.getJSONObject("top"));
+        }
+        if (top == null) return;
+        for (int i = 0; i < top.length(); i++) {
+            JSONObject item = top.optJSONObject(i);
+            if (item == null || containsReply(output, item.optLong("rpid"))) continue;
+            Reply reply = new Reply(true, item);
+            reply.setTop(true);
+            output.add(reply);
         }
     }
 
@@ -327,6 +357,32 @@ public class ReplyApi {
         JSONObject result = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(url, reqBody, NetWorkUtil.webHeaders).body()).string());
         Log.e("debug-点踩评论", result.toString());
         return result.getInt("code");
+    }
+
+    public static boolean canManageReplyTop(long currentMid, long ownerMid, long root) {
+        return currentMid > 0 && currentMid == ownerMid && root == 0;
+    }
+
+    static String buildTopReplyForm(long oid, long rpid, int type, boolean pinned, String csrf) {
+        if (oid <= 0 || rpid <= 0 || type <= 0) throw new IllegalArgumentException("Invalid comment target");
+        return new NetWorkUtil.FormData().put("oid", oid).put("rpid", rpid).put("type", type)
+                .put("action", pinned ? 1 : 0).put("csrf", csrf).toString();
+    }
+
+    public static int setReplyTop(long oid, long rpid, int type, boolean pinned) throws IOException, JSONException {
+        String body = buildTopReplyForm(oid, rpid, type, pinned,
+                SharedPreferencesUtil.getString("csrf", ""));
+        try (Response response = NetWorkUtil.post("https://api.bilibili.com/x/v2/reply/top", body,
+                NetWorkUtil.webHeaders)) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new IOException("Comment pin HTTP " + response.code());
+            }
+            int code = new JSONObject(response.body().string()).getInt("code");
+            JSONObject details = new JSONObject().put("oid", oid).put("type", type)
+                    .put("rpid", rpid).put("pinned", pinned).put("code", code);
+            DiagnosticLogManager.record("reply_top_result", details);
+            return code;
+        }
     }
 
     /**

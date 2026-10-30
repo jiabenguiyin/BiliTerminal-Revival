@@ -43,6 +43,18 @@ public class Reply implements Serializable {
     public Reply() {
     }
 
+    public void setTop(boolean top) {
+        if (isTop == top) return;
+        SpannableStringBuilder text = new SpannableStringBuilder(message == null ? "" : message);
+        if (isTop && text.toString().startsWith(TOP_TIP)) text.delete(0, TOP_TIP.length());
+        isTop = top;
+        if (top) {
+            text.insert(0, TOP_TIP);
+            StringUtil.setTopSpan(text);
+        }
+        message = text;
+    }
+
     /**
      * @param isRoot    是否是根评论
      * @param replyJson 评论json对象

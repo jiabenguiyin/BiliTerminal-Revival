@@ -27,6 +27,11 @@ public class DanmakuWindowLoaderTest {
                 (revision, segments) -> snapshots.add(segments), () -> now[0]);
     }
 
+    private DanmakuWindowLoader currentOnlyLoader(DanmakuWindowLoader.Source source) {
+        return new DanmakuWindowLoader(executor, source,
+                (revision, segments) -> snapshots.add(segments), () -> now[0], 0);
+    }
+
     private DmSegMobileReply load(int index, RequestCancellation cancellation) {
         requests.add(index);
         return new DmSegMobileReply();
@@ -40,6 +45,14 @@ public class DanmakuWindowLoaderTest {
         assertTrue(snapshots.get(1).containsKey(1));
         assertEquals(1, snapshots.get(1).size());
         assertEquals(2, snapshots.get(2).size());
+    }
+
+    @Test public void currentOnlyWindowDoesNotPrefetchNextSegment() {
+        DanmakuWindowLoader loader = currentOnlyLoader(this::load);
+        loader.update(0L, HUNDRED_HOURS);
+        executor.run();
+        assertEquals(Arrays.asList(1), requests);
+        assertEquals(1, snapshots.get(snapshots.size() - 1).size());
     }
 
     @Test public void eightyHourSeekStartsAtSegment801AndBoundsCache() {

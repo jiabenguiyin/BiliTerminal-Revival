@@ -75,6 +75,12 @@ public class GlideUtil {
         return NetWorkUtil.routeUrlForRelay(result);
     }
 
+    /** Returns the source image without adding Bilibili resize/compression parameters. */
+    public static String url_original(String url) {
+        return NetWorkUtil.routeUrlForRelay(BilibiliImageUrlUtil.stripResizeSuffix(
+                url == null ? "" : url));
+    }
+
     public static void request(ImageView view, String url, int placeholder) {
         Glide.with(view).asDrawable().load(url(url))
                 .diskCacheStrategy(DiskCacheStrategy.NONE)

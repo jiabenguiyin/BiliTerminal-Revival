@@ -18,6 +18,7 @@ public class SharedPreferencesUtil {
     public static final String NO_MEDAL = "no_medal";
     public static final String REPLY_MARQUEE_NAME = "reply_marquee_name";
     public static final String NEW_DANMAKU_API = "new_danmaku_api";
+    public static final String PLAYER_LARGE_DANMAKU_GUARD = "player_large_danmaku_guard";
     public static final String DYNAMIC_UPDATE_CHECK_ENABLE = "dynamic_update_check_enable";
     public static final String DYNAMIC_UPDATE_NUM = "dynamic_update_num";
     public static final String MESSAGE_UPDATE_CHECK_ENABLE = "message_update_check_enable";
@@ -32,6 +33,17 @@ public class SharedPreferencesUtil {
     public static final String DIAGNOSTIC_LOG_UPLOAD_ENABLE = "diagnostic_log_upload_enable";
     public static final String DEVICE_PROFILE_OVERRIDE = "device_profile_override";
     public static final String PLAYER_SWIPE_SEEK = "player_swipe_seek";
+    public static final String PLAYER_ANTI_MISTOUCH = "player_anti_mistouch";
+    public static final String PLAYER_VOLUME_STEP = "player_volume_step";
+    public static final String PLAYER_BRIGHTNESS_GESTURE = "player_brightness_gesture";
+    public static final String PLAYER_SCREEN_LOCK = "player_screen_lock";
+    public static final String PLAYER_ZOOM_TAP_SEEK = "player_zoom_tap_seek";
+    public static final String KEEP_UPDATE_PACKAGE = "keep_update_package";
+    public static final String ACCEPT_BETA_UPDATES = "accept_beta_updates";
+    public static final String APP_RECOMMEND_EXPERIMENT = "app_recommend_experiment";
+    public static final String APP_RECOMMEND_ACCESS_KEY = "app_recommend_access_key";
+    public static final String APP_RECOMMEND_ACCESS_KEY_EXPIRES_AT = "app_recommend_access_key_expires_at";
+    public static final String APP_RECOMMEND_BOUND_MID = "app_recommend_bound_mid";
 
     public static String cookies = "cookies";
     public static String mid = "mid";

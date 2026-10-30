@@ -35,6 +35,10 @@ public class FavoriteFolderAdapter extends RecyclerView.Adapter<FavoriteFolderAd
     final Context context;
     final ArrayList<FavoriteFolder> folderList;
     final long mid;
+    public interface OnFolderLongClickListener { boolean onLongClick(FavoriteFolder folder); }
+    private OnFolderLongClickListener longClickListener;
+
+    public void setOnFolderLongClickListener(OnFolderLongClickListener listener) { longClickListener = listener; }
 
     public FavoriteFolderAdapter(Context context, ArrayList<FavoriteFolder> folderList, long mid) {
         this.context = context;
@@ -52,9 +56,24 @@ public class FavoriteFolderAdapter extends RecyclerView.Adapter<FavoriteFolderAd
     @SuppressLint("SetTextI18n")
     @Override
     public void onBindViewHolder(@NonNull FavoriteHolder holder, int position) {
+        holder.itemView.setOnLongClickListener(null);
+        holder.itemView.setLongClickable(false);
         if (folderList == null)
             return;
-        if (position == folderList.size()) {
+        if (position == 0) {
+            holder.name.setText("全部");
+            holder.count.setText("");
+            String cover = folderList.isEmpty() ? "" : folderList.get(0).cover;
+            Glide.with(BiliTerminal.context).asDrawable().load(GlideUtil.url(cover))
+                    .placeholder(R.mipmap.placeholder)
+                    .transition(GlideUtil.getTransitionOptions())
+                    .apply(RequestOptions.bitmapTransform(new RoundedCorners(ToolsUtil.dp2px(5))))
+                    .into(holder.cover);
+            holder.itemView.setOnClickListener(view -> context.startActivity(new Intent(context,
+                    FavoriteVideoListActivity.class).putExtra("mid", mid)
+                    .putExtra("fid", folderList.isEmpty() ? 0L : folderList.get(0).id)
+                    .putExtra("all_folders", true).putExtra("name", "全部收藏")));
+        } else if (position == folderList.size() + 1) {
             holder.name.setText("图文收藏夹");
             holder.count.setText("");
             Glide.with(BiliTerminal.context).asDrawable()
@@ -67,13 +86,19 @@ public class FavoriteFolderAdapter extends RecyclerView.Adapter<FavoriteFolderAd
                 Intent intent = new Intent(context, FavouriteOpusListActivity.class);
                 context.startActivity(intent);
             });
-        } else if (position >= 0 && position < folderList.size()) {
-            FavoriteFolder folder = folderList.get(position);
+        } else if (position > 0 && position <= folderList.size()) {
+            FavoriteFolder folder = folderList.get(position - 1);
             if (folder == null)
                 return;
+            holder.itemView.setOnLongClickListener(view -> longClickListener != null && longClickListener.onLongClick(folder));
 
             holder.name.setText(StringUtil.htmlToString(folder.name));
-            holder.count.setText(folder.videoCount + "/" + folder.maxCount);
+            // 当 maxCount 为 0 或无效时，只显示视频数量
+            if (folder.maxCount > 0) {
+                holder.count.setText(folder.videoCount + "/" + folder.maxCount);
+            } else {
+                holder.count.setText(String.valueOf(folder.videoCount));
+            }
             Glide.with(BiliTerminal.context).asDrawable().load(GlideUtil.url(folder.cover))
                     .transition(GlideUtil.getTransitionOptions())
                     .apply(RequestOptions.bitmapTransform(new RoundedCorners(ToolsUtil.dp2px(5))))
@@ -93,7 +118,7 @@ public class FavoriteFolderAdapter extends RecyclerView.Adapter<FavoriteFolderAd
 
     @Override
     public int getItemCount() {
-        return folderList != null ? folderList.size() + 1 : 1;
+        return folderList != null ? folderList.size() + 2 : 2;
     }
 
     public static class FavoriteHolder extends RecyclerView.ViewHolder {

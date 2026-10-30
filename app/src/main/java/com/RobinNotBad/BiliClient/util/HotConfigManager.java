@@ -56,8 +56,9 @@ public final class HotConfigManager {
     }
 
     public static void initialize() {
-        applyCached();
-        if (System.currentTimeMillis() - SharedPreferencesUtil.getLong(LAST_CHECK_KEY, 0L) >= REFRESH_INTERVAL_MS) {
+        boolean cacheApplied = applyCachedConfig();
+        if (shouldRefresh(cacheApplied, System.currentTimeMillis(),
+                SharedPreferencesUtil.getLong(LAST_CHECK_KEY, 0L))) {
             CenterThreadPool.run(() -> {
                 try {
                     refresh();
@@ -66,6 +67,10 @@ public final class HotConfigManager {
                 }
             });
         }
+    }
+
+    static boolean shouldRefresh(boolean cacheApplied, long now, long lastCheck) {
+        return HotConfigRefreshPolicy.shouldRefresh(cacheApplied, now, lastCheck, REFRESH_INTERVAL_MS);
     }
 
     public static synchronized boolean refresh() throws Exception {
@@ -99,14 +104,32 @@ public final class HotConfigManager {
         throw new IOException("hot config unavailable");
     }
 
-    private static void applyCached() {
+    /** Ensures a relay token is available before the first relay-only probe. */
+    public static synchronized void ensureRelayReady() throws Exception {
+        if (!NetWorkUtil.BILI_RELAY_ENABLE) {
+            throw new IOException("relay is disabled by the signed configuration");
+        }
+        if (NetWorkUtil.BILI_RELAY_TOKEN == null || NetWorkUtil.BILI_RELAY_TOKEN.isEmpty()) {
+            applyCachedConfig();
+        }
+        if (NetWorkUtil.BILI_RELAY_TOKEN == null || NetWorkUtil.BILI_RELAY_TOKEN.isEmpty()) {
+            refresh();
+        }
+        if (NetWorkUtil.BILI_RELAY_TOKEN == null || NetWorkUtil.BILI_RELAY_TOKEN.isEmpty()) {
+            throw new IOException("relay configuration has no usable token");
+        }
+    }
+
+    public static synchronized boolean applyCachedConfig() {
         String cached = SharedPreferencesUtil.getString(CACHE_KEY, "");
-        if (cached.isEmpty()) return;
+        if (cached.isEmpty()) return false;
         try {
             applyPayload(verifyEnvelope(new JSONObject(cached)));
+            return true;
         } catch (Throwable error) {
             SharedPreferencesUtil.removeValue(CACHE_KEY);
             Logu.e("hot-config", "cached config rejected: " + error);
+            return false;
         }
     }
 
@@ -211,11 +234,12 @@ public final class HotConfigManager {
         return updateManifestUrl;
     }
 
-    private static JSONObject getVerifiedManifest(ArrayList<String> headers) throws Exception {
+    private static JSONObject getVerifiedManifest(ArrayList<String> headers, boolean beta) throws Exception {
         ArrayList<String> urls = new ArrayList<>();
-        urls.add(updateManifestUrl);
+        urls.add(withChannel(updateManifestUrl, beta));
         for (String url : UPDATE_MANIFEST_URLS) {
-            if (!urls.contains(url)) urls.add(url);
+            String candidate = withChannel(url, beta);
+            if (!urls.contains(candidate)) urls.add(candidate);
         }
 
         Exception lastError = null;
@@ -236,10 +260,14 @@ public final class HotConfigManager {
     }
 
     public static UpdatePlan getVerifiedUpdatePlan(int targetVersionCode) throws Exception {
+        return getVerifiedUpdatePlan(targetVersionCode, false);
+    }
+
+    public static UpdatePlan getVerifiedUpdatePlan(int targetVersionCode, boolean beta) throws Exception {
         ArrayList<String> headers = new ArrayList<>();
         headers.add("User-Agent");
         headers.add(NetWorkUtil.USER_AGENT_WEB);
-        JSONObject manifest = getVerifiedManifest(headers);
+        JSONObject manifest = getVerifiedManifest(headers, beta);
         if (manifest.optInt("schema", 0) != 1) {
             throw new SecurityException("unsupported update manifest schema");
         }
@@ -287,6 +315,11 @@ public final class HotConfigManager {
 
     public static String getVerifiedFullUpdateUrl(int targetVersionCode) throws Exception {
         return getVerifiedUpdatePlan(targetVersionCode).fullUrl;
+    }
+
+    private static String withChannel(String url, boolean beta) {
+        if (!beta) return url;
+        return url + (url.contains("?") ? "&" : "?") + "channel=beta";
     }
 
     public static boolean verifyDownloadedUpdate(File file) {

@@ -267,6 +267,19 @@ public class PrivateMsgApi {
         return result;
     }
 
+    /** Builds the JSON payload used by Bilibili private image messages. */
+    public static String toPictureContent(JSONObject data) throws JSONException {
+        if (data == null) throw new JSONException("图片上传返回为空");
+        String url = data.optString("image_url",
+                data.optString("url", data.optString("img_src", "")));
+        if (url.isEmpty()) throw new JSONException("图片上传没有返回地址");
+        return new JSONObject()
+                .put("url", url)
+                .put("width", data.optInt("image_width", data.optInt("width", 0)))
+                .put("height", data.optInt("image_height", data.optInt("height", 0)))
+                .toString();
+    }
+
     public static JSONObject updateAck(long talkerId, int sessionType, long ackSeqno)
             throws IOException, JSONException {
         String url = "https://api.vc.bilibili.com/session_svr/v1/session_svr/update_ack";

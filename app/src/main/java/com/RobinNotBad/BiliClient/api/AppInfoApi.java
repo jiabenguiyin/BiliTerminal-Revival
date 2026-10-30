@@ -31,7 +31,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Objects;
+import java.util.Locale;
 
 import okhttp3.Response;
 
@@ -67,26 +67,28 @@ public class AppInfoApi {
         }
 
         try {
+            checkAnnouncement();
+        } catch (Exception announcementError) {
+            Log.w("terminal-api", "Announcement check failed", announcementError);
+        }
+
+        try {
             int version = BiliTerminal.getVersion();
             int curr = ConfInfoApi.getDateCurr();
 
-            try {
-                checkAnnouncement();
-            } catch (Exception announcementError) {
-                Log.w("terminal-api", "Announcement check failed", announcementError);
-            }
-
             int last_ver = SharedPreferencesUtil.getInt("app_version_last", 0);
             if (last_ver < version) {
-                String update_apk = SharedPreferencesUtil.getString("terminal_update_pkg", "");
-                if (!TextUtils.isEmpty(update_apk)) {
-                    File file = new File(update_apk);
-                    if (file.exists()) {
-                        if (file.delete()) {
-                            SharedPreferencesUtil.putString("terminal_update_pkg", "");
-                            MsgUtil.showMsg("更新包已删除");
-                        } else MsgUtil.showMsg("更新包删除失败");
-                    } else SharedPreferencesUtil.putString("terminal_update_pkg", "");
+                if (!SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.KEEP_UPDATE_PACKAGE, false)) {
+                    String update_apk = SharedPreferencesUtil.getString("terminal_update_pkg", "");
+                    if (!TextUtils.isEmpty(update_apk)) {
+                        File file = new File(update_apk);
+                        if (file.exists()) {
+                            if (file.delete()) {
+                                SharedPreferencesUtil.putString("terminal_update_pkg", "");
+                                MsgUtil.showMsg("更新包已删除");
+                            } else MsgUtil.showMsg("更新包删除失败");
+                        } else SharedPreferencesUtil.putString("terminal_update_pkg", "");
+                    }
                 }
 
                 MsgUtil.showDialog("提醒", context.getString(R.string.text_update_success), 5);
@@ -214,85 +216,107 @@ public class AppInfoApi {
     }
 
     private static void checkUpdate(Context context, boolean need_toast, boolean debug_ver) {
+        boolean betaEnabled = debug_ver || ToolsUtil.isDebugBuild() || BuildConfig.BETA
+                || SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.ACCEPT_BETA_UPDATES, false);
+        Exception lastError = null;
+        boolean successfulChannel = false;
+
+        // Stable builds must always check the stable channel. Beta builds and
+        // opted-in users additionally check Beta so a later stable release can
+        // replace an installed Beta package normally.
         try {
-            boolean realIsDebug = ToolsUtil.isDebugBuild();
-            String url = "/terminal/version/get_last";
-            if (debug_ver) url += BuildConfig.BETA ? "?channel=beta" : "?debug";
-            JSONObject result = getTerminalJson(url);
-
-            if (result.getInt("code") != 0) throw new Exception(result.getString("msg"));
-            JSONObject data = result.getJSONObject("data");
-
-            String version_name = data.getString("version_name");
-            String update_log = data.getString("update_log");
-            int latest = data.getInt("version_code");
-            long ctime = data.optLong("ctime", -1);
-            int can_download = data.optInt("can_download", 0);
-            int is_release = data.optInt("is_release", 0);
-
-            String currentVersionName = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
-            int version = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode;
-            if (isNewerVersion(version_name, latest, currentVersionName, version)) {
-                MsgUtil.showMsg(debug_ver ? "发现新的测试版！" : "发现新版本！");
-                context.startActivity(new Intent(context, UpdateInfoActivity.class)
-                        .putExtra("versionName", version_name)
-                        .putExtra("versionCode", latest)
-                        .putExtra("updateLog", update_log)
-                        .putExtra("ctime", ctime)
-                        .putExtra("isRelease", is_release)
-                        .putExtra("canDownload", can_download));
-                return;
-            } else if (need_toast && !(realIsDebug && !debug_ver)) {
-                MsgUtil.showMsg(debug_ver ? "没有新的测试版了！" : "当前是最新版本！");
-            }
-            if (realIsDebug && !debug_ver) {
-                checkUpdate(context, need_toast, true);
-            }
-        } catch (IOException | JSONException e) {
-            Log.w("terminal-api", "update check unavailable", e);
-            if (need_toast) MsgUtil.showMsg("更新服务暂不可用，不影响应用使用");
-        } catch (Exception e) {
-            MsgUtil.showMsg(e.getMessage());
+            if (checkUpdateChannel(context, false)) return;
+            successfulChannel = true;
+        } catch (Exception error) {
+            lastError = error;
+            Log.w("terminal-api", "stable update check unavailable", error);
         }
+
+        if (betaEnabled) {
+            try {
+                if (checkUpdateChannel(context, true)) return;
+                successfulChannel = true;
+            } catch (Exception error) {
+                lastError = error;
+                Log.w("terminal-api", "beta update check unavailable", error);
+            }
+        }
+
+        if (!need_toast) return;
+        if (!successfulChannel && lastError != null) {
+            MsgUtil.showMsg("更新服务暂不可用，不影响应用使用");
+        } else if (betaEnabled) {
+            MsgUtil.showMsg("当前已是最新版本（已检查正式版和测试版）");
+        } else {
+            MsgUtil.showMsg("当前是最新版本！");
+        }
+    }
+
+    private static boolean checkUpdateChannel(Context context, boolean betaChannel) throws Exception {
+        String url = "/terminal/version/get_last";
+        if (betaChannel) url += "?channel=beta";
+        JSONObject result = getTerminalJson(url);
+
+        if (result.getInt("code") != 0) throw new Exception(result.getString("msg"));
+        JSONObject data = result.getJSONObject("data");
+
+        String version_name = data.getString("version_name");
+        String update_log = data.getString("update_log");
+        int latest = data.getInt("version_code");
+        long ctime = data.optLong("ctime", -1);
+        int can_download = data.optInt("can_download", 0);
+        int is_release = data.optInt("is_release", 0);
+        boolean actualBetaChannel = isBetaChannelResponse(
+                betaChannel,
+                version_name,
+                data.optBoolean("is_beta", false),
+                is_release
+        );
+
+        String currentVersionName = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+        int version = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode;
+        if (!isNewerVersion(version_name, latest, currentVersionName, version,
+                actualBetaChannel, BuildConfig.BETA)) {
+            return false;
+        }
+
+        MsgUtil.showMsg(actualBetaChannel ? "发现新的测试版！" : "发现新版本！");
+        context.startActivity(new Intent(context, UpdateInfoActivity.class)
+                .putExtra("versionName", version_name)
+                .putExtra("versionCode", latest)
+                .putExtra("updateLog", update_log)
+                .putExtra("ctime", ctime)
+                .putExtra("isRelease", is_release)
+                .putExtra("isBeta", actualBetaChannel)
+                .putExtra("canDownload", can_download));
+        return true;
     }
 
     public static void checkUpdate(Context context, boolean need_toast) {
         checkUpdate(context, need_toast, false);
     }
 
-    private static boolean isNewerVersion(String latestName, int latestCode, String currentName, int currentCode) {
-        return latestCode > currentCode || compareVersionName(latestName, currentName) > 0;
+    static boolean isNewerVersion(String latestName, int latestCode, String currentName, int currentCode,
+                                  boolean latestBeta, boolean currentBeta) {
+        // Android uses versionCode to decide whether an APK can replace the
+        // installed package. Names and channels must never override that rule.
+        return latestCode > currentCode;
     }
 
-    private static int compareVersionName(String latestName, String currentName) {
-        int[] latest = parseVersionName(latestName);
-        int[] current = parseVersionName(currentName);
-        int len = Math.max(latest.length, current.length);
-        for (int i = 0; i < len; i++) {
-            int latestPart = i < latest.length ? latest[i] : 0;
-            int currentPart = i < current.length ? current[i] : 0;
-            if (latestPart != currentPart) return latestPart - currentPart;
-        }
-        return 0;
-    }
-
-    private static int[] parseVersionName(String versionName) {
-        if (TextUtils.isEmpty(versionName)) return new int[]{0};
-        String clean = versionName.split("-", 2)[0];
-        String[] parts = clean.split("\\.");
-        int[] values = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            try {
-                values[i] = Integer.parseInt(parts[i].replaceAll("[^0-9]", ""));
-            } catch (Exception ignored) {
-                values[i] = 0;
-            }
-        }
-        return values;
+    static boolean isBetaChannelResponse(boolean betaRequested, String versionName,
+                                         boolean explicitBeta, int isRelease) {
+        if (!betaRequested) return false;
+        return explicitBeta
+                || (versionName != null && versionName.toUpperCase(Locale.ROOT).contains("-BETA"))
+                || isRelease == 0;
     }
 
     public static HotConfigManager.UpdatePlan getUpdatePlan(int versionCode) throws Exception {
-        return HotConfigManager.getVerifiedUpdatePlan(versionCode);
+        return getUpdatePlan(versionCode, false);
+    }
+
+    public static HotConfigManager.UpdatePlan getUpdatePlan(int versionCode, boolean beta) throws Exception {
+        return HotConfigManager.getVerifiedUpdatePlan(versionCode, beta);
     }
 
     public static String getDownloadUrl(int versionCode) throws Exception {

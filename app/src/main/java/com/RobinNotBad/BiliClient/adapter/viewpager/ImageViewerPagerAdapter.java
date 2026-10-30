@@ -10,14 +10,22 @@ import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.github.chrisbanes.photoview.PhotoView;
+import com.bumptech.glide.request.RequestOptions;
+import com.bumptech.glide.request.target.Target;
 
 import java.util.List;
 
 public final class ImageViewerPagerAdapter extends PagerAdapter {
     private final List<String> imageUrls;
+    private final boolean loadOriginal;
 
     public ImageViewerPagerAdapter(List<String> imageUrls) {
+        this(imageUrls, false);
+    }
+
+    public ImageViewerPagerAdapter(List<String> imageUrls, boolean loadOriginal) {
         this.imageUrls = imageUrls;
+        this.loadOriginal = loadOriginal;
     }
 
     @Override
@@ -36,10 +44,17 @@ public final class ImageViewerPagerAdapter extends PagerAdapter {
         PhotoView photoView = new PhotoView(container.getContext());
         photoView.setMaximumScale(6.25f);
         container.addView(photoView);
+        RequestOptions requestOptions = new RequestOptions()
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC);
+        if (loadOriginal) {
+            requestOptions = requestOptions.override(Target.SIZE_ORIGINAL, Target.SIZE_ORIGINAL);
+        }
         Glide.with(photoView)
                 .asDrawable()
-                .load(GlideUtil.url_hq(imageUrls.get(position)))
-                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                .load(loadOriginal
+                        ? GlideUtil.url_original(imageUrls.get(position))
+                        : GlideUtil.url_hq(imageUrls.get(position)))
+                .apply(requestOptions)
                 .into(photoView);
         return photoView;
     }

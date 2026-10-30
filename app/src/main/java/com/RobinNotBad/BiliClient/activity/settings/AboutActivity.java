@@ -156,7 +156,6 @@ public class AboutActivity extends BaseActivity {
                 }
             });
 
-            if (!ToolsUtil.isDebugBuild()) findViewById(R.id.debug_tip).setVisibility(View.GONE);
             findViewById(R.id.version_name_card).setOnClickListener(view -> {
                 eggClick_browser++;
                 if (eggClick_browser == 7) {

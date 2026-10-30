@@ -2,7 +2,13 @@ plugins {
     id 'com.android.application'
 }
 
-int betaVer = 0
+def betaVerProperty = project.findProperty("betaVer")
+int betaVer = betaVerProperty == null ? 0 : betaVerProperty.toString().toInteger()
+String betaProperty = project.findProperty("beta")?.toString()
+boolean betaBuild = (betaProperty == null ? false : betaProperty.equalsIgnoreCase("true")) || betaVer > 0
+String betaSuffix = project.findProperty("betaSuffix")?.toString()?.trim() ?: (betaVer > 0 ? betaVer.toString() : "")
+int releaseVersionCode = (project.findProperty("versionCode") ?: "2026103003").toString().toInteger()
+String releaseVersionName = (project.findProperty("versionName") ?: "1.2.3").toString()
 
 android {
 
@@ -25,16 +31,15 @@ android {
         minSdk 14
         //noinspection ExpiredTargetSdkVersion
         targetSdk 26
-        // 正式版 v1.2.2 / 2026102001（与当前发布 APK 的 Manifest 一致）
-        versionCode 2026102001
-        versionName "1.2.2"
+        versionCode releaseVersionCode
+        versionName releaseVersionName
 
-        if (betaVer) {
-            versionName += "-BETA" + betaVer
+        if (betaBuild && !versionName.toUpperCase().contains("-BETA")) {
+            versionName += "-BETA" + betaSuffix
         }
 
         multiDexEnabled true
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner (project.findProperty("testRunner") ?: "androidx.test.runner.AndroidJUnitRunner").toString()
         testInstrumentationRunnerArguments class: [
                 'com.RobinNotBad.BiliClient.util.AccountManagerInstrumentedTest',
                 'com.RobinNotBad.BiliClient.util.VideoStorageUtilInstrumentedTest'
@@ -68,7 +73,7 @@ android {
 
     buildTypes {
         release {
-            buildConfigField "boolean", "BETA", String.valueOf(betaVer > 0)
+            buildConfigField "boolean", "BETA", String.valueOf(betaBuild)
             buildConfigField "boolean", "LOG_DEBUG", "false"
             shrinkResources true
             minifyEnabled true
@@ -87,7 +92,7 @@ android {
             }
         }
         debug {
-            buildConfigField "boolean", "BETA", String.valueOf(betaVer > 0)
+            buildConfigField "boolean", "BETA", String.valueOf(betaBuild)
             signingConfig signingConfigs.debug
         }
     }

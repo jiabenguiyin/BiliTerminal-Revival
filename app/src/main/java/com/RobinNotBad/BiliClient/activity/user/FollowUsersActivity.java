@@ -4,10 +4,13 @@ import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.util.Log;
 
+import androidx.appcompat.app.AlertDialog;
+
 import com.RobinNotBad.BiliClient.activity.base.RefreshListActivity;
 import com.RobinNotBad.BiliClient.adapter.user.FollowGroupAdapter;
 import com.RobinNotBad.BiliClient.adapter.user.UserListAdapter;
 import com.RobinNotBad.BiliClient.api.FollowApi;
+import com.RobinNotBad.BiliClient.api.UserInfoApi;
 import com.RobinNotBad.BiliClient.model.FollowTag;
 import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
@@ -59,11 +62,54 @@ public class FollowUsersActivity extends RefreshListActivity {
         }
     }
 
+    private boolean canCancelFollow() {
+        return mode == 0 && mid == SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+    }
+
+    private boolean confirmCancelFollow(UserInfo user, Runnable onSuccess) {
+        if (!canCancelFollow() || user == null) return false;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("取消关注")
+                .setMessage("确定取消关注「" + user.name + "」吗？")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("确定", null)
+                .create();
+        com.RobinNotBad.BiliClient.util.MsgUtil.prepareAlertDialog(dialog);
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            dialog.dismiss();
+            CenterThreadPool.run(() -> {
+                try {
+                    int code = UserInfoApi.followUser(user.mid, false, user.relationAttribute);
+                    if (code == 0) {
+                        runOnUiThread(onSuccess);
+                        MsgUtil.showMsg("已取消关注");
+                    } else {
+                        MsgUtil.showMsg("取消关注失败：" + code);
+                    }
+                } catch (Exception e) {
+                    MsgUtil.err(e);
+                }
+            });
+        });
+        return true;
+    }
+
     private void loadNormalMode() {
         CenterThreadPool.run(() -> {
             try {
                 int result = mode == 0 ? FollowApi.getFollowingList(mid, page, userList) : FollowApi.getFollowerList(mid, page, userList);
                 adapter = new UserListAdapter(this, userList);
+                if (canCancelFollow()) {
+                    adapter.setOnItemLongClickListener((position, user) ->
+                            confirmCancelFollow(user, () -> {
+                                if (position >= 0 && position < userList.size()
+                                        && userList.get(position).mid == user.mid) {
+                                    userList.remove(position);
+                                    adapter.notifyItemRemoved(position);
+                                }
+                            }));
+                }
                 setOnLoadMoreListener(this::continueLoading);
                 setRefreshing(false);
                 setAdapter(adapter);
@@ -90,6 +136,10 @@ public class FollowUsersActivity extends RefreshListActivity {
                 runOnUiThread(() -> {
                     groupAdapter = new FollowGroupAdapter(this);
                     groupAdapter.setOnGroupExpandListener(tagid -> loadGroupUsers(tagid));
+                    if (canCancelFollow()) {
+                        groupAdapter.setOnUserLongClickListener(user ->
+                                confirmCancelFollow(user, () -> groupAdapter.removeUser(user.mid)));
+                    }
                     setAdapter(groupAdapter);
                     for (FollowTag tag : tagList) {
                         if (tag.count > 0) {

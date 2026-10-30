@@ -350,13 +350,8 @@ public class TerminalContext {
     }
 
     public LiveData<Result<Reply>> getReply(ContentType contentType, long contentId, long replyId) {
-        String key = contentType.getTypeCode() + "_" + contentId + "_" + replyId;
-        Object obj = contentLruCache.get(key);
-        if (obj instanceof Reply) {
-            return new MutableLiveData<>(Result.success((Reply) obj));
-        } else {
-            return CenterThreadPool.supplyAsyncWithLiveData(() -> fetchReply(contentType, contentId, replyId, true).getOrThrow());
-        }
+        // Comment counts and account reactions must be fetched again on entry and pull-to-refresh.
+        return CenterThreadPool.supplyAsyncWithLiveData(() -> fetchReply(contentType, contentId, replyId, false).getOrThrow());
     }
 
 

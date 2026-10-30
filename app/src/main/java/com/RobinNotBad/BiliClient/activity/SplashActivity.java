@@ -29,6 +29,7 @@ import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
+import com.RobinNotBad.BiliClient.util.HotConfigManager;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.StartupRoutePolicy;
 
@@ -204,7 +205,10 @@ public class SplashActivity extends Activity {
 
     private void prepareBiliRouteWithTimeout(long timeout, TimeUnit unit)
             throws IOException, JSONException {
-        FutureTask<Boolean> probe = new FutureTask<>(NetWorkUtil::prepareBiliRoute);
+        FutureTask<Boolean> probe = new FutureTask<>(() -> {
+            if (NetWorkUtil.isRelayActive()) HotConfigManager.ensureRelayReady();
+            return NetWorkUtil.prepareBiliRoute();
+        });
         Thread probeThread = new Thread(probe, "bili-startup-probe");
         probeThread.setDaemon(true);
         probeThread.start();

@@ -24,4 +24,15 @@ public class PlaybackProgressGuardTest {
         assertEquals(79_500L, guard.accept(79_500L, 120_000L, 2_250L));
         assertEquals(80_500L, guard.accept(80_500L, 120_000L, 2_500L));
     }
+
+    @Test
+    public void acceptsReplayFromTheBeginningAfterCompletion() {
+        PlaybackProgressGuard guard = new PlaybackProgressGuard();
+        assertEquals(120_000L, guard.accept(120_000L, 120_000L, 1_000L));
+
+        guard.recordSeek(0L, 120_000L, 2_000L);
+
+        assertEquals(0L, guard.accept(0L, 120_000L, 2_100L));
+        assertEquals(1_000L, guard.accept(1_000L, 120_000L, 3_100L));
+    }
 }

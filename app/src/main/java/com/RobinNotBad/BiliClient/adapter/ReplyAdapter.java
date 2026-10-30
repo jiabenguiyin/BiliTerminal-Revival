@@ -19,6 +19,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.widget.TooltipCompat;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -29,6 +31,8 @@ import com.RobinNotBad.BiliClient.activity.reply.ReplyInfoActivity;
 import com.RobinNotBad.BiliClient.activity.reply.WriteReplyActivity;
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
 import com.RobinNotBad.BiliClient.api.ReplyApi;
+import com.RobinNotBad.BiliClient.event.ReplyTopEvent;
+import com.RobinNotBad.BiliClient.event.ReplyStateEvent;
 import com.RobinNotBad.BiliClient.listener.OnItemClickListener;
 import com.RobinNotBad.BiliClient.model.Reply;
 import com.RobinNotBad.BiliClient.model.UserInfo;
@@ -37,17 +41,21 @@ import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
+import com.RobinNotBad.BiliClient.util.ReplyStateStore;
+import com.RobinNotBad.BiliClient.util.ReplyStateSync;
 import com.RobinNotBad.BiliClient.util.StringUtil;
 import com.bumptech.glide.Glide;
-import com.bumptech.glide.load.DecodeFormat;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.request.RequestOptions;
 import com.google.android.material.button.MaterialButton;
 
 import org.json.JSONException;
+import org.greenrobot.eventbus.EventBus;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 //评论Adapter
 //2023-07-22
@@ -60,7 +68,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     public long count = -1;
     final Context context;
     final ArrayList<Reply> replyList;
-    final long oid;
+    private long oid;
     final long up_mid;
     final long root;
     final int type;
@@ -68,6 +76,9 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     public final int replyType;
     private long highlightRpid = -1;
     private final int highlightColor = Color.argb(110, 254, 103, 154);
+    private final Set<Long> pendingTopRequests = new HashSet<>();
+    private final Set<Long> appliedDeletions = new HashSet<>();
+    private final long accountMid;
     OnItemClickListener listener;
 
     public ReplyAdapter(Context context, ArrayList<Reply> replyList, long oid, long root, int type, int sort,
@@ -80,10 +91,16 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         this.sort = sort;
         this.replyType = type;
         this.up_mid = up_mid;
+        accountMid = ReplyStateSync.account();
+        ReplyStateSync.applyLatest(replyList, type, oid);
     }
 
     public void setOnSortSwitchListener(OnItemClickListener listener) {
         this.listener = listener;
+    }
+
+    public void setOid(long oid) {
+        this.oid = oid;
     }
 
     public void setHighlightRpid(long rpid) {
@@ -224,6 +241,16 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             StringUtil.setCopy(replyHolder.message);
             replyHolder.message.setOnTouchListener(new StringUtil.ClickableSpanTouchListener());
 
+            boolean canPin = oid > 0 && reply.rpid > 0 && ReplyApi.canManageReplyTop(
+                    SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0), up_mid, reply.root);
+            replyHolder.pinBtn.setVisibility(canPin ? View.VISIBLE : View.GONE);
+            replyHolder.pinBtn.setEnabled(!pendingTopRequests.contains(reply.rpid));
+            String pinLabel = context.getString(reply.isTop ? R.string.reply_unpin : R.string.reply_pin);
+            replyHolder.pinBtn.setContentDescription(pinLabel);
+            TooltipCompat.setTooltipText(replyHolder.pinBtn, pinLabel);
+            replyHolder.pinBtn.setColorFilter(reply.isTop ? Color.rgb(0xfe, 0x67, 0x9a) : Color.WHITE);
+            replyHolder.pinBtn.setOnClickListener(canPin ? view -> createReplyTopDialog(reply).show() : null);
+
             replyHolder.likeCount.setText(toWan(reply.likeCount));
 
             if (reply.liked) {
@@ -302,7 +329,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                 replyHolder.imageCard.setVisibility(View.VISIBLE);
                 replyHolder.imageCount.setVisibility(View.VISIBLE);
 
-                String firstImageUrl = GlideUtil.url_card(reply.pictureList.get(0));
+                String firstImageUrl = GlideUtil.url_original(reply.pictureList.get(0));
                 if (!firstImageUrl.equals(replyHolder.lastImageUrl)) {
                     replyHolder.lastImageUrl = firstImageUrl;
                     // Reply rows can finish binding after their Activity has
@@ -311,7 +338,6 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     Glide.with(BiliTerminal.context).asDrawable().load(firstImageUrl)
                             .transition(GlideUtil.getTransitionOptions())
                             .placeholder(R.mipmap.placeholder)
-                            .format(DecodeFormat.PREFER_RGB_565)
                             .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                             .into(replyHolder.imageCard);
                 }
@@ -321,6 +347,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     Intent intent = new Intent();
                     intent.setClass(context, ImageViewerActivity.class);
                     intent.putExtra("imageList", reply.pictureList);
+                    intent.putExtra("loadOriginal", true);
                     context.startActivity(intent);
                 });
             } else {
@@ -344,88 +371,8 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                 context.startActivity(intent);
             });
 
-            replyHolder.likeCount.setOnClickListener(view -> CenterThreadPool.run(() -> {
-                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) {
-                    ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg("还没有登录喵~"));
-                    return;
-                }
-                if (!reply.liked) {
-                    try {
-                        if (ReplyApi.likeReply(oid, reply.rpid, replyType, true) == 0) {
-                            reply.liked = true;
-                            ((Activity) context).runOnUiThread(() -> {
-                                MsgUtil.showMsg("点赞成功");
-                                replyHolder.likeCount.setText(toWan(++reply.likeCount));
-                                replyHolder.likeCount.setTextColor(Color.rgb(0xfe, 0x67, 0x9a));
-                                replyHolder.likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                                        ContextCompat.getDrawable(context, R.drawable.icon_reply_like1), null, null,
-                                        null);
-                            });
-                        } else
-                            ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg("点赞失败"));
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                } else {
-                    try {
-                        if (ReplyApi.likeReply(oid, reply.rpid, replyType, false) == 0) {
-                            reply.liked = false;
-                            ((Activity) context).runOnUiThread(() -> {
-                                MsgUtil.showMsg("取消成功");
-                                replyHolder.likeCount.setText(toWan(--reply.likeCount));
-                                replyHolder.likeCount.setTextColor(Color.rgb(0xff, 0xff, 0xff));
-                                replyHolder.likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                                        ContextCompat.getDrawable(context, R.drawable.icon_reply_like0), null, null,
-                                        null);
-                            });
-                        } else
-                            ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg("取消失败"));
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }));
-
-            replyHolder.dislikeBtn.setOnClickListener(view -> CenterThreadPool.run(() -> {
-                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) {
-                    ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg("还没有登录喵~"));
-                    return;
-                }
-
-                boolean targetAction = !reply.hated;
-                try {
-                    if (ReplyApi.hateReply(oid, reply.rpid, replyType, targetAction) == 0) {
-                        reply.hated = targetAction;
-                        if (targetAction && reply.liked) {
-                            reply.liked = false;
-                            if (reply.likeCount > 0) reply.likeCount--;
-                        }
-                        ((Activity) context).runOnUiThread(() -> {
-                            if (reply.hated) {
-                                replyHolder.dislikeBtn.setColorFilter(Color.rgb(0xfe, 0x67, 0x9a));
-                            } else {
-                                replyHolder.dislikeBtn.clearColorFilter();
-                            }
-                            if (reply.hated) {
-                                replyHolder.likeCount.setText(toWan(reply.likeCount));
-                                replyHolder.likeCount.setTextColor(Color.WHITE);
-                                replyHolder.likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                                        ContextCompat.getDrawable(context, R.drawable.icon_reply_like0), null, null, null);
-                            }
-                            MsgUtil.showMsg(reply.hated ? "点踩成功" : "取消点踩成功");
-                        });
-                    } else {
-                        ((Activity) context).runOnUiThread(() -> MsgUtil.showMsg(
-                                targetAction ? "点踩失败" : "取消点踩失败"));
-                    }
-                } catch (IOException | JSONException e) {
-                    ((Activity) context).runOnUiThread(() -> MsgUtil.err(e));
-                }
-            }));
+            replyHolder.likeCount.setOnClickListener(view -> changeReaction(reply, true));
+            replyHolder.dislikeBtn.setOnClickListener(view -> changeReaction(reply, false));
 
             // 删除按钮
             if (isManager || reply.sender.mid == SharedPreferencesUtil.getLong("mid", 0)) {
@@ -439,19 +386,22 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     public boolean onLongClick(View view) {
                         long currentTime = System.currentTimeMillis();
                         if (longClickPosition == realPosition && currentTime - longClickTime < 6000) {
+                            long account = ReplyStateSync.account();
+                            long requestOid = oid;
                             CenterThreadPool.run(() -> {
                                 try {
-                                    int result = ReplyApi.deleteReply(oid, reply.rpid, replyType);
+                                    if (account != ReplyStateSync.account()) return;
+                                    int result = ReplyApi.deleteReply(requestOid, reply.rpid, replyType);
                                     if (result == 0) {
-                                        replyList.remove(realPosition);
-                                        ((Activity) context).runOnUiThread(() -> {
-                                            notifyItemRemoved(position);
-                                            notifyItemRangeChanged(position, replyList.size() - position);
+                                        CenterThreadPool.runOnUiThread(() -> {
+                                            if (account != ReplyStateSync.account()) return;
+                                            ReplyStateStore.State state = ReplyStateSync.STORE.delete(
+                                                    account, replyType, requestOid, reply.rpid, reply.root);
+                                            applyReplyState(new ReplyStateEvent(state));
+                                            ReplyStateSync.publish(state);
                                             longClickPosition = -1;
                                             MsgUtil.showMsg("删除成功~");
-                                            if (realPosition == 0 && isDetail) {
-                                                ((Activity) context).finish();
-                                            }
+                                            if (reply.root == 0 && isDetail) ((Activity) context).finish();
                                         });
                                     } else {
                                         String msg = "操作失败：" + result;
@@ -502,6 +452,144 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         }
     }
 
+    AlertDialog createReplyTopDialog(Reply reply) {
+        boolean pin = !reply.isTop;
+        return new AlertDialog.Builder(context)
+                .setTitle(pin ? R.string.reply_pin : R.string.reply_unpin)
+                .setMessage(pin ? R.string.reply_pin_confirm : R.string.reply_unpin_confirm)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> changeReplyTop(reply, pin))
+                .create();
+    }
+
+    private void changeReplyTop(Reply reply, boolean pinned) {
+        long accountMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        if (!ReplyApi.canManageReplyTop(accountMid, up_mid, reply.root)
+                || !replyList.contains(reply) || !pendingTopRequests.add(reply.rpid)) return;
+        long requestOid = oid;
+        notifyDataSetChanged();
+        CenterThreadPool.run(() -> {
+            try {
+                if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) != accountMid) return;
+                int code = ReplyApi.setReplyTop(requestOid, reply.rpid, replyType, pinned);
+                CenterThreadPool.runOnUiThread(() -> {
+                    if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) != accountMid) return;
+                    if (code == 0) {
+                        ReplyTopEvent event = new ReplyTopEvent(requestOid, replyType, reply.rpid, pinned);
+                        applyReplyTop(event);
+                        EventBus.getDefault().post(event);
+                        MsgUtil.showMsg(context.getString(pinned ? R.string.reply_pin_success : R.string.reply_unpin_success));
+                    } else {
+                        String error;
+                        switch (code) {
+                            case -101: error = "登录已失效，请重新登录后重试"; break;
+                            case -111: error = "登录校验失败，请重新登录后重试"; break;
+                            case -403: error = "没有管理这个评论区的权限"; break;
+                            case 12029: error = "已有置顶评论，请先取消原置顶"; break;
+                            case 12030: error = "只能置顶一级评论"; break;
+                            default: error = "置顶操作失败：" + code;
+                        }
+                        MsgUtil.showMsgLong(error);
+                    }
+                });
+            } catch (IOException | JSONException error) {
+                CenterThreadPool.runOnUiThread(() -> MsgUtil.err(error));
+            } finally {
+                CenterThreadPool.runOnUiThread(() -> {
+                    pendingTopRequests.remove(reply.rpid);
+                    notifyDataSetChanged();
+                });
+            }
+        });
+    }
+
+    private void changeReaction(Reply reply, boolean likeAction) {
+        long account = ReplyStateSync.account(), requestOid = oid;
+        if (account != accountMid) { MsgUtil.showMsg("账号已切换，请重新打开评论区"); return; }
+        if (account == 0) { MsgUtil.showMsg("还没有登录喵~"); return; }
+        if (!ReplyStateSync.STORE.beginMutation(account, replyType, requestOid, reply.rpid)) return;
+        ReplyStateStore.State latest = ReplyStateSync.STORE.get(account, replyType, requestOid, reply.rpid);
+        if (latest != null) ReplyStateSync.copy(reply, latest);
+        boolean target = !(likeAction ? reply.liked : reply.hated);
+        CenterThreadPool.run(() -> {
+            try {
+                if (account != ReplyStateSync.account()) return;
+                int code = likeAction ? ReplyApi.likeReply(requestOid, reply.rpid, replyType, target)
+                        : ReplyApi.hateReply(requestOid, reply.rpid, replyType, target);
+                CenterThreadPool.runOnUiThread(() -> {
+                    if (account != ReplyStateSync.account()) return;
+                    if (code == 0) {
+                        ReplyStateStore.State state = ReplyStateSync.STORE.react(account, replyType,
+                                requestOid, reply.rpid, reply.root, reply.likeCount, reply.liked,
+                                reply.hated, reply.childCount, likeAction, target);
+                        applyReplyState(new ReplyStateEvent(state));
+                        ReplyStateSync.publish(state);
+                        MsgUtil.showMsg(likeAction ? (target ? "点赞成功" : "取消成功")
+                                : (target ? "点踩成功" : "取消点踩成功"));
+                    } else MsgUtil.showMsg("操作失败：" + code);
+                });
+            } catch (IOException | JSONException error) {
+                CenterThreadPool.runOnUiThread(() -> {
+                    if (account == ReplyStateSync.account()) MsgUtil.err(error);
+                });
+            } finally {
+                CenterThreadPool.runOnUiThread(() -> ReplyStateSync.STORE.endMutation(
+                        account, replyType, requestOid, reply.rpid));
+            }
+        });
+    }
+
+    public void applyLatestReplyStates() {
+        if (ReplyStateSync.account() != accountMid) return;
+        ReplyStateSync.applyLatest(replyList, replyType, oid);
+        notifyDataSetChanged();
+    }
+
+    public void applyReplyState(ReplyStateEvent event) {
+        ReplyStateStore.State incoming = event.state;
+        if (incoming.account != accountMid || incoming.account != ReplyStateSync.account()
+                || incoming.type != replyType || incoming.oid != oid) return;
+        ReplyStateStore.State state = ReplyStateSync.STORE.get(incoming.account, replyType, oid, incoming.rpid);
+        if (state == null) state = incoming;
+        if (state.deleted) {
+            if (!appliedDeletions.add(state.rpid)) return;
+            for (int i = replyList.size() - 1; i >= 0; i--) {
+                Reply reply = replyList.get(i);
+                if (reply.rpid == state.rpid) {
+                    replyList.remove(i);
+                    if (reply.root == 0 && count > 0) count--;
+                }
+                else if (reply.rpid == state.root) {
+                    reply.childCount = Math.max(0, reply.childCount - 1);
+                    if (reply.childMsgList != null)
+                        for (int j = reply.childMsgList.size() - 1; j >= 0; j--)
+                            if (reply.childMsgList.get(j).rpid == state.rpid) reply.childMsgList.remove(j);
+                }
+            }
+        }
+        ReplyStateSync.applyLatest(replyList, replyType, oid);
+        notifyDataSetChanged();
+    }
+
+    public void applyReplyTop(ReplyTopEvent event) {
+        if (event.oid != oid || event.type != replyType) return;
+        Reply target = null;
+        for (Reply reply : replyList) {
+            if (reply.root != 0) continue;
+            if (reply.rpid == event.rpid) {
+                reply.setTop(event.pinned);
+                target = reply;
+            } else if (event.pinned && reply.isTop) {
+                reply.setTop(false);
+            }
+        }
+        if (target != null && event.pinned && !isDetail) {
+            replyList.remove(target);
+            replyList.add(0, target);
+        }
+        notifyDataSetChanged();
+    }
+
     @Override
     public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
         if (holder instanceof ReplyHolder) {
@@ -546,6 +634,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     public static class ReplyHolder extends RecyclerView.ViewHolder {
         final ImageView replyAvatar;
         final ImageView dislikeBtn;
+        final ImageView pinBtn;
         final LinearLayout childReplies;
         final TextView message;
         final TextView userName;
@@ -566,6 +655,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
 
             replyAvatar = itemView.findViewById(R.id.replyAvatar);
             dislikeBtn = itemView.findViewById(R.id.dislikeBtn);
+            pinBtn = itemView.findViewById(R.id.item_reply_top);
             childReplies = itemView.findViewById(R.id.repliesList);
             message = itemView.findViewById(R.id.replyText);
             userName = itemView.findViewById(R.id.replyUsername);

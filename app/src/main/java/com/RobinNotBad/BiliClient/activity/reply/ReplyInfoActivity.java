@@ -20,6 +20,8 @@ import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
 import com.RobinNotBad.BiliClient.adapter.ReplyAdapter;
 import com.RobinNotBad.BiliClient.api.ReplyApi;
 import com.RobinNotBad.BiliClient.event.ReplyEvent;
+import com.RobinNotBad.BiliClient.event.ReplyTopEvent;
+import com.RobinNotBad.BiliClient.event.ReplyStateEvent;
 import com.RobinNotBad.BiliClient.model.ContentType;
 import com.RobinNotBad.BiliClient.model.Reply;
 import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
@@ -257,6 +259,23 @@ public class ReplyInfoActivity extends BaseActivity {
     @Override
     protected boolean eventBusEnabled() {
         return true;
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onReplyTopChanged(ReplyTopEvent event) {
+        if (replyAdapter != null) replyAdapter.applyReplyTop(event);
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onReplyStateChanged(ReplyStateEvent event) {
+        if (replyAdapter != null) replyAdapter.applyReplyState(event);
+        if (event.state.deleted && event.state.account == com.RobinNotBad.BiliClient.util.ReplyStateSync.account()
+                && event.state.oid == oid && event.state.type == type.getTypeCode() && event.state.rpid == rpid) finish();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (replyAdapter != null) replyAdapter.applyLatestReplyStates();
     }
 
     @Subscribe(threadMode = ThreadMode.ASYNC, sticky = true, priority = 1)

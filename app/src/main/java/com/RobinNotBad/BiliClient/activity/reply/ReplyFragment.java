@@ -19,6 +19,8 @@ import com.RobinNotBad.BiliClient.activity.base.RefreshListFragment;
 import com.RobinNotBad.BiliClient.adapter.ReplyAdapter;
 import com.RobinNotBad.BiliClient.api.ReplyApi;
 import com.RobinNotBad.BiliClient.event.ReplyEvent;
+import com.RobinNotBad.BiliClient.event.ReplyTopEvent;
+import com.RobinNotBad.BiliClient.event.ReplyStateEvent;
 import com.RobinNotBad.BiliClient.model.ContentType;
 import com.RobinNotBad.BiliClient.model.Reply;
 import com.RobinNotBad.BiliClient.model.UserInfo;
@@ -29,6 +31,10 @@ import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 
 //视频下评论页面，评论详情见ReplyInfoActivity
 //部分通用代码在VideoReplyAdapter内
@@ -49,6 +55,8 @@ public class ReplyFragment extends RefreshListFragment {
     private String pagination = "";
     private boolean isManager = false;
     private boolean legacyPaging = false;
+    private int refreshGeneration = 0;
+    private long pendingAid = -1;
     private final Runnable clearHighlightRunnable = () -> {
         if (replyAdapter != null) replyAdapter.clearHighlight();
     };
@@ -131,6 +139,33 @@ public class ReplyFragment extends RefreshListFragment {
             loadSeek = getArguments().getLong("loadSeek", seek);
             mid = getArguments().getLong("mid", -1);
         }
+        EventBus.getDefault().register(this);
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onReplyTopChanged(ReplyTopEvent event) {
+        if (event.oid != aid || event.type != type || replyAdapter == null || getView() == null) return;
+        replyAdapter.applyReplyTop(event);
+        refresh(aid);
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onReplyStateChanged(ReplyStateEvent event) {
+        if (replyAdapter != null) {
+            replyAdapter.applyReplyState(event);
+            if (replyAdapter.count >= 0) count = (int) Math.min(Integer.MAX_VALUE, replyAdapter.count);
+        }
+    }
+
+    @Override public void onResume() {
+        super.onResume();
+        if (replyAdapter != null) replyAdapter.applyLatestReplyStates();
+    }
+
+    @Override
+    public void onDestroy() {
+        EventBus.getDefault().unregister(this);
+        super.onDestroy();
     }
 
     @Override
@@ -162,7 +197,11 @@ public class ReplyFragment extends RefreshListFragment {
         setAdapter(replyAdapter);
         emptyView.setOnClickListener(v -> refresh(aid));
 
-        if (!dontload) refresh(aid);
+        if (!dontload || pendingAid > 0) {
+            long initialAid = pendingAid > 0 ? pendingAid : aid;
+            pendingAid = -1;
+            refresh(initialAid);
+        }
     }
 
     public void setManager(Object source) {
@@ -287,19 +326,28 @@ public class ReplyFragment extends RefreshListFragment {
 
     @SuppressLint("NotifyDataSetChanged")
     public void refresh(long aid) {
+        this.aid = aid;
+        if (replyAdapter == null || recyclerView == null || emptyView == null) {
+            pendingAid = aid;
+            return;
+        }
+        final int requestGeneration = ++refreshGeneration;
+        final long requestAid = aid;
         pagination = "";
         page = 1;
         legacyPaging = false;
         this.aid = aid;
+        replyAdapter.setOid(aid);
         showReplyList();
         setRefreshing(true);
         CenterThreadPool.run(() -> {
             try {
                 List<Reply> list = new ArrayList<>();
-                Pair<Integer, String> pageState = loadFirstPage(list);
+                Pair<Integer, String> pageState = loadFirstPage(requestAid, list);
                 int result = pageState.first;
                 this.pagination = pageState.second;
                 setRefreshing(false);
+                if (requestGeneration != refreshGeneration || this.aid != requestAid) return;
                 if (result == -1) {
                     showReplyMessage("评论加载失败\n点击重试");
                     return;
@@ -331,10 +379,10 @@ public class ReplyFragment extends RefreshListFragment {
         });
     }
 
-    private Pair<Integer, String> loadFirstPage(List<Reply> list) throws Exception {
+    private Pair<Integer, String> loadFirstPage(long requestAid, List<Reply> list) throws Exception {
         Exception lazyError = null;
         try {
-            Pair<Integer, String> pageState = ReplyApi.getRepliesLazy(aid, loadSeek, pagination, type, sort, list);
+            Pair<Integer, String> pageState = ReplyApi.getRepliesLazy(requestAid, loadSeek, pagination, type, sort, list);
             // A notification may point at a child reply that the seek endpoint cannot
             // resolve as a root. Fall back to the ordinary first page instead of showing
             // an incomplete comment list that makes the target appear to have vanished.
@@ -346,7 +394,7 @@ public class ReplyFragment extends RefreshListFragment {
         list.clear();
         pagination = "";
         try {
-            int result = ReplyApi.getReplies(aid, 0, 1,
+            int result = ReplyApi.getReplies(requestAid, 0, 1,
                     ContentType.getContentType(type), getLegacySort(), list);
             if (result != -1) {
                 legacyPaging = true;

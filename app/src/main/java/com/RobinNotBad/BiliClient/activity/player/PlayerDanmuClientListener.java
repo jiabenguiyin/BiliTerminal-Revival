@@ -12,12 +12,15 @@ import com.netease.hearttouch.brotlij.Brotli;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.zip.Inflater;
 
 import okhttp3.Response;
 import okhttp3.WebSocket;
@@ -110,33 +113,7 @@ public class PlayerDanmuClientListener extends WebSocketListener {
     @Override
     public void onMessage(@NonNull WebSocket webSocket, @NonNull ByteString bytes) {
         super.onMessage(webSocket, bytes);
-
-        int actionCode = bytes.getByte(11);
-        switch (actionCode) {
-            case 8:
-                Log.e("debug", "弹幕流认证成功");
-                heartTimer = new Timer();
-                TimerTask heartTimerTask = new TimerTask() {
-                    @Override
-                    public void run() {
-                        Log.e("debug", "发送心跳包");
-                        try {
-                            webSocket.send(messageData.getData(1, 2, "".getBytes(Charset.forName("UTF-8"))));
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                };
-                heartTimer.schedule(heartTimerTask, 3000, 32000);
-                break;
-
-            case 5:
-                plainPackage(bytes);
-                break;
-
-            default:
-                break;
-        }
+        handlePackets(webSocket, bytes.toByteArray());
     }
 
     @Override
@@ -160,25 +137,142 @@ public class PlayerDanmuClientListener extends WebSocketListener {
         if (heartTimer != null) heartTimer.cancel();
     }
 
-    //处理普通包
-    private void plainPackage(ByteString bytes) {
-        try {
-            JSONObject result;
+    private void handlePackets(WebSocket webSocket, byte[] packetBytes) {
+        int offset = 0;
+        while (offset + 16 <= packetBytes.length) {
+            int packetLength = readInt(packetBytes, offset);
+            int headerLength = readUnsignedShort(packetBytes, offset + 4);
+            int protocolVersion = readUnsignedShort(packetBytes, offset + 6);
+            int actionCode = readInt(packetBytes, offset + 8);
+            if (packetLength < headerLength || headerLength < 16
+                    || packetLength > packetBytes.length - offset) {
+                Log.e("debug", "直播弹幕数据包长度异常：" + packetLength);
+                return;
+            }
 
-            //有些包不会压缩，要判断一下，虽然方式有点（
-            ByteString bytes2 = bytes.substring(bytes.getByte(5));
-            if (Brotli.decompress(bytes2.toByteArray()).length > 5) {
-                ByteString bytes3 = ByteString.of(Brotli.decompress(bytes2.toByteArray()));
-                result = new JSONObject(bytes3.substring(bytes3.getByte(5)).utf8()); //问就是懒得用别的方式sub
-            } else if (bytes2.utf8().contains("{"))
-                result = new JSONObject(bytes2.utf8().substring(bytes2.utf8().indexOf("{")));
-            else return;
+            byte[] body = Arrays.copyOfRange(packetBytes, offset + headerLength, offset + packetLength);
+            if (actionCode == 8) {
+                startHeartbeat(webSocket);
+            } else if (actionCode == 5) {
+                if (protocolVersion == 3) {
+                    try {
+                        handlePackets(webSocket, Brotli.decompress(body));
+                    } catch (Exception error) {
+                        Log.e("debug", "直播弹幕 Brotli 解压失败", error);
+                    }
+                } else if (protocolVersion == 2) {
+                    try {
+                        handlePackets(webSocket, inflate(body));
+                    } catch (Exception error) {
+                        Log.e("debug", "直播弹幕压缩数据解压失败", error);
+                    }
+                } else {
+                    handleJson(body);
+                }
+            } else if (actionCode == 3 && body.length >= 4 && playerActivity != null) {
+                long online = readUnsignedInt(body, 0);
+                playerActivity.runOnUiThread(() -> playerActivity.online_number = String.valueOf(online));
+            }
+            offset += packetLength;
+        }
+    }
+
+    private void startHeartbeat(WebSocket webSocket) {
+        if (heartTimer != null) heartTimer.cancel();
+        Log.e("debug", "弹幕流认证成功");
+        heartTimer = new Timer("live-danmaku-heartbeat", true);
+        heartTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    webSocket.send(messageData.getData(1, 2,
+                            "".getBytes(Charset.forName("UTF-8"))));
+                } catch (Exception e) {
+                    Log.e("debug", "发送直播弹幕心跳失败", e);
+                }
+            }
+        }, 3000, 32000);
+    }
+
+    private byte[] inflate(byte[] data) throws Exception {
+        Inflater inflater = new Inflater();
+        inflater.setInput(data);
+        ByteArrayOutputStream output = new ByteArrayOutputStream(data.length * 2);
+        byte[] buffer = new byte[4096];
+        try {
+            while (!inflater.finished()) {
+                int count = inflater.inflate(buffer);
+                if (count == 0 && inflater.needsInput()) break;
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        } finally {
+            inflater.end();
+        }
+    }
+
+    private int readUnsignedShort(byte[] data, int offset) {
+        return ((data[offset] & 0xff) << 8) | (data[offset + 1] & 0xff);
+    }
+
+    private int readInt(byte[] data, int offset) {
+        return ((data[offset] & 0xff) << 24)
+                | ((data[offset + 1] & 0xff) << 16)
+                | ((data[offset + 2] & 0xff) << 8)
+                | (data[offset + 3] & 0xff);
+    }
+
+    private long readUnsignedInt(byte[] data, int offset) {
+        return ((long) (data[offset] & 0xff) << 24)
+                | ((long) (data[offset + 1] & 0xff) << 16)
+                | ((long) (data[offset + 2] & 0xff) << 8)
+                | (long) (data[offset + 3] & 0xff);
+    }
+
+    // 解压后的直播包可能连续拼接多条 JSON，逐个对象解析，避免后一条消息被丢弃。
+    private void handleJson(byte[] body) {
+        String text = new String(body, Charset.forName("UTF-8"));
+        int objectStart = -1;
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < text.length(); i++) {
+            char current = text.charAt(i);
+            if (objectStart < 0) {
+                if (current == '{') {
+                    objectStart = i;
+                    depth = 1;
+                }
+                continue;
+            }
+
+            if (inString) {
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == '"') inString = false;
+                continue;
+            }
+
+            if (current == '"') inString = true;
+            else if (current == '{') depth++;
+            else if (current == '}' && --depth == 0) {
+                handleJsonObject(text.substring(objectStart, i + 1));
+                objectStart = -1;
+            }
+        }
+    }
+
+    private void handleJsonObject(String json) {
+        try {
+            JSONObject result = new JSONObject(json);
 
             JSONObject data;
             switch (result.getString("cmd")) {
 
                 //聊天弹幕
                 case "DANMU_MSG":
+                    if (playerActivity == null) break;
                     JSONArray info = result.getJSONArray("info");
                     String nickname = info.getJSONArray(0).getJSONObject(15).getJSONObject("user").getJSONObject("base").getString("name");
                     String content = info.getString(1);
@@ -192,10 +286,14 @@ public class PlayerDanmuClientListener extends WebSocketListener {
                 //看过的人数
                 case "WATCHED_CHANGE":
                     data = result.getJSONObject("data");
-                    playerActivity.online_number = data.getString("text_large");
+                    if (playerActivity != null) {
+                        String online = data.getString("text_large");
+                        playerActivity.runOnUiThread(() -> playerActivity.online_number = online);
+                    }
                     break;
 
                 case "INTERACT_WORD":
+                    if (playerActivity == null) break;
                     data = result.getJSONObject("data");
 
                     //进入直播间
@@ -206,6 +304,7 @@ public class PlayerDanmuClientListener extends WebSocketListener {
 
                 //送礼弹幕
                 case "SEND_GIFT":
+                    if (playerActivity == null) break;
                     data = result.getJSONObject("data");
                     String content2 = data.getString("uname") + " " + data.getString("action") + data.getInt("num") + "个" + data.getString("giftName");
                     playerActivity.addDanmaku(content2, Color.WHITE, 25, 1, Color.argb(160, 255, 80, 80));
@@ -213,17 +312,20 @@ public class PlayerDanmuClientListener extends WebSocketListener {
 
                 //特殊入场
                 case "ENTRY_EFFECT":
+                    if (playerActivity == null) break;
                     data = result.getJSONObject("data");
                     playerActivity.addDanmaku(data.getString("copy_writing").replace("<%", "").replace("%>", ""), Color.WHITE, 25, 1, Color.argb(160, 80, 80, 255));
                     break;
 
                 //通知消息
                 case "NOTICE_MSG":
+                    if (playerActivity == null) break;
                     playerActivity.addDanmaku(result.getString("msg_common"), Color.RED, 25, 1, Color.argb(60, 255, 255, 255));
                     break;
 
                 //直播间消息修改
                 case "ROOM_CHANGE":
+                    if (playerActivity == null) break;
                     data = result.getJSONObject("data");
                     playerActivity.runOnUiThread(() -> {
                         try {

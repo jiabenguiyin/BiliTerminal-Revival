@@ -68,16 +68,17 @@ public class FolderChooseAdapter extends RecyclerView.Adapter<FolderChooseAdapte
         holder.itemView.setOnClickListener(view -> {
             if (!adding && position < chooseState.size() && position < fidList.size()) {
                 adding = true;
+                final int clickedPosition = position;
+                final long clickedFid = fidList.get(clickedPosition);
                 cardView.setStrokeColor(context.getResources().getColor(R.color.low_pink));
                 cardView.setStrokeWidth(ToolsUtil.dp2px(1f));
 
-                if (chooseState.get(position)) {
+                if (chooseState.get(clickedPosition)) {
                     CenterThreadPool.run(() -> {
                         try {
-                            int result = FavoriteApi.deleteFavorite(aid, fidList.get(position));
-                            adding = false;
+                            int result = FavoriteApi.deleteFavorite(aid, clickedFid);
                             if (result == 0) {
-                                chooseState.set(position, false);
+                                chooseState.set(clickedPosition, false);
                                 ((Activity) context).runOnUiThread(() -> setCardView(cardView, false));
                                 changed = true;
                             } else
@@ -87,6 +88,8 @@ public class FolderChooseAdapter extends RecyclerView.Adapter<FolderChooseAdapte
                                 });
                         } catch (IOException | JSONException e) {
                             e.printStackTrace();
+                        } finally {
+                            adding = false;
                         }
                     });
                 } else {
@@ -94,10 +97,9 @@ public class FolderChooseAdapter extends RecyclerView.Adapter<FolderChooseAdapte
                     cardView.setStrokeWidth(ToolsUtil.dp2px(0.1f));
                     CenterThreadPool.run(() -> {
                         try {
-                            int result = FavoriteApi.addFavorite(aid, fidList.get(position));
-                            adding = false;
+                            int result = FavoriteApi.addFavorite(aid, clickedFid);
                             if (result == 0) {
-                                chooseState.set(position, true);
+                                chooseState.set(clickedPosition, true);
                                 ((Activity) context).runOnUiThread(() -> setCardView(cardView, true));
                                 changed = true;
                                 added = true;
@@ -110,6 +112,8 @@ public class FolderChooseAdapter extends RecyclerView.Adapter<FolderChooseAdapte
                                 ((Activity) context).finish();
                         } catch (IOException | JSONException e) {
                             e.printStackTrace();
+                        } finally {
+                            adding = false;
                         }
                     });
                 }

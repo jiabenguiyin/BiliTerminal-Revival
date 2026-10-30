@@ -2,6 +2,7 @@ package com.RobinNotBad.BiliClient.activity;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.media.MediaScannerConnection;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
@@ -42,6 +43,7 @@ public class DownloadActivity extends BaseActivity {
     int type;
     boolean finish = false;
     boolean no_bili_headers = false;
+    boolean scanDownloadedMedia = false;
 
     final Timer timer = new Timer();
     final TimerTask showText = new TimerTask() {
@@ -67,6 +69,7 @@ public class DownloadActivity extends BaseActivity {
         type = intent.getIntExtra("type", 0);
         link = intent.getStringExtra("link");
         no_bili_headers = intent.getBooleanExtra("terminal", false);
+        scanDownloadedMedia = intent.getBooleanExtra("media_scan", false);
         progressText = findViewById(R.id.progressText);
         progressView = findViewById(R.id.progressView);
         scrHeight = window_height;
@@ -113,25 +116,29 @@ public class DownloadActivity extends BaseActivity {
         });
     }
 
-    private void downloadFile(String url, File file, String desc, boolean exitOnFinish) {
+    private boolean downloadFile(String url, File file, String desc, boolean exitOnFinish) {
         try {
             if (!file.exists()) file.createNewFile();
-            download(url, new FileOutputStream(file, false), desc, exitOnFinish);
+            boolean success = download(url, new FileOutputStream(file, false), desc, exitOnFinish);
+            if (success && scanDownloadedMedia) notifyMediaLibrary(file);
+            return success;
         } catch (IOException e) {
             fail(e);
+            return false;
         }
     }
 
-    private void downloadNode(String url, VideoStorageUtil.Node file, String desc, boolean exitOnFinish) {
+    private boolean downloadNode(String url, VideoStorageUtil.Node file, String desc, boolean exitOnFinish) {
         try {
-            download(url, file.openOutput(false), desc, exitOnFinish);
+            return download(url, file.openOutput(false), desc, exitOnFinish);
         } catch (IOException e) {
             fail(e);
+            return false;
         }
     }
 
-    private void download(String url, OutputStream output,
-                          String desc, boolean exitOnFinish) {
+    private boolean download(String url, OutputStream output,
+                             String desc, boolean exitOnFinish) {
         dldText = desc;
         try (Response response = NetWorkUtil.get(url,
                 no_bili_headers ? AppInfoApi.customHeaders : NetWorkUtil.webHeaders);
@@ -148,9 +155,26 @@ public class DownloadActivity extends BaseActivity {
             }
             target.flush();
             if (exitOnFinish) finishSuccessfully();
+            return true;
         } catch (IOException e) {
             fail(e);
+            return false;
         }
+    }
+
+    private void notifyMediaLibrary(File file) {
+        if (file == null || !file.isFile() || file.length() <= 0L) return;
+        String mime = getContentType(file.getName());
+        MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()},
+                new String[]{mime}, null);
+    }
+
+    private String getContentType(String name) {
+        String lower = name == null ? "" : name.toLowerCase(java.util.Locale.US);
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        return "image/jpeg";
     }
 
     private void downloadDanmaku(String url, VideoStorageUtil.Node target) {

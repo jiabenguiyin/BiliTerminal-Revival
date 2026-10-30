@@ -72,6 +72,7 @@ public class NetWorkUtil {
             "upos-*.akamaized.net",
             "*.hdslb.com",
             "*.biliapi.net",
+            "app.bilibili.com",
             "api.bilibili.com",
             "api.vc.bilibili.com",
             "api.live.bilibili.com",
@@ -378,6 +379,18 @@ public class NetWorkUtil {
         }
     }
 
+    public static JSONObject getJsonDirect(String url) throws IOException, JSONException {
+        return getJsonDirect(url, webHeaders);
+    }
+
+    public static JSONObject getJsonDirect(String url, ArrayList<String> headers)
+            throws IOException, JSONException {
+        try (Response response = executeGet(url, headers, null, false, getOkHttpInstance())) {
+            String bodyText = readJsonBodyText(url, response);
+            return parseJsonText(url, response, bodyText);
+        }
+    }
+
     private static String readJsonBodyText(String url, Response response) throws IOException {
         ResponseBody body = response.body();
         if (body == null) throw new IOException("接口返回为空：" + compactUrl(url));
@@ -488,6 +501,18 @@ public class NetWorkUtil {
             Logu.d("post-url", compactUrl(url));
         }
         return executePost(url, data, headers, contentType, shouldRouteUrlForRelay(url), getOkHttpInstance());
+    }
+
+    public static Response postDirect(String url, String data, List<String> headers,
+                                      String contentType) throws IOException {
+        if (!isDiagnosticUploadUrl(url)) {
+            Logu.d("post-url", compactUrl(url));
+        }
+        return executePost(url, data, headers, contentType, false, getOkHttpInstance());
+    }
+
+    public static Response postDirect(String url, String data, List<String> headers) throws IOException {
+        return postDirect(url, data, headers, "application/x-www-form-urlencoded");
     }
 
     private static Response executePost(String url, String data, List<String> headers, String contentType, boolean useRelay, OkHttpClient client) throws IOException {

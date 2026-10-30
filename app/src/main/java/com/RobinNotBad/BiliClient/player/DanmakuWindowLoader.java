@@ -32,6 +32,7 @@ public final class DanmakuWindowLoader {
     private final Source source;
     private final Listener listener;
     private final Clock clock;
+    private final int windowRadius;
     private final Map<Integer, DmSegMobileReply> cache = new LinkedHashMap<>();
     private final Map<Integer, Long> retryAt = new HashMap<>();
     private int current;
@@ -42,10 +43,16 @@ public final class DanmakuWindowLoader {
     private RequestCancellation activeRequest;
 
     public DanmakuWindowLoader(Executor executor, Source source, Listener listener, Clock clock) {
+        this(executor, source, listener, clock, 1);
+    }
+
+    public DanmakuWindowLoader(Executor executor, Source source, Listener listener,
+                               Clock clock, int windowRadius) {
         this.executor = executor;
         this.source = source;
         this.listener = listener;
         this.clock = clock;
+        this.windowRadius = Math.max(0, Math.min(1, windowRadius));
     }
 
     public synchronized void update(long positionMs, long durationMs) {
@@ -85,7 +92,8 @@ public final class DanmakuWindowLoader {
     }
 
     private boolean inWindow(int index) {
-        return index >= 1 && index <= last && Math.abs((long) index - current) <= 1L;
+        return index >= 1 && index <= last
+                && Math.abs((long) index - current) <= windowRadius;
     }
 
     private int nextSegment() {

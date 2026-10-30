@@ -2,27 +2,39 @@ package com.RobinNotBad.BiliClient.activity.message;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.view.animation.Animation;
-import android.view.animation.TranslateAnimation;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
 import com.RobinNotBad.BiliClient.adapter.message.PrivateMsgAdapter;
+import com.RobinNotBad.BiliClient.api.ImageUploadApi;
 import com.RobinNotBad.BiliClient.api.PrivateMsgApi;
 import com.RobinNotBad.BiliClient.model.PrivateMessage;
 import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DecodeFormat;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.request.RequestOptions;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -35,19 +47,44 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 public class PrivateMsgActivity extends BaseActivity {
+    private static final int MAX_IMAGES = 9;
+
     JSONObject allMsg = new JSONObject();
     List<PrivateMessage> list = Collections.synchronizedList(new ArrayList<>());
     JSONArray emoteArray = new JSONArray();
     RecyclerView msgView;
     EditText contentEt;
     ImageButton sendBtn;
+    ImageButton pickImageBtn;
     View layout_input;
+    View imagePreviewContainer;
+    LinearLayout imagePreviewRow;
     PrivateMsgAdapter adapter;
     long uid;
     boolean isLoadingMore = false;
-    Timer refreshTimer, animTimer;
+    Timer refreshTimer;
 
-    boolean animVisible = true;
+    private final ArrayList<Uri> selectedImages = new ArrayList<>();
+    private boolean sending;
+    private boolean previewExpanded;
+
+    private final ActivityResultLauncher<Intent> imageLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                Intent data = result.getData();
+                addImage(data.getData());
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN
+                        && data.getClipData() != null) {
+                    for (int i = 0; i < data.getClipData().getItemCount(); i++) {
+                        addImage(data.getClipData().getItemAt(i).getUri());
+                    }
+                }
+                if (selectedImages.size() > 0) {
+                    previewExpanded = true;
+                    updateImagePreview();
+                    MsgUtil.showMsg("已选择 " + selectedImages.size() + " 张图片");
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,7 +94,15 @@ public class PrivateMsgActivity extends BaseActivity {
         msgView = findViewById(R.id.msg_view);
         contentEt = findViewById(R.id.msg_input_et);
         sendBtn = findViewById(R.id.send_btn);
+        pickImageBtn = findViewById(R.id.pick_image_btn);
         layout_input = findViewById(R.id.layout_input);
+        imagePreviewContainer = findViewById(R.id.image_preview_container);
+        imagePreviewRow = findViewById(R.id.image_preview_row);
+        layout_input.addOnLayoutChangeListener((view, left, top, right, bottom,
+                                                oldLeft, oldTop, oldRight, oldBottom) -> updateMessagePadding());
+        View topbar = findViewById(R.id.top);
+        topbar.addOnLayoutChangeListener((view, left, top, right, bottom,
+                                        oldLeft, oldTop, oldRight, oldBottom) -> updateMessagePadding());
 
         Intent intent = getIntent();
         uid = intent.getLongExtra("uid", 114514);
@@ -92,33 +137,13 @@ public class PrivateMsgActivity extends BaseActivity {
                             super.onScrollStateChanged(recyclerView, newState);
                             switch (newState) {
                                 case RecyclerView.SCROLL_STATE_DRAGGING:
+                                    previewExpanded = false;
+                                    updateImagePreview();
                                     if (!recyclerView.canScrollVertically(-1) && !isLoadingMore) {
                                         loadMore();
                                         Log.e("", "滑动到顶部，开始刷新");
                                     }
                                     break;
-                                case RecyclerView.SCROLL_STATE_IDLE:
-                                    if (!animVisible) {
-                                        if (animTimer != null) animTimer.cancel();
-                                        animTimer = new Timer();
-                                        animTimer.schedule(new TimerTask() {
-                                            @Override
-                                            public void run() {
-                                                runOnUiThread(() -> layout_input.startAnimation(getViewAnimation(layout_input, true, true)));
-                                                layout_input.postDelayed(() -> animVisible = true, 200);
-                                            }
-                                        }, 500);
-                                    }
-                                    break;
-                            }
-                        }
-
-                        @Override
-                        public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                            super.onScrolled(recyclerView, dx, dy);
-                            if (animVisible && recyclerView.canScrollVertically(0) && dy != 0) {
-                                animVisible = false;
-                                layout_input.startAnimation(getViewAnimation(layout_input, false, false));
                             }
                         }
                     });
@@ -136,67 +161,174 @@ public class PrivateMsgActivity extends BaseActivity {
             }
         });
 
-        sendBtn.setOnClickListener(view -> CenterThreadPool.run(() -> {
-            try {
-                if (!contentEt.getText().toString().equals("")) {
-                    String content = contentEt.getText().toString();
-                    runOnUiThread(() -> contentEt.setText(""));
-                    String messageJson = new JSONObject().put("content", content).toString();
-                    JSONObject result = PrivateMsgApi.sendMsg(SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 114514), uid, PrivateMessage.TYPE_TEXT, System.currentTimeMillis() / 1000, messageJson);
-                    runOnUiThread(() -> {
-                        try {
-                            if (result.getInt("code") == 0) {
-                                MsgUtil.showMsg("发送成功");
-                                refresh();
-                            } else {
-                                if (result.getInt("code") == 21047) {
-                                    MsgUtil.showMsg(result.getString("message"));
-                                }
-                                MsgUtil.showMsg("发送失败");
-                            }
-                        } catch (JSONException e) {
-                            MsgUtil.showMsg("发送失败：\n" + result);
-                            e.printStackTrace();
-                        }
-                    });
-                } else {
-                    runOnUiThread(() -> MsgUtil.showMsg("你还木有输入喵~"));
-                }
-            } catch (Exception e) {
-                runOnUiThread(() -> MsgUtil.err(e));
-            }
-        }));
-    }
-    //1在上面0在下面
-
-    private TranslateAnimation getViewAnimation(View view, boolean show_or_hide, boolean up_or_down) {
-        int height = view.getMeasuredHeight() + 2;
-        TranslateAnimation anim;
-        anim = new TranslateAnimation(0, 0,
-                (show_or_hide ? (up_or_down ? height : -height) : 0),
-                (show_or_hide ? 0 : (up_or_down ? -height : height)));
-        anim.setDuration(200);
-        AccelerateDecelerateInterpolator i = new AccelerateDecelerateInterpolator();
-        anim.setInterpolator(i);
-        anim.setFillAfter(true);
-        anim.setAnimationListener(new Animation.AnimationListener() {
-            @Override
-            public void onAnimationStart(Animation animation) {
-                if (show_or_hide) view.setVisibility(View.VISIBLE);
-            }
-
-            @Override
-            public void onAnimationEnd(Animation animation) {
-                if (!show_or_hide) view.setVisibility(View.GONE);
-            }
-
-            @Override
-            public void onAnimationRepeat(Animation animation) {
+        pickImageBtn.setOnClickListener(view -> {
+            if (selectedImages.isEmpty()) {
+                openImagePicker();
+            } else {
+                previewExpanded = !previewExpanded;
+                updateImagePreview();
             }
         });
-        return anim;
+        sendBtn.setOnClickListener(view -> sendMessage());
     }
 
+    private void openImagePicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT)
+                .setType("image/*")
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        }
+        imageLauncher.launch(intent);
+    }
+
+    private void addImage(Uri uri) {
+        if (uri != null && selectedImages.size() < MAX_IMAGES && !selectedImages.contains(uri)) {
+            selectedImages.add(uri);
+        }
+    }
+
+    private void updateImagePreview() {
+        if (imagePreviewContainer == null || imagePreviewRow == null) return;
+        imagePreviewRow.removeAllViews();
+        if (selectedImages.isEmpty() || !previewExpanded) {
+            imagePreviewContainer.setVisibility(View.GONE);
+            return;
+        }
+        imagePreviewContainer.setVisibility(View.VISIBLE);
+
+        int size = dp(48);
+        for (Uri uri : new ArrayList<>(selectedImages)) {
+            FrameLayout item = new FrameLayout(this);
+            LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(size, size);
+            itemParams.setMargins(0, 0, dp(5), 0);
+            imagePreviewRow.addView(item, itemParams);
+
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setBackgroundColor(Color.rgb(48, 48, 48));
+            item.addView(image, new FrameLayout.LayoutParams(size, size));
+            Glide.with(image).asBitmap().load(uri).override(size, size).centerCrop()
+                    .apply(new RequestOptions().format(DecodeFormat.PREFER_RGB_565)
+                            .diskCacheStrategy(DiskCacheStrategy.NONE)
+                            .skipMemoryCache(true).dontAnimate())
+                    .into(image);
+
+                FrameLayout removeHit = new FrameLayout(this);
+                removeHit.setClickable(true);
+                removeHit.setFocusable(true);
+                removeHit.setContentDescription("删除已选择图片");
+                FrameLayout.LayoutParams removeHitParams = new FrameLayout.LayoutParams(
+                        dp(44), dp(44), Gravity.TOP | Gravity.RIGHT);
+                item.addView(removeHit, removeHitParams);
+
+                TextView remove = new TextView(this);
+                remove.setText("x");
+                remove.setTextColor(Color.WHITE);
+                remove.setTextSize(10);
+                remove.setGravity(Gravity.CENTER);
+                GradientDrawable removeBackground = new GradientDrawable();
+                removeBackground.setColor(Color.rgb(190, 45, 45));
+                removeBackground.setShape(GradientDrawable.OVAL);
+                remove.setBackground(removeBackground);
+                FrameLayout.LayoutParams removeParams = new FrameLayout.LayoutParams(
+                        dp(18), dp(18), Gravity.TOP | Gravity.RIGHT);
+                removeHit.addView(remove, removeParams);
+                removeHit.setOnClickListener(view -> {
+                selectedImages.remove(uri);
+                if (selectedImages.isEmpty()) previewExpanded = false;
+                updateImagePreview();
+            });
+        }
+
+        if (selectedImages.size() < MAX_IMAGES) {
+            TextView add = new TextView(this);
+            add.setText("+");
+            add.setTextColor(Color.WHITE);
+            add.setTextSize(22);
+            add.setGravity(Gravity.CENTER);
+            GradientDrawable addBackground = new GradientDrawable();
+            addBackground.setColor(Color.rgb(58, 58, 58));
+            addBackground.setCornerRadius(dp(3));
+            add.setBackground(addBackground);
+            imagePreviewRow.addView(add, new LinearLayout.LayoutParams(size, size));
+            add.setContentDescription("继续添加图片");
+            add.setOnClickListener(view -> openImagePicker());
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void updateMessagePadding() {
+        int top = findViewById(R.id.top).getHeight();
+        int bottom = layout_input.getHeight() + dp(4);
+        if (msgView.getPaddingTop() != top || msgView.getPaddingBottom() != bottom) {
+            msgView.setPadding(msgView.getPaddingLeft(), top, msgView.getPaddingRight(), bottom);
+        }
+    }
+
+    private void sendMessage() {
+        if (sending) return;
+        final String content = contentEt.getText().toString();
+        final ArrayList<Uri> images = new ArrayList<>(selectedImages);
+        if (content.trim().isEmpty() && images.isEmpty()) {
+            MsgUtil.showMsg("你还木有输入喵~");
+            return;
+        }
+        sending = true;
+        sendBtn.setEnabled(false);
+        pickImageBtn.setEnabled(false);
+        CenterThreadPool.run(() -> {
+            boolean success = true;
+            String failureMessage = "发送失败";
+            try {
+                long selfUid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 114514);
+                if (!content.trim().isEmpty()) {
+                    JSONObject result = PrivateMsgApi.sendMsg(selfUid, uid, PrivateMessage.TYPE_TEXT,
+                            System.currentTimeMillis() / 1000,
+                            new JSONObject().put("content", content).toString());
+                    if (result.optInt("code", -1) != 0) {
+                        success = false;
+                        failureMessage = result.optString("message", "文字消息发送失败");
+                    }
+                }
+                for (Uri image : images) {
+                    if (!success) break;
+                    JSONObject upload = ImageUploadApi.upload(getApplicationContext(), image);
+                    JSONObject result = PrivateMsgApi.sendMsg(selfUid, uid, PrivateMessage.TYPE_PIC,
+                            System.currentTimeMillis() / 1000,
+                            PrivateMsgApi.toPictureContent(upload));
+                    if (result.optInt("code", -1) != 0) {
+                        success = false;
+                        failureMessage = result.optString("message", "图片消息发送失败");
+                    }
+                }
+            } catch (Exception error) {
+                success = false;
+                failureMessage = error.getMessage() == null ? "发送失败" : error.getMessage();
+            }
+            boolean finalSuccess = success;
+            String finalFailureMessage = failureMessage;
+            runOnUiThread(() -> {
+                sending = false;
+                sendBtn.setEnabled(true);
+                pickImageBtn.setEnabled(true);
+                if (finalSuccess) {
+                    contentEt.setText("");
+                    selectedImages.clear();
+                    previewExpanded = false;
+                    updateImagePreview();
+                    MsgUtil.showMsg("发送成功");
+                    refresh();
+                } else {
+                    MsgUtil.showMsg(finalFailureMessage);
+                }
+            });
+        });
+    }
     @Override
     protected void onDestroy() {
         if (refreshTimer != null) refreshTimer.cancel();

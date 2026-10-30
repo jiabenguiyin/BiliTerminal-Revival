@@ -33,6 +33,8 @@ import java.util.List;
 
 public class DynamicInfoActivity extends BaseActivity {
 
+    public static final String EXTRA_SHOW_COMMENTS = "showComments";
+
     ReplyFragment rFragment;
     private long seek_reply;
 
@@ -75,10 +77,13 @@ public class DynamicInfoActivity extends BaseActivity {
                     viewPager.setAdapter(vpfAdapter);  //没啥好说的，教科书式的ViewPager使用方法
                     View view;
                     if ((view = diFragment.getView()) != null) view.setVisibility(View.GONE);
-                    if (seek_reply != -1) viewPager.setCurrentItem(1);
+                    boolean showComments = intent.getBooleanExtra(EXTRA_SHOW_COMMENTS, false)
+                            || seek_reply != -1;
+                    if (showComments) showComments();
 
                     AnimationUtils.crossFade(findViewById(R.id.loading), diFragment.getView());
                     viewPager.post(() -> {
+                        if (showComments) return;
                         View dynamicView = diFragment.getView();
                         if (dynamicView == null) return;
                         View scrollView = dynamicView.findViewById(R.id.scrollView);
@@ -97,6 +102,11 @@ public class DynamicInfoActivity extends BaseActivity {
                     ((ImageView) findViewById(R.id.loading)).setImageResource(R.mipmap.loading_2233_error);
                 }));
 
+    }
+
+    public void showComments() {
+        ViewPager viewPager = findViewById(R.id.viewPager);
+        viewPager.setCurrentItem(1, false);
     }
 
     @Override

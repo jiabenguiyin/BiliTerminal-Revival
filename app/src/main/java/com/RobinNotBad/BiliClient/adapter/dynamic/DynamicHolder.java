@@ -23,6 +23,7 @@ import com.RobinNotBad.BiliClient.BiliTerminal;
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.ImageViewerActivity;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
+import com.RobinNotBad.BiliClient.activity.dynamic.DynamicInfoActivity;
 import com.RobinNotBad.BiliClient.activity.dynamic.send.SendDynamicActivity;
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
 import com.RobinNotBad.BiliClient.adapter.article.ArticleCardHolder;
@@ -56,8 +57,10 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
     public final ImageView avatar;
     public final LinearLayout extraCard;
     public final View itemView;
-    public TextView item_dynamic_share, item_dynamic_delete;
+    public TextView item_dynamic_share;
+    public View item_dynamic_delete;
     public TextView likeCount;
+    public TextView commentCount;
     public View cell_dynamic_child;
     public final View cell_dynamic_video;
     public final View cell_dynamic_image;
@@ -94,6 +97,7 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
             extraCard = itemView.findViewById(R.id.extraCard);
             item_dynamic_share = itemView.findViewById(R.id.item_dynamic_share);
             likeCount = itemView.findViewById(R.id.likes);
+            commentCount = itemView.findViewById(R.id.item_dynamic_comment);
             item_dynamic_delete = itemView.findViewById(R.id.item_dynamic_delete);
             relayDynamicLauncher = mActivity.relayDynamicLauncher;
             this.cell_dynamic_child = extraCard.findViewById(R.id.dynamic_child);
@@ -381,6 +385,28 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
         }
         content.setEllipsize(TextUtils.TruncateAt.END);
 
+        if (commentCount != null) {
+            String count = dynamic.stats == null ? null : toWan(dynamic.stats.reply);
+            commentCount.setText(count == null ? context.getString(R.string.dynamic_comments) : count);
+            commentCount.setContentDescription(count == null ? context.getString(R.string.dynamic_comments)
+                    : context.getString(R.string.dynamic_comment_count, count));
+            commentCount.setEnabled(dynamic.dynamicId > 0);
+            commentCount.setOnClickListener(view -> {
+                if (!clickable && mActivity instanceof DynamicInfoActivity) {
+                    ((DynamicInfoActivity) mActivity).showComments();
+                    return;
+                }
+                TerminalContext.getInstance().putContent(dynamic);
+                Intent intent = new Intent(mActivity, DynamicInfoActivity.class)
+                        .putExtra("id", dynamic.dynamicId)
+                        .putExtra("commentId", dynamic.comment_id)
+                        .putExtra("commentType", dynamic.comment_type)
+                        .putExtra("position", getAdapterPosition())
+                        .putExtra(DynamicInfoActivity.EXTRA_SHOW_COMMENTS, true);
+                mActivity.startActivityForResult(intent, GO_TO_INFO_REQUEST);
+            });
+        }
+
         View.OnClickListener onRelayClick = view -> {
             if (relayDynamicLauncher == null) {
                 return;
@@ -405,11 +431,11 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
                 if (dynamic.stats.liked) { // 这里，还有下面，一定要加else！否则会导致错乱
                     likeCount.setTextColor(Color.rgb(0xfe, 0x67, 0x9a));
                     likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                            ContextCompat.getDrawable(context, R.drawable.icon_reply_like1), null, null, null);
+                            null, ContextCompat.getDrawable(context, R.drawable.icon_dynamic_like1), null, null);
                 } else {
                     likeCount.setTextColor(Color.rgb(0xff, 0xff, 0xff));
                     likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                            ContextCompat.getDrawable(context, R.drawable.icon_reply_like0), null, null, null);
+                            null, ContextCompat.getDrawable(context, R.drawable.icon_dynamic_like0), null, null);
                 }
                 likeCount.setText(toWan(dynamic.stats.like));
             } else {
@@ -425,7 +451,7 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
                                 likeCount.setText(toWan(++dynamic.stats.like));
                                 likeCount.setTextColor(Color.rgb(0xfe, 0x67, 0x9a));
                                 likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                                        ContextCompat.getDrawable(context, R.drawable.icon_reply_like1), null, null,
+                                        null, ContextCompat.getDrawable(context, R.drawable.icon_dynamic_like1), null,
                                         null);
                             });
                         } else
@@ -442,7 +468,7 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
                                 likeCount.setText(toWan(--dynamic.stats.like));
                                 likeCount.setTextColor(Color.rgb(0xff, 0xff, 0xff));
                                 likeCount.setCompoundDrawablesWithIntrinsicBounds(
-                                        ContextCompat.getDrawable(context, R.drawable.icon_reply_like0), null, null,
+                                        null, ContextCompat.getDrawable(context, R.drawable.icon_dynamic_like0), null,
                                         null);
                             });
                         } else

@@ -64,6 +64,8 @@ public class UpdateInfoActivity extends BaseActivity {
         String versionName = intent.getStringExtra("versionName");
         int versionCode = intent.getIntExtra("versionCode", -1);
         int isRelease = intent.getIntExtra("isRelease", 0);
+        boolean isBeta = intent.getBooleanExtra("isBeta", false)
+                || (versionName != null && versionName.toUpperCase(Locale.ROOT).contains("-BETA"));
         long ctime = intent.getLongExtra("ctime", -1);
         String updateLog = intent.getStringExtra("updateLog");
         int canDownload = intent.getIntExtra("canDownload", 0);
@@ -100,7 +102,7 @@ public class UpdateInfoActivity extends BaseActivity {
                 CenterThreadPool.run(() -> {
                     try {
                         runOnUiThread(() -> MsgUtil.showMsg("获取下载地址……"));
-                        updatePlan = AppInfoApi.getUpdatePlan(versionCode);
+                        updatePlan = AppInfoApi.getUpdatePlan(versionCode, isBeta);
                         downloadFile = new File(
                                 FileUtil.getDownloadPath(),
                                 FileUtil.getFileNameFromLink(updatePlan.downloadUrl)

@@ -476,79 +476,83 @@ public class DownloadService extends Service {
     }
 
     private int downFile(String url, VideoStorageUtil.Node file) throws IOException {
-        boolean allowResume = true;
-        for (int attempt = 0; attempt < 2; attempt++) {
-            long existingSize = allowResume && file.isFile() ? file.length() : 0L;
-            if (!allowResume) {
-                try (OutputStream ignored = file.openOutput(false)) {
-                    // Truncate before the fresh request.
-                } catch (IOException e) {
-                    return ERR_FILE;
+        long existingSize = file.isFile() ? file.length() : 0L;
+        ArrayList<String> headers = new ArrayList<>(NetWorkUtil.webHeaders);
+        if (existingSize > 0L) {
+            headers.add("Range");
+            headers.add("bytes=" + existingSize + "-");
+        }
+
+        Response response;
+        try {
+            response = NetWorkUtil.getDownload(url, headers);
+        } catch (IOException e) {
+            return ERR_NETWORK;
+        }
+
+        try (Response closeableResponse = response) {
+            if (response.code() == 416 && existingSize > 0L) {
+                String contentRange = response.header("Content-Range", "");
+                int slash = contentRange.lastIndexOf('/');
+                if (slash >= 0) {
+                    try {
+                        if (Long.parseLong(contentRange.substring(slash + 1)) == existingSize) return NORMAL;
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
-            }
-
-            ArrayList<String> headers = new ArrayList<>(NetWorkUtil.webHeaders);
-            if (existingSize > 0L) {
-                headers.add("Range");
-                headers.add("bytes=" + existingSize + "-");
-            }
-
-            Response response;
-            try {
-                response = NetWorkUtil.getDownload(url, headers);
-            } catch (IOException e) {
                 return ERR_NETWORK;
             }
+            if (!response.isSuccessful() || response.body() == null) return ERR_NETWORK;
+            String contentType = response.header("Content-Type", "").toLowerCase(Locale.ROOT);
+            if (contentType.contains("text/html")) return ERR_NETWORK;
 
-            try (Response closeableResponse = response) {
-                if (response.code() == 416 && existingSize > 0L) {
-                    String contentRange = response.header("Content-Range", "");
-                    int slash = contentRange.lastIndexOf('/');
-                    if (slash >= 0) {
-                        try {
-                            if (Long.parseLong(contentRange.substring(slash + 1)) == existingSize) return NORMAL;
-                        } catch (NumberFormatException ignored) {
-                        }
-                    }
+            boolean append = existingSize > 0L;
+            if (append) {
+                // Never overwrite a partial file when a proxy/server ignores Range.
+                // Keeping the partial file lets the next manual retry try again.
+                if (response.code() != 206) {
+                    Logu.d("下载续传", "服务器未返回206，保留已有进度：" + response.code());
                     return ERR_NETWORK;
                 }
-                if (!response.isSuccessful() || response.body() == null) return ERR_NETWORK;
-                String contentType = response.header("Content-Type", "").toLowerCase(Locale.ROOT);
-                if (contentType.contains("text/html")) return ERR_NETWORK;
-
-                boolean append = existingSize > 0L && response.code() == 206;
-                if (append) {
-                    String contentRange = response.header("Content-Range", "");
-                    if (!contentRange.startsWith("bytes " + existingSize + "-")) return ERR_NETWORK;
+                String contentRange = response.header("Content-Range", "");
+                if (!contentRange.startsWith("bytes " + existingSize + "-")) {
+                    Logu.d("下载续传", "Content-Range不匹配，保留已有进度：" + contentRange);
+                    return ERR_NETWORK;
                 }
-                if (!append) existingSize = 0L;
-                long responseSize = response.body().contentLength();
-                long expectedSize = responseSize >= 0L ? existingSize + responseSize : -1L;
-                long completeSize = existingSize;
-
-                try (InputStream inputStream = response.body().byteStream();
-                     OutputStream outputStream = file.openOutput(append)) {
-                    int len;
-                    byte[] bytes = new byte[1024 * 10];
-                    while ((len = inputStream.read(bytes)) != -1 && started) {
-                        outputStream.write(bytes, 0, len);
-                        completeSize += len;
-                        if (expectedSize > 0L) percent = 1.0f * completeSize / expectedSize;
-                    }
-                    outputStream.flush();
-                } catch (IOException e) {
-                    if (append && allowResume) {
-                        allowResume = false;
-                        continue;
-                    }
-                    return ERR_FILE;
-                }
-                if (!started) return getStoppedExitCode();
-                if (expectedSize >= 0L && completeSize != expectedSize) return ERR_NETWORK;
-                return NORMAL;
             }
+
+            long responseSize = response.body().contentLength();
+            long expectedSize = responseSize >= 0L ? existingSize + responseSize : -1L;
+            long completeSize = existingSize;
+
+            OutputStream outputStream;
+            try {
+                outputStream = file.openOutput(append);
+            } catch (IOException e) {
+                Logu.e("下载文件", e.toString());
+                return ERR_FILE;
+            }
+
+            try (InputStream inputStream = response.body().byteStream();
+                 OutputStream closeableOutput = outputStream) {
+                int len;
+                byte[] bytes = new byte[1024 * 10];
+                while ((len = inputStream.read(bytes)) != -1 && started) {
+                    closeableOutput.write(bytes, 0, len);
+                    completeSize += len;
+                    if (expectedSize > 0L) percent = 1.0f * completeSize / expectedSize;
+                }
+                closeableOutput.flush();
+            } catch (IOException e) {
+                // A failed transfer must remain resumable. Do not fall back to a
+                // full request here, otherwise a weak network discards progress.
+                Logu.d("下载续传", "传输中断，保留已有文件：" + e);
+                return ERR_NETWORK;
+            }
+            if (!started) return getStoppedExitCode();
+            if (expectedSize >= 0L && completeSize != expectedSize) return ERR_NETWORK;
+            return NORMAL;
         }
-        return ERR_FILE;
     }
 
     private int getStoppedExitCode() {

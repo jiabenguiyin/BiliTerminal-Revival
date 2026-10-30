@@ -8,6 +8,7 @@ import com.RobinNotBad.BiliClient.activity.base.RefreshListActivity;
 import com.RobinNotBad.BiliClient.adapter.SettingsAdapter;
 import com.RobinNotBad.BiliClient.model.SettingSection;
 import com.RobinNotBad.BiliClient.util.PlayerCompatibilityUtil;
+import com.RobinNotBad.BiliClient.util.PlayerSettingsUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 import java.util.ArrayList;
@@ -40,6 +41,14 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
                         getString(R.string.desc_scale), "true"));
                 add(new SettingSection("switch", "左右滑动调节进度", SharedPreferencesUtil.PLAYER_SWIPE_SEEK,
                         getString(R.string.desc_swipe_seek), "false"));
+                add(new SettingSection("input_int", "音量调节步进（百分比）", SharedPreferencesUtil.PLAYER_VOLUME_STEP,
+                        getString(R.string.desc_volume_step), "5"));
+                add(new SettingSection("switch", "左右上下滑动调节亮度/音量", SharedPreferencesUtil.PLAYER_BRIGHTNESS_GESTURE,
+                        getString(R.string.desc_brightness_gesture), "true"));
+                add(new SettingSection("switch", "显示屏幕锁定按钮", SharedPreferencesUtil.PLAYER_SCREEN_LOCK,
+                        "防止误触播放控制和手势。锁定后轻点画面隐藏或显示锁图标，点击锁图标解锁", "true"));
+                add(new SettingSection("switch", "手势防误触", SharedPreferencesUtil.PLAYER_ANTI_MISTOUCH,
+                        "开启后需要更大的移动距离才会触发手势，减少误触；关闭后恢复正常灵敏度", "true"));
                 add(new SettingSection("choose3", "双击优先操作", "player_double_tap_mode",
                         getString(R.string.desc_double_tap_action), "1",
                         new String[]{"暂停/继续播放", "复原画面", "放大时复原，否则暂停"}));
@@ -51,6 +60,8 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
                 add(new SettingSection("choose", "缩放后移动方式", "player_singlemove",
                         getString(R.string.desc_move_mode), "true",
                         new String[]{"单指移动", "双指移动"}));
+                add(new SettingSection("switch", "放大后单击切换移动/进度", SharedPreferencesUtil.PLAYER_ZOOM_TAP_SEEK,
+                        getString(R.string.desc_zoom_tap_seek), "false"));
 
                 add(new SettingSection("divider", "", "", "", ""));
 
@@ -72,6 +83,8 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
                 add(new SettingSection("switch", "显示高能进度条", "player_high_energy",
                         getString(R.string.desc_player_high_energy), "false"));
                 add(new SettingSection("switch", "弹幕允许重叠", "player_danmaku_allowoverlap", "", "true"));
+                add(new SettingSection("switch", "大弹幕量保护（5000条）", SharedPreferencesUtil.PLAYER_LARGE_DANMAKU_GUARD,
+                        getString(R.string.desc_large_danmaku_guard), "false"));
                 add(new SettingSection("switch", "合并重复弹幕", "player_danmaku_mergeduplicate", "",
                         "false"));
                 add(new SettingSection("switch", "强制为滚动弹幕", "player_danmaku_forceR2L",
@@ -82,7 +95,10 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
                 add(new SettingSection("input_float", "弹幕字号大小", "player_danmaku_size", "", "0.7"));
                 add(new SettingSection("input_float", "弹幕不透明度", "player_danmaku_transparency", "",
                         "0.5"));
-                add(new SettingSection("input_float", "弹幕速度", "player_danmaku_speed", "", "1.0"));
+                add(new SettingSection("input_float", "视频弹幕速度", "player_danmaku_speed", "", "1.0"));
+                add(new SettingSection("input_float", "直播弹幕停留倍率",
+                        PlayerSettingsUtil.LIVE_DANMAKU_DURATION_FACTOR,
+                        "范围1～3，默认2倍时长。数值越大滚动越慢；1为原速。仅影响直播滚动弹幕。", "2.0"));
 
                 add(new SettingSection("divider", "", "", "", ""));
 

@@ -1,6 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">哔哩终端</string>
-    <string name="about_description">复活版 1.1.8 · 2026092102 修复版</string>
     <string name="about_say">这是哔哩终端复活版。\n\n一开始只是想让老设备还能正常看 B 站，后来陆续补了动态、评论、直播、缓存和网络中继。\n\n功能不往复杂做，先保证低配设备稳定能跑。\n\n默认直连，网络出问题再走中继。</string>
     <string name="about_group_tip">非官方客户端，也非公共代理。\n\n只用来访问你本来就能看的 B 站内容。别用于批量抓取、刷量、绕过付费，或做会影响账号和服务稳定的事。\n\n中继带宽有限，别把中继地址、Token、安装包当公共服务扩散。反馈问题时，最好带设备型号、系统版本、软件版本和错误截图。</string>
     <string name="about_group">官网：jp.031030.xyz\n问题反馈 QQ 群：1107953621\n\n终端服务：jp.031030.xyz/terminal\n健康检查：jp.031030.xyz/healthz\n\n使用建议：\n能直连 B 站就别开中继。\n确实打不开的时候再开。\n中继可以长期开，也可以只开这一次。</string>
@@ -127,17 +126,22 @@
     <string name="desc_fromlast">播放视频时如果有超过5秒的播放历史，将会自动从历史位置播放</string>
     <string name="desc_showonline">播放器右下角会显示当前视频的实时观看人数，在直播中则为观看过的人数和进入直播间提醒\n如果观看视频中途崩溃可以尝试关闭此开关\n该功能为内置播放器专属</string>
     <string name="desc_scale">播放视频时可使用像查看照片一样的手势来缩放和移动视频，双击行为可在下方设置\n对于单点触控的设备，可以双击屏幕并在第二次按下时不抬手，然后上下拖动来缩放\n！若无法缩放，请切换下面的“显示方式”！\n特别感谢：凉腕播放器</string>
-    <string name="desc_swipe_seek">开启后，在播放器画面上左右滑动可以调节播放进度。仅识别明显的横向滑动，单指缩放和点击不受影响。</string>
+    <string name="desc_swipe_seek">开启后，在播放器画面上左右滑动可以微调播放进度。横向拖满整个画面约调整1分钟，与视频总时长无关；仅识别明显的横向滑动，单指缩放和点击不受影响。</string>
+    <string name="desc_volume_step">播放器底部音量按钮和右侧上下滑动每次调整的音量百分比，范围 1 到 30，默认 5。</string>
+    <string name="desc_brightness_gesture">开启后，播放器左侧上下滑动调节亮度，右侧上下滑动调节音量；关闭后两侧的上下滑动调节都会停用，直播和视频均可使用，默认开启。</string>
     <string name="desc_double_tap_action">选择双击时的优先操作。第三项会在画面放大或移动时先复原，画面正常时再暂停/继续播放。</string>
     <string name="desc_device_profile_override">自动模式会根据设备能力选择播放器；也可以手动强制兼容或高性能模式。高性能模式优先尝试高画质和高帧率，无法使用时会自动回落；切换后下次播放生效。</string>
     <string name="desc_interaction_choice_scale">调整互动视频选项按钮的大小，建议填写 0.5 到 1.0，默认 0.7。数值越小按钮越紧凑。</string>
     <string name="desc_audio_only">开启后，进入播放器时默认使用听视频模式。\n禁用视频解码，只播放音频</string>
     <string name="desc_doublemove">开启后，视频放大时可以拖动画面；可在下方选择单指或双指移动。</string>
-    <string name="desc_move_mode">单指模式下：左右滑动调节进度开启时，缩放后单指横向滑动调节进度；关闭时，缩放后单指拖动画面。双指模式始终用双指拖动画面。</string>
+    <string name="desc_move_mode">单指模式下，放大后单指拖动画面，正常大小时可左右滑动调节进度。双指模式下，双指移动画面，单指可调节进度；进度手势需开启“左右滑动调节进度”。</string>
+    <string name="desc_zoom_tap_seek">默认关闭。仅在单指移动模式、画面放大且左右滑动调节进度开启时生效：单击显示操作按钮后，单指横向滑动调节进度；隐藏操作按钮后恢复移动画面。双击不切换模式。</string>
+    <string name="player_swipe_seek_hint">%1$s 秒\n%2$s</string>
     <string name="desc_display">！如果视频播放异常/闪退/未响应/无法缩放，请尝试切换该选项！\n已知：KidoX3只能Surface，小天才只能Texture，部分设备需要使用Texture才能进行缩放</string>
     <string name="desc_videocodec">硬件解码：使用GPU解码，速度快，性能消耗小\n软件解码：使用CPU硬算，兼容性好，暖手必备</string>
     <string name="desc_audiocodec">通常使用AudioTrack即可，声音延迟或无法播放请尝试切换</string>
     <string name="desc_new_danmaku_api">开启后，内置播放器将通过新的弹幕接口实时获取视频弹幕。\n注意：该选项仅对内置播放器有效，且不支持高级弹幕</string>
+    <string name="desc_large_danmaku_guard">弹幕数超过5000条时不自动加载；仍可在播放器中手动打开弹幕。关闭弹幕后停止加载并释放缓存。\n低内存设备若卡顿，也可在「实验室」关闭「新版弹幕获取方式」尝试旧接口；部分视频的弹幕可能较少，以接口实际返回为准。</string>
     <string name="desc_danmaku_force_r2l">除了高级弹幕以外的弹幕都会被强制以滚动弹幕的形式展示，从而避免顶部弹幕和底部弹幕遮挡画面</string>
     <string name="desc_danmaku_showsender">显示直播聊天弹幕的发送者名称</string>
     <string name="desc_player_high_energy">在进度条下方用折线图展示弹幕密度分布</string>
@@ -167,12 +171,21 @@
     <string name="open_source_notice">【原项目与原作者】\n项目：哔哩终端 / BiliClient\n基础版本：v2.9.5-fix\n原作者及项目发起者：RobinNotBad\n原开发贡献者：爅峫（moye）、silent碎月、dudu、达达、huanli233、Jank000.h 等\n原 UI 设计：@JesseGary_（原项目声明已获授权）\n原项目源码：https://gitee.com/RobinNotBad/BiliClient\n\n原项目及原有代码著作权归 RobinNotBad 与各原始贡献者所有。复活版维护者只对后续修改负责，不替代或冒充原开发团队。\n\n【开源许可】\n程序代码：GNU General Public License v3.0（GPL-3.0）\nUI 布局：CC BY-NC-SA（沿用原项目声明）\n复活版对应源码：官网提供对应源码\n\n分发修改版时，应继续保留原作者署名、许可证，并向接收者提供对应源码。\n\n【软件图标】\n原软件图标提供者：银狐enlab（原图来自 B 站）。其他图标版权归各自作者所有。</string>
     <string name="desc_icon_license">【开源图标与第三方许可】</string>
     <string-array name="icon_license">
+        <item>番剧搜索参考 Re-BiliTerminal，cyq114514 及贡献者，GPL-3.0：https://github.com/cyq114514/Re-BiliTerminal</item>
         <item>Material Icons, Apache 2.0: browse, chat, display, download, group, home, info, kid, menu, movie, reply, science, search, select, smart_display, video_settings, history, logout</item>
     </string-array>
 
 
     <string name="hint_write_reply">写一条友善的评论……</string>
     <string name="hint_search">搜点什么喵~</string>
+    <string-array name="search_categories">
+        <item>视频</item>
+        <item>番剧</item>
+        <item>影视</item>
+        <item>专栏</item>
+        <item>用户</item>
+        <item>直播</item>
+    </string-array>
     <string name="hint_private_message">爱国诚信友善……</string>
     <string name="hint_start_position">起始位置</string>
     <string name="hint_end_position">结束位置</string>
@@ -241,23 +254,14 @@
     <string name="gt"><![CDATA[>]]></string>
     <string name="percent">%</string>
 
-    <string name="update_tip">登录恢复、播放器与小屏适配优化</string>
+    <string name="update_tip">收藏与历史搜索、评论同步、App 推荐及播放器优化</string>
 
     #新增功能放到上面，修复问题放下面，方便用户看见
     <string-array name="update_log_items">
-        <item>修复 Android 4.x 设备点击主页、视频或用户页面时的崩溃问题</item>
-        <item>修复部分旧设备按钮背景资源不兼容导致的页面启动崩溃</item>
-        <item>增加隐藏式轻量内置浏览器入口</item>
-        <item>修复登录 Cookie 保存期间无法自动恢复的问题</item>
-        <item>优化在线播放音频卡顿、网络中断、后台恢复和清晰度切换</item>
-        <item>优化超长视频弹幕加载，改善长视频弹幕无法显示的问题</item>
-        <item>优化左右滑动调节进度，显示当前调整时间</item>
-        <item>修复视频放大后滑动调节进度与画面移动冲突的问题</item>
-        <item>优化 UP 主个人主页投稿搜索，修复关键词无法命中和结果覆盖问题</item>
-        <item>修复评论显示发送成功但实际未发布的问题</item>
-        <item>优化 DeepSeek 功能，修复令牌隐藏、保存及流式响应问题</item>
-        <item>修复视频详情页异常提示和作者数据为空时的问题</item>
-        <item>优化搜索浮窗、日志上传浮窗及小屏设备适配</item>
+        <item>新增“全部收藏”，支持收藏夹和历史记录内搜索、翻页；普通收藏夹支持长按编辑名称、简介、公开状态及删除。</item>
+        <item>动态新增评论入口和评论数，操作栏自适应不同屏幕；支持有管理权限时置顶视频、动态评论，评论点赞、点踩和删除状态跨页面同步。</item>
+        <item>实验室新增“App 个性化推荐”；新增大弹幕量保护（默认关闭），超过 5000 条时不自动加载，仍可手动开启弹幕。直播滚动弹幕默认两倍停留时长，并支持独立调节。</item>
+        <item>新增手势防误触开关，锁定后可轻点画面隐藏或显示锁图标；优化播放器顶部及控件布局，改善小屏、方屏设备的操作体验。</item>
         <item>优化 Android 4.x、低内存设备和智能手表的运行稳定性</item>
     </string-array>
 

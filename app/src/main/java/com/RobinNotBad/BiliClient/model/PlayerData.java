@@ -17,6 +17,7 @@ public class PlayerData implements Parcelable {
     public String videoUrl = "";
     public ArrayList<String> videoBackupUrls = new ArrayList<>();
     public String danmakuUrl = "";
+    public long danmakuCount = -1;
     public int qn = -1;
     public String[] qnStrList;
     public int[] qnValueList;
@@ -63,6 +64,7 @@ public class PlayerData implements Parcelable {
         audioUrl = in.readString();
         audioBackupUrls = in.createStringArrayList();
         if (audioBackupUrls == null) audioBackupUrls = new ArrayList<>();
+        danmakuCount = in.readLong();
         // dashData不序列化，下载时会重新获取
     }
 
@@ -103,6 +105,7 @@ public class PlayerData implements Parcelable {
         dest.writeInt(currentPageIndex);
         dest.writeString(audioUrl);
         dest.writeStringList(audioBackupUrls);
+        dest.writeLong(danmakuCount);
         // dashData不序列化，下载时会重新获取
     }
 

@@ -30,10 +30,19 @@ public class UserListAdapter extends RecyclerView.Adapter<UserListAdapter.Holder
 
     final Context context;
     final List<UserInfo> userList;
+    private OnItemLongClickListener onItemLongClickListener;
+
+    public interface OnItemLongClickListener {
+        boolean onItemLongClick(int position, UserInfo user);
+    }
 
     public UserListAdapter(Context context, List<UserInfo> userList) {
         this.context = context;
         this.userList = userList;
+    }
+
+    public void setOnItemLongClickListener(OnItemLongClickListener listener) {
+        this.onItemLongClickListener = listener;
     }
 
     @NonNull
@@ -83,6 +92,9 @@ public class UserListAdapter extends RecyclerView.Adapter<UserListAdapter.Holder
                 context.startActivity(intent);
             });
         }
+        holder.itemView.setOnLongClickListener(view ->
+                onItemLongClickListener != null
+                        && onItemLongClickListener.onItemLongClick(position, user));
     }
 
     @Override

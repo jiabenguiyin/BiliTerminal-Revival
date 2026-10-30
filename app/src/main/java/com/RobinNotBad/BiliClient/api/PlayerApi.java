@@ -663,6 +663,7 @@ public class PlayerApi {
                 intent.putExtra("audio_url", playerData.audioUrl);
                 intent.putStringArrayListExtra("audio_backup_urls", playerData.audioBackupUrls);
                 intent.putExtra("danmaku", playerData.danmakuUrl);
+                intent.putExtra("danmaku_count", playerData.danmakuCount);
                 intent.putExtra("title", playerData.title);
                 intent.putExtra("aid", playerData.aid);
                 intent.putExtra("cid", playerData.cid);

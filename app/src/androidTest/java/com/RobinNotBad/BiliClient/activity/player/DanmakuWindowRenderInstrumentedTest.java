@@ -58,6 +58,7 @@ public class DanmakuWindowRenderInstrumentedTest {
                 PlayerActivity player = new PlayerActivity();
                 playerRef.set(player);
                 set(player, "mDanmakuView", view);
+                set(player, "isDanmakuVisible", true);
                 set(player, "windowDanmakuParser", parser);
                 view.setCallback(new DrawHandler.Callback() {
                     @Override public void prepared() { prepared.countDown(); }

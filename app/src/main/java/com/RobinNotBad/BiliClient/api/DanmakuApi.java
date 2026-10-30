@@ -22,6 +22,26 @@ import okhttp3.Response;
 
 public class DanmakuApi {
 
+    /** Same total as the video detail page, without downloading any danmaku content. */
+    public static long getVideoDanmakuCount(long aid, RequestCancellation cancellation) throws IOException, JSONException {
+        if (aid <= 0) throw new IOException("Missing video id for danmaku count");
+        String url = "https://api.bilibili.com/x/web-interface/view?aid=" + aid;
+        try (Response response = NetWorkUtil.getCancellable(url, NetWorkUtil.webHeaders, cancellation)) {
+            if (!response.isSuccessful() || response.body() == null) throw new IOException("Danmaku count HTTP " + response.code());
+            return parseVideoDanmakuCount(new JSONObject(response.body().string()));
+        }
+    }
+
+    static long parseVideoDanmakuCount(JSONObject response) throws IOException {
+        JSONObject data = response.optJSONObject("data");
+        JSONObject stat = data == null ? null : data.optJSONObject("stat");
+        if (response.optInt("code", -1) != 0 || stat == null || !stat.has("danmaku"))
+            throw new IOException("Danmaku count unavailable");
+        long count = stat.optLong("danmaku", -1);
+        if (count < 0) throw new IOException("Invalid danmaku count");
+        return count;
+    }
+
     public static JSONObject sendLiveDanmaku(long roomId, String msg, int color)
             throws IOException, JSONException {
         String csrf = SharedPreferencesUtil.getString(SharedPreferencesUtil.csrf, "");

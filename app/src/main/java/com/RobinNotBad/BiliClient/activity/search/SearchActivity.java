@@ -1,6 +1,5 @@
 package com.RobinNotBad.BiliClient.activity.search;
 
-import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Bundle;
@@ -33,7 +32,8 @@ import com.RobinNotBad.BiliClient.util.JsonUtil;
 import com.RobinNotBad.BiliClient.util.LinkUrlUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
-import com.RobinNotBad.BiliClient.util.ToolsUtil;
+import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.tabs.TabLayoutMediator;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -42,7 +42,10 @@ import java.util.ArrayList;
 import java.util.Objects;
 
 public class SearchActivity extends InstanceActivity {
-    private String lastKeyword = "≠~`";
+    private String lastKeyword = "";
+    private boolean hasSearched;
+    private String[] searchCategories;
+    private TabLayoutMediator categoryMediator;
     private RecyclerView historyRecyclerview;
     private RecyclerView suggestionsRecyclerview;
     SearchHistoryAdapter searchHistoryAdapter;
@@ -50,9 +53,7 @@ public class SearchActivity extends InstanceActivity {
     ViewPager2 viewPager;
     EditText keywordInput;
     private ConstraintLayout searchBar;
-    private boolean searchBarVisible = true;
     private boolean refreshing = false;
-    private long animate_last;
     Handler handler;
     ArrayList<String> searchHistory;
     ArrayList<String> searchSuggestions;
@@ -70,6 +71,12 @@ public class SearchActivity extends InstanceActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        if (savedInstanceState != null) {
+            lastKeyword = savedInstanceState.getString("search_keyword", "");
+            hasSearched = savedInstanceState.getBoolean("search_submitted", false);
+        }
+        searchCategories = getResources().getStringArray(R.array.search_categories);
 
         classname = getClass().getSimpleName();
         tutorial_show = SharedPreferencesUtil.getBoolean("tutorial_pager_" + classname, true);
@@ -104,7 +111,7 @@ public class SearchActivity extends InstanceActivity {
             searchBar = findViewById(R.id.searchbar);
             historyRecyclerview = findViewById(R.id.history_recyclerview);
             suggestionsRecyclerview = findViewById(R.id.suggestions_recyclerview);
-            viewPager.setOffscreenPageLimit(4);
+            viewPager.setOffscreenPageLimit(1);
 
             keywordInput.setOnFocusChangeListener((view, b) -> {
                 if (b) {
@@ -128,31 +135,36 @@ public class SearchActivity extends InstanceActivity {
             FragmentStateAdapter vpfAdapter = new FragmentStateAdapter(this) {
                 @Override
                 public int getItemCount() {
-                    return 4;
+                    return searchCategories.length;
                 }
 
                 @NonNull
                 @Override
                 public Fragment createFragment(int position) {
-                    if (position == 0)
-                        return SearchVideoFragment.newInstance();
-                    if (position == 1)
-                        return SearchArticleFragment.newInstance();
-                    if (position == 2)
-                        return SearchUserFragment.newInstance();
-                    if (position == 3)
-                        return SearchLiveFragment.newInstance();
-                    throw new IllegalArgumentException(
-                            "return value of getItemCount() method maybe not associate with argument position");
+                    SearchFragment fragment;
+                    switch (position) {
+                        case 0: fragment = SearchVideoFragment.newInstance(); break;
+                        case 1: fragment = SearchMediaFragment.newInstance(SearchApi.TYPE_BANGUMI); break;
+                        case 2: fragment = SearchMediaFragment.newInstance(SearchApi.TYPE_FILM); break;
+                        case 3: fragment = SearchArticleFragment.newInstance(); break;
+                        case 4: fragment = SearchUserFragment.newInstance(); break;
+                        case 5: fragment = SearchLiveFragment.newInstance(); break;
+                        default: throw new IllegalArgumentException("Unknown search category: " + position);
+                    }
+                    if (hasSearched) fragment.update(lastKeyword);
+                    return fragment;
                 }
             };
             viewPager.setAdapter(vpfAdapter);
+            TabLayout categories = findViewById(R.id.search_categories);
+            categoryMediator = new TabLayoutMediator(categories, viewPager,
+                    (tab, position) -> tab.setText(searchCategories[position]));
+            categoryMediator.attach();
 
             viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
                 @Override
-                public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+                public void onPageSelected(int position) {
                     if (position != 0) {
-                        onScrolled(256); // 让搜索框隐藏
                         if (tutorial_show) {
                             tutorial_show = false;
                             findViewById(R.id.text_tutorial_pager).setVisibility(View.GONE);
@@ -162,10 +174,16 @@ public class SearchActivity extends InstanceActivity {
 
                     Fragment fragmentCurr = getSupportFragmentManager()
                             .findFragmentByTag("f" + viewPager.getCurrentItem());
-                    if (fragmentCurr != null) {
-                        ((SearchFragment) fragmentCurr).refresh(); // 在fragment里已做判断
+                    if (fragmentCurr instanceof SearchFragment) onSearchFragmentReady((SearchFragment) fragmentCurr);
+
+                    // 确保标签栏滚动到当前选中的标签
+                    TabLayout categories = findViewById(R.id.search_categories);
+                    if (categories != null && categories.getTabCount() > position) {
+                        TabLayout.Tab tab = categories.getTabAt(position);
+                        if (tab != null) {
+                            tab.select();
+                        }
                     }
-                    super.onPageScrolled(position, positionOffset, positionOffsetPixels);
                 }
             });
 
@@ -279,6 +297,15 @@ public class SearchActivity extends InstanceActivity {
                 keywordInput.setText(getIntent().getStringExtra("keyword"));
                 MsgUtil.showMsg("可点击标题栏返回详情页");
             }
+            if (savedInstanceState != null) {
+                keywordInput.setText(savedInstanceState.getString("search_input", lastKeyword));
+                viewPager.setCurrentItem(savedInstanceState.getInt("search_category", 0), false);
+                if (hasSearched) {
+                    keywordInput.clearFocus();
+                    historyRecyclerview.setVisibility(View.GONE);
+                    suggestionsRecyclerview.setVisibility(View.GONE);
+                }
+            }
         });
     }
 
@@ -323,14 +350,16 @@ public class SearchActivity extends InstanceActivity {
                 }
             }
             
-            if (Objects.equals(lastKeyword, str)) {
+            if (hasSearched && Objects.equals(lastKeyword, str)) {
                 runOnUiThread(() -> {
                     keywordInput.clearFocus();
                     historyRecyclerview.setVisibility(View.GONE);
                 });
+                requestFragmentFocus();
             } else {
                 refreshing = true;
                 lastKeyword = str;
+                hasSearched = true;
 
                 // 搜索记录
                 runOnUiThread(() -> {
@@ -369,7 +398,7 @@ public class SearchActivity extends InstanceActivity {
                 }
 
                 try {
-                    for (int i = 0; i < 4; i++) {
+                    for (int i = 0; i < searchCategories.length; i++) {
                         Fragment fragmentById = getSupportFragmentManager().findFragmentByTag("f" + i);
                         if (fragmentById != null)
                             ((SearchFragment) fragmentById).update(str);
@@ -389,36 +418,44 @@ public class SearchActivity extends InstanceActivity {
                     runOnUiThread(() -> {
                         TextView textView = findViewById(R.id.text_tutorial_pager);
                         textView.setVisibility(View.VISIBLE);
-                        textView.setText(getString(R.string.tutorial_pager, 4));
+                        textView.setText(getString(R.string.tutorial_pager, searchCategories.length));
                     });
                 }
             }
         }
     }
 
-    public void onScrolled(int dy) {
-        float height = searchBar.getHeight() + ToolsUtil.dp2px(2f);
+    public void onSearchFragmentReady(SearchFragment fragment) {
+        if (!hasSearched || viewPager == null || fragment != getSupportFragmentManager()
+                .findFragmentByTag("f" + viewPager.getCurrentItem())) return;
+        if (!Objects.equals(fragment.keyword, lastKeyword)) fragment.update(lastKeyword);
+        fragment.refresh();
+    }
 
-        if (System.currentTimeMillis() - animate_last > 200) {
-            if (dy > 0 && searchBarVisible) {
-                animate_last = System.currentTimeMillis();
-                this.searchBarVisible = false;
-                @SuppressLint("ObjectAnimatorBinding")
-                ObjectAnimator animator = ObjectAnimator.ofFloat(searchBar, "translationY", 0, -height);
-                animator.start();
-                handler.postDelayed(() -> searchBar.setVisibility(View.GONE), 200);
-            }
-            if (dy < -1 && !searchBarVisible) {
-                animate_last = System.currentTimeMillis();
-                this.searchBarVisible = true;
+    @Override protected void onSaveInstanceState(@NonNull Bundle outState) {
+        outState.putString("search_keyword", lastKeyword);
+        outState.putBoolean("search_submitted", hasSearched);
+        if (keywordInput != null) outState.putString("search_input", keywordInput.getText().toString());
+        if (viewPager != null) outState.putInt("search_category", viewPager.getCurrentItem());
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override protected void onDestroy() {
+        if (categoryMediator != null) categoryMediator.detach();
+        if (handler != null) handler.removeCallbacksAndMessages(null);
+        super.onDestroy();
+    }
+
+    public void onScrolled(int dy) {
+        // 搜索框固定显示；列表滚动不再触发隐藏、上移或恢复动画。
+        if (searchBar != null) {
+            if (searchBar.getVisibility() != View.VISIBLE) {
                 searchBar.setVisibility(View.VISIBLE);
-                @SuppressLint("ObjectAnimatorBinding")
-                ObjectAnimator animator = ObjectAnimator.ofFloat(searchBar, "translationY", -height, 0);
-                animator.start();
+            }
+            if (searchBar.getTranslationY() != 0f) {
+                searchBar.setTranslationY(0f);
             }
         }
-
-        requestFragmentFocus();
     }
 
     private void requestFragmentFocus(){

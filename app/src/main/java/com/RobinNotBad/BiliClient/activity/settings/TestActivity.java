@@ -45,7 +45,9 @@ public class TestActivity extends BaseActivity {
     private static final long DEVELOPER_MID = 313733893L;
     private static final String DEEPSEEK_KEY = "dev_deepseek_apikey";
     private static final String LEGACY_DEEPSEEK_KEY = "dev_catgirl_apikey";
-    SwitchMaterial sw_wbi, sw_post, sw_deepseek_model;
+    private static final String DEEPSEEK_THINKING = "dev_deepseek_thinking";
+    private static final String DEEPSEEK_PRO_MODEL = "dev_deepseek_pro_model";
+    SwitchMaterial sw_wbi, sw_post, sw_deepseek_model, sw_beta_updates;
     EditText input_link, input_data, output;
     MaterialCardView btn_deepseek, btn_request, btn_cookies, btn_profile;
 
@@ -70,6 +72,12 @@ public class TestActivity extends BaseActivity {
         btn_deepseek = findViewById(R.id.deepseek);
         btn_profile = findViewById(R.id.developer_profile);
         sw_deepseek_model = findViewById(R.id.switch_deepseek_model);
+        sw_beta_updates = findViewById(R.id.switch_beta_updates);
+
+        sw_beta_updates.setChecked(SharedPreferencesUtil.getBoolean(
+                SharedPreferencesUtil.ACCEPT_BETA_UPDATES, false));
+        sw_beta_updates.setOnCheckedChangeListener((button, checked) ->
+                SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.ACCEPT_BETA_UPDATES, checked));
 
         runPlayUrlProbeIfRequested();
 
@@ -166,9 +174,14 @@ public class TestActivity extends BaseActivity {
         // Apply password masking after single-line configuration and restored text.
         applyDeepSeekKeyMask();
         sw_wbi.setText("启用深度思考（High）");
-        sw_wbi.setChecked(true);
+        sw_wbi.setChecked(SharedPreferencesUtil.getBoolean(DEEPSEEK_THINKING, true));
+        sw_wbi.setOnCheckedChangeListener((button, checked) ->
+                SharedPreferencesUtil.putBoolean(DEEPSEEK_THINKING, checked));
         sw_post.setVisibility(View.GONE);
         sw_deepseek_model.setVisibility(View.VISIBLE);
+        sw_deepseek_model.setChecked(SharedPreferencesUtil.getBoolean(DEEPSEEK_PRO_MODEL, false));
+        sw_deepseek_model.setOnCheckedChangeListener((button, checked) ->
+                SharedPreferencesUtil.putBoolean(DEEPSEEK_PRO_MODEL, checked));
         btn_cookies.setVisibility(View.GONE);
         ((TextView) findViewById(R.id.desc)).setText(R.string.dev_deepseek_desc);
         ((TextView) findViewById(R.id.request_label)).setText("发送");

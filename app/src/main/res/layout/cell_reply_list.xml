@@ -27,6 +27,18 @@
         android:text="蔡徐坤"
         app:layout_constraintBottom_toTopOf="@+id/replyPubDate"
         app:layout_constraintStart_toEndOf="@+id/replyAvatar"
+        app:layout_constraintEnd_toStartOf="@id/item_reply_top"
+        app:layout_constraintTop_toTopOf="@id/replyAvatar" />
+
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/item_reply_top"
+        android:layout_width="32dp"
+        android:layout_height="35dp"
+        android:background="@android:color/transparent"
+        android:padding="7dp"
+        android:contentDescription="@string/reply_pin"
+        android:visibility="gone"
+        app:srcCompat="@drawable/icon_reply_pin"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/replyAvatar" />
 
@@ -59,9 +71,13 @@
     <TextView
         android:id="@+id/likes"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_height="32dp"
         android:layout_marginTop="4dp"
         android:alpha="0.7"
+        android:minWidth="40dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:gravity="center_vertical"
         android:text="514"
         android:textSize="13sp"
         app:drawableStartCompat="@drawable/icon_reply_like0"
@@ -70,12 +86,13 @@
 
     <ImageView
         android:id="@+id/dislikeBtn"
-        android:layout_width="wrap_content"
+        android:layout_width="32dp"
         android:layout_height="0dp"
         android:layout_marginLeft="6dp"
         android:layout_marginStart="6dp"
         android:adjustViewBounds="true"
         android:alpha="0.7"
+        android:padding="8dp"
         android:scaleType="centerInside"
         android:src="@drawable/icon_dislike"
         app:layout_constraintBottom_toBottomOf="@+id/likes"
@@ -89,15 +106,19 @@
     <TextView
         android:id="@+id/item_reply_delete"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_height="32dp"
         android:layout_marginLeft="6dp"
         android:layout_marginStart="6dp"
         android:alpha="0.75"
-        android:gravity="center_vertical"
+        android:gravity="center"
+        android:minWidth="52dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
         android:text="删除"
         android:textSize="13sp"
         android:textColor="#fff"
         app:drawableStartCompat="@drawable/icon_delete"
+        app:layout_constraintBottom_toBottomOf="@+id/likes"
         app:layout_constraintStart_toEndOf="@+id/dislikeBtn"
         app:layout_constraintTop_toTopOf="@+id/likes" />
 
