@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_settings_saved_title">已设置</string>
+    <string name="ui_settings_saved_message">重新进入页面后生效。</string>
+    <string name="ui_settings_save_help">修改后点击“确认设置”保存，重新进入页面后生效；返回时也会自动保存。</string>
+    <string name="ui_settings_invalid_number">请输入有效数值</string>
+</resources>

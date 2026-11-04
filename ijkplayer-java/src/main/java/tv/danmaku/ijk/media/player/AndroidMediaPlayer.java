@@ -30,6 +30,7 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 
 import java.io.FileDescriptor;
+import java.io.Closeable;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.Map;
@@ -43,7 +44,7 @@ public class AndroidMediaPlayer extends AbstractMediaPlayer {
     private final MediaPlayer mInternalMediaPlayer;
     private final AndroidMediaPlayerListenerHolder mInternalListenerAdapter;
     private String mDataSource;
-    private MediaDataSource mMediaDataSource;
+    private Closeable mMediaDataSource;
 
     private final Object mInitLock = new Object();
     private boolean mIsReleased;
@@ -114,10 +115,20 @@ public class AndroidMediaPlayer extends AbstractMediaPlayer {
     @TargetApi(Build.VERSION_CODES.M)
     @Override
     public void setDataSource(IMediaDataSource mediaDataSource) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
+            throw new UnsupportedOperationException("Custom media sources require Android 6.0");
         releaseMediaDataSource();
+        mMediaDataSource = MediaDataSourceApi23.attach(mInternalMediaPlayer, mediaDataSource);
+    }
 
-        mMediaDataSource = new MediaDataSourceProxy(mediaDataSource);
-        mInternalMediaPlayer.setDataSource(mMediaDataSource);
+    /** Keep framework types absent on Dalvik out of the ordinary player verifier path. */
+    @TargetApi(Build.VERSION_CODES.M)
+    private static final class MediaDataSourceApi23 {
+        static Closeable attach(MediaPlayer player, IMediaDataSource source) {
+            MediaDataSource proxy = new MediaDataSourceProxy(source);
+            player.setDataSource(proxy);
+            return proxy;
+        }
     }
 
     @TargetApi(Build.VERSION_CODES.M)

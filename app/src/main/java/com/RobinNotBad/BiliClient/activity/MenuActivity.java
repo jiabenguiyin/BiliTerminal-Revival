@@ -3,7 +3,6 @@ package com.RobinNotBad.BiliClient.activity;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Process;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
@@ -46,6 +45,11 @@ public class MenuActivity extends BaseActivity {
     private String from;
     private MaterialButton dynamicButton;
     private MaterialButton messageButton;
+    private final Runnable unreadObserver=this::refreshMessageBadge;
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener unreadListener=(preferences,key)->{
+        if(SharedPreferencesUtil.MESSAGE_UPDATE_NUM.equals(key)||SharedPreferencesUtil.mid.equals(key)
+                ||SharedPreferencesUtil.MESSAGE_UPDATE_CHECK_ENABLE.equals(key))runOnUiThread(this::refreshMessageBadge);
+    };
 
     /**
      * 在排序设置和Splash中使用到的，
@@ -150,7 +154,7 @@ public class MenuActivity extends BaseActivity {
                 case "message":
                     String messageBtnText = Objects.requireNonNull(btnNames.get(btn)).first;
                     messageButton = materialButton;
-                    int messageUpdateNum = SharedPreferencesUtil.getInt(SharedPreferencesUtil.MESSAGE_UPDATE_NUM, 0);
+                    int messageUpdateNum = com.RobinNotBad.BiliClient.util.MessageUnreadCounter.getCount();
                     if (messageUpdateNum > 0) {
                         messageBtnText = messageBtnText + " (" + messageUpdateNum + ")";
                     }
@@ -170,6 +174,7 @@ public class MenuActivity extends BaseActivity {
     @Override
     protected void onStart() {
         super.onStart();
+        SharedPreferencesUtil.getSharedPreferences().registerOnSharedPreferenceChangeListener(unreadListener);
         Log.e("debug", "MenuActivity onStart in: " + (System.currentTimeMillis() - time));
     }
 
@@ -185,14 +190,26 @@ public class MenuActivity extends BaseActivity {
             }
             dynamicButton.setText(btnText);
         }
-        if (messageButton != null) {
-            String messageBtnText = Objects.requireNonNull(btnNames.get("message")).first;
-            int messageUpdateNum = SharedPreferencesUtil.getInt(SharedPreferencesUtil.MESSAGE_UPDATE_NUM, 0);
-            if (messageUpdateNum > 0) {
-                messageBtnText = messageBtnText + " (" + messageUpdateNum + ")";
-            }
-            messageButton.setText(messageBtnText);
-        }
+        refreshMessageBadge();
+        com.RobinNotBad.BiliClient.util.MessageUnreadCounter.observe(unreadObserver);
+    }
+
+    @Override protected void onPause() {
+        com.RobinNotBad.BiliClient.util.MessageUnreadCounter.unobserve(unreadObserver);
+        super.onPause();
+    }
+
+    @Override protected void onStop() {
+        SharedPreferencesUtil.getSharedPreferences().unregisterOnSharedPreferenceChangeListener(unreadListener);
+        super.onStop();
+    }
+
+    private void refreshMessageBadge() {
+        if(messageButton==null||isDestroyed())return;
+        String label=Objects.requireNonNull(btnNames.get("message")).first;
+        int count=com.RobinNotBad.BiliClient.util.MessageUnreadCounter.getCount();
+        com.RobinNotBad.BiliClient.ui.MessageBadgeStyle.button(messageButton,label,count);
+        com.RobinNotBad.BiliClient.ui.MessageBadgeStyle.title(findViewById(R.id.pageName),R.drawable.arrow_up,count);
     }
 
     private void killAndJump(String name) {
@@ -209,10 +226,8 @@ public class MenuActivity extends BaseActivity {
         } else {
             switch (name) {
                 case "exit": //退出按钮
-                    InstanceActivity instance = BiliTerminal.getInstanceActivityOnTop();
-                    if (instance != null && !instance.isDestroyed()) instance.finish();
-                    Process.killProcess(Process.myPid());
-                    break;
+                    BiliTerminal.exit(this);
+                    return;
                 case "login": //登录按钮
                     Intent intent = new Intent();
                     intent.setClass(MenuActivity.this, LoginActivity.class);

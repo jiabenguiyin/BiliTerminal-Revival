@@ -195,6 +195,17 @@ public final class DiagnosticLogManager {
             int uploaded = 0;
             String failureReason = "";
             try {
+                // The user is reporting a current problem. Flush pending records before
+                // selecting the capped batch; old debug spam must not hide recent geometry.
+                try { LOG_EXECUTOR.submit(() -> { }).get(15, java.util.concurrent.TimeUnit.SECONDS); }
+                catch (Exception ignored) { }
+                int limit = DeviceProfile.diagnosticBatchLimit();
+                if (limit > 0) synchronized (FILE_LOCK) {
+                    List<String> lines = readLines(getLogFile());
+                    List<String> ordered = DiagnosticUploadOrder.prioritize(lines,
+                            Math.max(1, limit / UPLOAD_BATCH_SIZE) * UPLOAD_BATCH_SIZE);
+                    if (!lines.equals(ordered)) writeLines(getLogFile(), ordered);
+                }
                 while (true) {
                     Batch batch;
                     synchronized (FILE_LOCK) {

@@ -96,6 +96,7 @@ public class DynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 dynamicHolder.childDynamicHolder.showDynamic(context, dynamic.dynamic_forward, true);
                 childCard.setVisibility(View.VISIBLE);
             } else {
+                if(dynamicHolder.childDynamicHolder!=null)dynamicHolder.childDynamicHolder.closeReports();
                 dynamicHolder.cell_dynamic_child.setVisibility(View.GONE);
             }
 
@@ -109,6 +110,7 @@ public class DynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
 
     @Override
     public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        if(holder instanceof DynamicHolder)((DynamicHolder)holder).closeReports();
         super.onViewRecycled(holder);
     }
 

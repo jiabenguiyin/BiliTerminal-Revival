@@ -91,10 +91,11 @@ public class EditProfileActivity extends InstanceActivity {
             }
         } catch (Exception ignored) {
         }
-        new DatePickerDialog(this, (view, year, month, day) -> birthday.setText(
-                String.format("%04d-%02d-%02d", year, month + 1, day)),
+        DatePickerDialog picker = com.RobinNotBad.BiliClient.ui.TerminalDialogStyle.createDatePicker(this,
                 calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH),
-                calendar.get(Calendar.DAY_OF_MONTH)).show();
+                calendar.get(Calendar.DAY_OF_MONTH), (view, year, month, day) -> birthday.setText(
+                String.format("%04d-%02d-%02d", year, month + 1, day)));
+        picker.show();
     }
 
     private void loadProfile() {

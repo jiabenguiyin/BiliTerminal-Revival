@@ -17,6 +17,7 @@
         <item name="switchStyle">@style/SwitchCompatStyle</item>
         <item name="radioButtonStyle">@style/RadioButtonStyle</item>
         <item name="recyclerViewStyle">@style/ListStyle</item>
+        <item name="alertDialogTheme">@style/TerminalAlertDialogTheme</item>
 
         <item name="colorSwitchThumbNormal">@color/textwhite</item>
         <item name="colorControlActivated">@color/textwhite</item>

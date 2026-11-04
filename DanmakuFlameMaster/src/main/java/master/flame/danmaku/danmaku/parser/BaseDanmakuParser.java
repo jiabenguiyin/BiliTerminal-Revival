@@ -40,6 +40,12 @@ public abstract class BaseDanmakuParser {
     protected DanmakuContext mContext;
     
     public SharedPreferences sharedPreferences = null;
+    protected String ownUserHash = "";
+
+    public BaseDanmakuParser setOwnUserHash(String hash) {
+        ownUserHash = hash == null ? "" : hash;
+        return this;
+    }
     
     public BaseDanmakuParser setDisplayer(IDisplayer disp){
         mDisp = disp;

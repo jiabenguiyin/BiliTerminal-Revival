@@ -1,0 +1,11 @@
+<resources>
+    <item name="dynamic_report_reasons" type="id" />
+    <item name="dynamic_report_note" type="id" />
+    <string name="dynamic_report_button">举报动态</string>
+    <string name="dynamic_report_choose_reason">选择动态举报原因</string>
+    <string name="dynamic_report_confirm_title">确认举报动态</string>
+    <string name="dynamic_report_confirm_message">举报原因：%s</string>
+    <string name="dynamic_report_note_hint">详细描述（必填，最多500字）</string>
+    <string name="dynamic_report_note_invalid">请填写1至500字的详细描述</string>
+    <string name="dynamic_report_submit">确认提交</string>
+</resources>

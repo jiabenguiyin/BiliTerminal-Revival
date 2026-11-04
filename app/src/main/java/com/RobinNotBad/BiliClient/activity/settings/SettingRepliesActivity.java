@@ -26,6 +26,8 @@ public class SettingRepliesActivity extends RefreshListActivity {
             add(new SettingSection("switch", "众生平等", SharedPreferencesUtil.NO_VIP_COLOR, getString(R.string.desc_no_vip_color), "false"));
             add(new SettingSection("switch", "粉丝铭牌消失术", SharedPreferencesUtil.NO_MEDAL, getString(R.string.desc_no_medal), "false"));
             add(new SettingSection("switch", "昵称不换行显示", SharedPreferencesUtil.REPLY_MARQUEE_NAME, getString(R.string.desc_reply_marquee_name), "true"));
+            add(new SettingSection("switch", getString(R.string.reply_top_setting), SharedPreferencesUtil.REPLY_TOP_ENABLED,
+                    getString(R.string.reply_top_setting_desc), "true"));
         }};
 
         recyclerView.setHasFixedSize(true);

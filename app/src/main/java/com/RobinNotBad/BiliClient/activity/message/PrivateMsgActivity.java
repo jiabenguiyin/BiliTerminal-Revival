@@ -110,6 +110,7 @@ public class PrivateMsgActivity extends BaseActivity {
 
         MsgUtil.showMsg("私信有可能被拦截\n尽量不要用终端发私信喵");
 
+        final long requestedAccount=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0);
         CenterThreadPool.run(() -> {
             try {
                 allMsg = PrivateMsgApi.getPrivateMsg(uid, 50, 0, 0);
@@ -120,7 +121,10 @@ public class PrivateMsgActivity extends BaseActivity {
                 
                 if (SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PRIVATE_MSG_AUTO_READ_ENABLE, true)) {
                     try {
-                        PrivateMsgApi.updateAck(uid, 1, 0);
+                        if(requestedAccount==SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0)) {
+                            JSONObject ack=PrivateMsgApi.updateAck(uid, 1, 0);
+                            if(ack.optInt("code",-1)==0)com.RobinNotBad.BiliClient.util.MessageUnreadCounter.refresh(true);
+                        }
                     } catch (Exception e) {
                         Log.e("PrivateMsgActivity", "自动已读失败", e);
                     }

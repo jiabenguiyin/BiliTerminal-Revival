@@ -43,6 +43,8 @@ public class SettingPlayerChooseActivity extends BaseActivity {
             qn_choose = findViewById(R.id.qn_choose);
 
             qn_choose.setOnClickListener((view) -> handleQnChoose());
+            findViewById(R.id.qn_mobile_choose).setOnClickListener(view->openNetworkQuality(com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.MOBILE));
+            findViewById(R.id.qn_wifi_choose).setOnClickListener(view->openNetworkQuality(com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.WIFI));
 
             cardViewList = new ArrayList<>();
             cardViewList.add(terminalPlayer);
@@ -94,6 +96,19 @@ public class SettingPlayerChooseActivity extends BaseActivity {
                 }
             }
         }
+        updateNetworkQn(R.id.qn_mobile_tv,com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.MOBILE);
+        updateNetworkQn(R.id.qn_wifi_tv,com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.WIFI);
+    }
+
+    private void updateNetworkQn(int id,String key) {
+        TextView label=findViewById(id);if(label==null)return;
+        int value=SharedPreferencesUtil.getInt(key,-1);
+        if(value<0){label.setText(R.string.quality_inherit);return;}
+        if(value==0){label.setText("自动（视频最高画质）");return;}
+        label.setText(com.RobinNotBad.BiliClient.model.DashData.getQualityLabel(value));
+    }
+    private void openNetworkQuality(String key) {
+        startActivity(new Intent(this,SettingQualityActivity.class).putExtra(com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.EXTRA_KEY,key));
     }
 
     private void handleQnChoose() {

@@ -28,6 +28,8 @@ public class NoticeActivity extends RefreshListActivity {
         Intent intent = getIntent();
         pageType = intent.getStringExtra("type");
         messageList = new ArrayList<>();
+        final long requestedAccount=com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getLong(
+                com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.mid,0);
 
         CenterThreadPool.run(() -> {
             try {
@@ -55,9 +57,12 @@ public class NoticeActivity extends RefreshListActivity {
 
                 noticeAdapter = new NoticeAdapter(this, messageList);
                 runOnUiThread(() -> {
+                    if(isDestroyed()||requestedAccount!=com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getLong(
+                            com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.mid,0))return;
                     setAdapter(noticeAdapter);
                     setRefreshing(false);
                     setOnLoadMoreListener(this::continueLoading);
+                    com.RobinNotBad.BiliClient.util.MessageUnreadCounter.refresh(true);
                 });
             } catch (Exception e) {
                 e.printStackTrace();

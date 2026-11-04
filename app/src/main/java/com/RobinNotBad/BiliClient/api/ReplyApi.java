@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 
 import com.RobinNotBad.BiliClient.model.ContentType;
 import com.RobinNotBad.BiliClient.model.Reply;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.ReplyStateSync;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
@@ -22,6 +23,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
 
 import okhttp3.Response;
 
@@ -222,6 +225,7 @@ public class ReplyApi {
 
     public static Pair<Integer, Reply> sendReply(long oid, long root, long parent, String text,
                                                  int type, String picturesJson) throws IOException, JSONException {
+        long startedAt = android.os.SystemClock.elapsedRealtime();
         String url = "https://api.bilibili.com/x/v2/reply/add";
         String csrf = NetWorkUtil.getInfoFromCookie("bili_jct",
                 SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""));
@@ -243,7 +247,6 @@ public class ReplyApi {
             httpStatus = response.code();
             result = new JSONObject(response.body().string());
         }
-        Log.e("debug-发送评论", result.toString());
         JSONObject reply = null;
         if (result.has("data") && !result.isNull("data") && result.getJSONObject("data").has("reply") && !result.getJSONObject("data").isNull("reply")) {
             reply = result.getJSONObject("data").getJSONObject("reply");
@@ -257,6 +260,7 @@ public class ReplyApi {
         sendDetails.put("code", result.optInt("code", -1));
         sendDetails.put("message", result.optString("message", ""));
         sendDetails.put("has_reply", reply != null);
+        sendDetails.put("elapsed_ms", android.os.SystemClock.elapsedRealtime() - startedAt);
         if (reply != null) sendDetails.put("rpid", reply.optLong("rpid", 0));
         DiagnosticLogManager.record("reply_send_result", sendDetails);
         return new Pair<>(result.getInt("code"), reply == null ? null : new Reply(root != 0, reply));
@@ -271,6 +275,7 @@ public class ReplyApi {
         if (rpid <= 0) return false;
         final long[] retryDelays = {250L, 500L, 1000L, 2000L};
         for (int attempt = 0; attempt < retryDelays.length; attempt++) {
+            long startedAt = android.os.SystemClock.elapsedRealtime();
             ArrayList<Reply> replies = new ArrayList<>();
             boolean visible = false;
             String errorName = "";
@@ -299,6 +304,7 @@ public class ReplyApi {
                 details.put("result", page.first);
                 details.put("reply_count", replies.size());
                 details.put("visible", visible);
+                details.put("elapsed_ms", android.os.SystemClock.elapsedRealtime() - startedAt);
                 DiagnosticLogManager.record("reply_visibility_check", details);
             } catch (Exception error) {
                 errorName = error.getClass().getSimpleName();
@@ -309,6 +315,7 @@ public class ReplyApi {
                 details.put("attempt", attempt + 1);
                 details.put("visible", false);
                 details.put("error", errorName);
+                details.put("elapsed_ms", android.os.SystemClock.elapsedRealtime() - startedAt);
                 DiagnosticLogManager.record("reply_visibility_check", details);
             }
             if (visible) return true;
@@ -357,6 +364,104 @@ public class ReplyApi {
         JSONObject result = new JSONObject(Objects.requireNonNull(NetWorkUtil.post(url, reqBody, NetWorkUtil.webHeaders).body()).string());
         Log.e("debug-点踩评论", result.toString());
         return result.getInt("code");
+    }
+
+    public static final int REPORT_ALREADY_REPORTED = 12008;
+    public static final int REPORT_NOTE_MAX_LENGTH = 200;
+    private static final Set<String> REPORTS_IN_FLIGHT = new HashSet<>();
+
+    /** Credentials belong to the account which opened the confirmation, never to a later login. */
+    public static final class ReportAccount {
+        private final long mid;
+        private final String cookie, csrf;
+
+        private ReportAccount(long mid, String cookie, String csrf) {
+            this.mid = mid;
+            this.cookie = cookie;
+            this.csrf = csrf;
+        }
+
+        public boolean isCurrent() {
+            synchronized (AccountManager.class) {
+                String current = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+                return mid == ReplyStateSync.account() && AccountManager.sameSession(cookie, current)
+                        && csrf.equals(reportCsrf(current));
+            }
+        }
+    }
+
+    private static String reportCsrf(String cookie) {
+        String csrf = NetWorkUtil.getInfoFromCookie("bili_jct", cookie);
+        return csrf.isEmpty() ? SharedPreferencesUtil.getString("csrf", "") : csrf;
+    }
+
+    public static ReportAccount captureReportAccount() {
+        synchronized (AccountManager.class) {
+            long mid = ReplyStateSync.account();
+            String cookie = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+            String csrf = reportCsrf(cookie);
+            if (mid <= 0 || NetWorkUtil.getInfoFromCookie("SESSDATA", cookie).isEmpty()
+                    || !String.valueOf(mid).equals(NetWorkUtil.getInfoFromCookie("DedeUserID", cookie))
+                    || csrf.trim().isEmpty())
+                throw new IllegalStateException("Report requires an authenticated account");
+            return new ReportAccount(mid, cookie, csrf);
+        }
+    }
+
+    public static boolean isValidReportTarget(long oid, long rpid, int type) {
+        if (oid <= 0 || rpid <= 0) return false;
+        for (ContentType value : ContentType.values()) if (value.getTypeCode() == type) return true;
+        return false;
+    }
+
+    /** An optional Other note is limited locally to 2–200 Unicode code points when supplied. */
+    public static boolean isValidReportNote(String content) {
+        if (content == null || content.isEmpty()) return true;
+        String note = content.trim();
+        int length = note.codePointCount(0, note.length());
+        return length >= 2 && length <= REPORT_NOTE_MAX_LENGTH;
+    }
+
+    static String buildReportReplyForm(long oid, long rpid, int type, int reason,
+                                       String content, String csrf) {
+        if (!isValidReportTarget(oid, rpid, type)) throw new IllegalArgumentException("Invalid report target");
+        if (reason < 0 || reason > 17) throw new IllegalArgumentException("Invalid report reason");
+        if (csrf == null || csrf.trim().isEmpty()) throw new IllegalArgumentException("Missing report CSRF");
+        if (reason == 0 && !isValidReportNote(content)) throw new IllegalArgumentException("Invalid report note");
+        NetWorkUtil.FormData form = new NetWorkUtil.FormData().put("type", type).put("oid", oid)
+                .put("rpid", rpid).put("reason", reason).put("csrf", csrf);
+        if (reason == 0 && content != null && !content.isEmpty()) form.put("content", content.trim());
+        return form.toString();
+    }
+
+    /** Called only after explicit confirmation. No retry: a lost response may already be accepted. */
+    public static int reportReply(long oid, long rpid, int type, int reason, String content,
+                                   ReportAccount account) throws IOException, JSONException {
+        if (account == null) throw new IllegalStateException("Missing report account");
+        String body = buildReportReplyForm(oid, rpid, type, reason, content, account.csrf);
+        String key = account.mid + ":" + type + ":" + oid + ":" + rpid;
+        synchronized (REPORTS_IN_FLIGHT) {
+            if (!REPORTS_IN_FLIGHT.add(key)) throw new IllegalStateException("Report already in flight");
+        }
+        try {
+            ArrayList<String> headers = new ArrayList<>();
+            synchronized (AccountManager.class) {
+                if (!account.isCurrent()) throw new IllegalStateException("Report account changed");
+                // Snapshot headers too: global webHeaders can change while the request is queued.
+                headers.add("Cookie"); headers.add(account.cookie);
+                headers.add("Origin"); headers.add("https://www.bilibili.com");
+                headers.add("Referer"); headers.add("https://www.bilibili.com/");
+                headers.add("User-Agent"); headers.add(NetWorkUtil.USER_AGENT_WEB);
+            }
+            try (Response response = NetWorkUtil.post("https://api.bilibili.com/x/v2/reply/report", body, headers)) {
+                if (!response.isSuccessful() || response.body() == null)
+                    throw new IOException("Comment report HTTP " + response.code());
+                // A missing or malformed code is a failure, never an implicit success.
+                return new JSONObject(response.body().string()).getInt("code");
+            }
+        } finally {
+            synchronized (REPORTS_IN_FLIGHT) { REPORTS_IN_FLIGHT.remove(key); }
+        }
     }
 
     public static boolean canManageReplyTop(long currentMid, long ownerMid, long root) {

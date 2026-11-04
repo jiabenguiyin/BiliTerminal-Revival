@@ -136,6 +136,7 @@
                 android:layout_height="wrap_content">
 
                 <TextView
+                    android:id="@+id/send_reply_label"
                     android:layout_width="match_parent"
                     android:layout_height="35sp"
                     app:drawableEndCompat="@drawable/arrow_forward"

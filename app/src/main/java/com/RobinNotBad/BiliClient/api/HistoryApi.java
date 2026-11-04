@@ -13,8 +13,60 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.*;
+import okhttp3.FormBody;
+import okhttp3.Response;
+import okio.Buffer;
 
 public class HistoryApi {
+
+    /** Bound to the account and credentials the user saw when opening the confirmation. */
+    public static final class DeleteSession {
+        private final long account;
+        private final String cookie,auth,csrf;
+        private DeleteSession(long account,String cookie){
+            this.account=account;this.cookie=cookie;
+            auth=NetWorkUtil.getInfoFromCookie("SESSDATA",cookie);csrf=NetWorkUtil.getInfoFromCookie("bili_jct",cookie);
+        }
+        public static DeleteSession capture(long expectedAccount)throws IOException{
+            String cookie=SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies,"");
+            DeleteSession session=new DeleteSession(expectedAccount,cookie);
+            if(expectedAccount<=0||!session.isCurrent()||session.auth.isEmpty()||session.csrf.isEmpty())
+                throw new IOException("登录信息不完整或账号已变化，请重新登录后操作");
+            String cookieMid=NetWorkUtil.getInfoFromCookie("DedeUserID",cookie);
+            if(!cookieMid.isEmpty()&&!cookieMid.equals(String.valueOf(expectedAccount)))throw new IOException("登录账号信息不一致，请重新登录");
+            return session;
+        }
+        public boolean isCurrent(){
+            String current=SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies,"");
+            return account==SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0)
+                    &&auth.equals(NetWorkUtil.getInfoFromCookie("SESSDATA",current))
+                    &&csrf.equals(NetWorkUtil.getInfoFromCookie("bili_jct",current));
+        }
+        public ApiResult delete(List<Long> aids)throws IOException,JSONException{
+            if(!isCurrent())throw new IOException("账号已变化，未提交删除");
+            FormBody form=new FormBody.Builder().add("kid",historyDeleteKids(aids)).add("csrf",csrf).build();
+            Buffer body=new Buffer();form.writeTo(body);
+            List<String> headers=Arrays.asList("Cookie",cookie,"User-Agent",NetWorkUtil.USER_AGENT_WEB,
+                    "Origin","https://www.bilibili.com","Referer","https://www.bilibili.com/account/history");
+            try(Response response=NetWorkUtil.postOnce("https://api.bilibili.com/x/v2/history/delete",body.readUtf8(),headers)){
+                if(!response.isSuccessful()||response.body()==null)throw new IOException("删除结果未确认，请刷新历史记录核对");
+                JSONObject result=new JSONObject(response.body().string());
+                if(result.optInt("code",Integer.MIN_VALUE)==Integer.MIN_VALUE)throw new JSONException("Missing history deletion result");
+                return new ApiResult(result);
+            }
+        }
+    }
+
+    static String historyDeleteKids(Collection<Long> aids){
+        if(aids==null||aids.isEmpty())throw new IllegalArgumentException("请选择历史记录");
+        LinkedHashSet<Long> unique=new LinkedHashSet<>(aids);
+        if(unique.size()>100)throw new IllegalArgumentException("每次最多删除100条记录");
+        StringBuilder kids=new StringBuilder();
+        for(Long aid:unique){if(aid==null||aid<=0)throw new IllegalArgumentException("历史记录标识无效");
+            if(kids.length()>0)kids.append(',');kids.append("archive_").append(aid);}
+        return kids.toString();
+    }
 
     /**
      * 上传历史记录

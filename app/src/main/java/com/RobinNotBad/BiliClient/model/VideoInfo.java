@@ -116,7 +116,8 @@ public class VideoInfo implements Parcelable, Serializable { // 自定义类需�
         data.cid = cids.get(index);
         data.title = pagenames.size() == 1 ? title : pagenames.get(index);
         data.mid = SharedPreferencesUtil.getLong("mid", 0);
-        data.qn = SharedPreferencesUtil.getInt("play_qn", 0);
+        // Resolve the network default when playback actually starts, not when details are loaded.
+        data.qn = -1;
         data.pagenames = pagenames;
         data.cids = cids;
         data.currentPageIndex = index;

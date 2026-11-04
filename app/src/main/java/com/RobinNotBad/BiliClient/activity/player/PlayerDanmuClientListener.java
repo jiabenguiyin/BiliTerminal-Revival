@@ -268,17 +268,25 @@ public class PlayerDanmuClientListener extends WebSocketListener {
             JSONObject result = new JSONObject(json);
 
             JSONObject data;
-            switch (result.getString("cmd")) {
+            String command = result.getString("cmd");
+            if (command.startsWith("DANMU_MSG:")) command = "DANMU_MSG";
+            switch (command) {
 
                 //聊天弹幕
                 case "DANMU_MSG":
                     if (playerActivity == null) break;
                     JSONArray info = result.getJSONArray("info");
-                    String nickname = info.getJSONArray(0).getJSONObject(15).getJSONObject("user").getJSONObject("base").getString("name");
+                    JSONArray member = info.optJSONArray(2);
+                    JSONArray options = info.optJSONArray(0);
+                    JSONObject senderExtra = options == null ? null : options.optJSONObject(15);
+                    JSONObject sender = senderExtra == null ? null : senderExtra.optJSONObject("user");
+                    JSONObject base = sender == null ? null : sender.optJSONObject("base");
+                    long senderMid = member == null ? 0 : member.optLong(0, 0);
+                    if (senderMid <= 0 && sender != null) senderMid = sender.optLong("uid", sender.optLong("mid", 0));
+                    String nickname = base == null ? "" : base.optString("name", "");
+                    if (nickname.isEmpty() && member != null) nickname = member.optString(1, "");
                     String content = info.getString(1);
-                    if (SharedPreferencesUtil.getBoolean("player_danmaku_showsender", true))
-                        playerActivity.addDanmaku(nickname + "：" + content, Color.WHITE);
-                    else playerActivity.addDanmaku(content, Color.WHITE);
+                    playerActivity.addLiveChatDanmaku(nickname, content, senderMid);
 
                     Log.e("debug", "pkg_dm");
                     break;

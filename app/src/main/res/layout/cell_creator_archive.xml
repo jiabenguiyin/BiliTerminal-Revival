@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_margin="4dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="8dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <TextView android:id="@+id/creator_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+                android:textSize="13sp" android:maxLines="3" android:ellipsize="end" />
+            <androidx.appcompat.widget.AppCompatImageButton android:id="@+id/creator_delete"
+                android:layout_width="36dp" android:layout_height="36dp" android:padding="9dp" android:scaleType="fitCenter"
+                android:background="@drawable/background_reply_report" android:contentDescription="删除本人稿件"
+                app:srcCompat="@drawable/icon_delete" />
+        </LinearLayout>
+        <TextView android:id="@+id/creator_state" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="11sp" android:alpha="0.85" />
+        <TextView android:id="@+id/creator_metrics" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="11sp" android:alpha="0.7" android:layout_marginTop="4dp" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

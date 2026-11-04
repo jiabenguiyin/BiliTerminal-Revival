@@ -121,7 +121,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             title.setText(section.name_short);
             switch (section.state) {
                 case "error":
-                    extra.setText("下载出错 · 点击重试");
+                    extra.setText((section.lastError.isEmpty() ? "下载失败" : section.lastError) + " · 点击重试");
                     break;
                 case "none":
                     extra.setText("等待下载 · 点击继续");

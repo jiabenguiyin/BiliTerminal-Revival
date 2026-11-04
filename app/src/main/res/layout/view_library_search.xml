@@ -40,4 +40,13 @@
         android:background="@android:color/transparent"
         android:contentDescription="@string/library_search"
         app:srcCompat="@drawable/icon_search" />
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/library_sort"
+        android:layout_width="36dp"
+        android:layout_height="42dp"
+        android:padding="8dp"
+        android:visibility="gone"
+        android:background="@android:color/transparent"
+        android:contentDescription="收藏视频排序"
+        app:srcCompat="@drawable/icon_sort" />
 </LinearLayout>

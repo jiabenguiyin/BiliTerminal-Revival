@@ -34,4 +34,10 @@ public class FollowRelationUtilTest {
         assertEquals("回关", FollowRelationUtil.getButtonText(0, 1));
         assertEquals("互粉", FollowRelationUtil.getButtonText(6, 6));
     }
+    @Test public void blockedRelationshipsAreDistinctFromFollowingOrFollowBack() {
+        assertTrue(FollowRelationUtil.isBlockedAttribute(128));
+        for(int attribute:new int[]{-1,0,1,2,6})assertFalse(FollowRelationUtil.isBlockedAttribute(attribute));
+        assertEquals("已拉黑",FollowRelationUtil.getButtonText(128,2));
+        assertEquals("已关注",FollowRelationUtil.getButtonText(2,0));
+    }
 }

@@ -24,45 +24,55 @@ public class MessageApi {
     private static JSONObject getUnreadData() throws IOException, JSONException {
         String url = "https://api.bilibili.com/x/msgfeed/unread";
         JSONObject all = NetWorkUtil.getJson(url);
-        if (all.has("data") && !all.isNull("data")) {
-            return all.getJSONObject("data");
-        }
-        return new JSONObject();
+        return requireUnreadData(all);
+    }
+
+    static JSONObject requireUnreadData(JSONObject all) throws JSONException {
+        int code=all.optInt("code",-1);
+        if(code!=0)throw new JSONException("消息未读接口错误（"+code+"）");
+        JSONObject data=all.optJSONObject("data");
+        if(data==null)throw new JSONException("消息未读接口缺少数据");
+        return data;
+    }
+    private static int unread(JSONObject data,String key) {
+        return (int)Math.max(0,Math.min(Integer.MAX_VALUE,data.optLong(key,0)));
+    }
+    public static int countInteractionUnread(JSONObject data) {
+        return (int)Math.min(Integer.MAX_VALUE,(long)unread(data,"at")+unread(data,"reply")
+                +unread(data,"like")+unread(data,data.has("system")?"system":"sys_msg"));
+    }
+    static int parsePrivateUnread(JSONObject all) throws JSONException {
+        JSONObject data=requireUnreadData(all);
+        // Match ordinary one-to-one conversations. Push, filtered and customer-service
+        // buckets do not have corresponding unread conversation rows in this page.
+        return (int)Math.min(Integer.MAX_VALUE,(long)unread(data,"follow_unread")+unread(data,"unfollow_unread"));
     }
 
     public static JSONObject getUnread() throws IOException, JSONException {
         JSONObject data = getUnreadData();
         JSONObject jsonObject = new JSONObject();
-        jsonObject.put("at", data.optInt("at", 0));
-        jsonObject.put("like", data.optInt("like", 0));
-        jsonObject.put("reply", data.optInt("reply", 0));
-        jsonObject.put("system", data.optInt("sys_msg", 0));
+        jsonObject.put("at", unread(data,"at"));
+        jsonObject.put("like", unread(data,"like"));
+        jsonObject.put("reply", unread(data,"reply"));
+        jsonObject.put("system", unread(data,"sys_msg"));
         return jsonObject;
     }
 
     public static int checkMessageUnread() throws IOException, JSONException {
         JSONObject data = getUnreadData();
-        int total = 0;
-        total += data.optInt("at", 0);
-        total += data.optInt("reply", 0);
-        return total;
+        return countInteractionUnread(data);
     }
 
     public static int checkPrivateMsgUnread() throws IOException, JSONException {
         String url = "https://api.vc.bilibili.com/session_svr/v1/session_svr/single_unread";
         JSONObject all = NetWorkUtil.getJson(url);
-        int total = 0;
-        if (all.has("data") && !all.isNull("data")) {
-            JSONObject data = all.getJSONObject("data");
-            total += data.optInt("unfollow_unread", 0);
-            total += data.optInt("follow_unread", 0);
-            total += data.optInt("unfollow_push_msg", 0);
-            total += data.optInt("dustbin_push_msg", 0);
-            total += data.optInt("dustbin_unread", 0);
-            total += data.optInt("biz_msg_unfollow_unread", 0);
-            total += data.optInt("biz_msg_follow_unread", 0);
-            total += data.optInt("custom_unread", 0);
-        }
+        int total=parsePrivateUnread(all);
+        JSONObject counts=new JSONObject().put("total",total);
+        JSONObject data=all.getJSONObject("data");
+        for(String key:new String[]{"follow_unread","unfollow_unread","unfollow_push_msg","dustbin_push_msg",
+                "dustbin_unread","biz_msg_unfollow_unread","biz_msg_follow_unread","custom_unread"})
+            counts.put(key,unread(data,key));
+        com.RobinNotBad.BiliClient.util.DiagnosticLogManager.record("private_unread_counts",counts);
         return total;
     }
 

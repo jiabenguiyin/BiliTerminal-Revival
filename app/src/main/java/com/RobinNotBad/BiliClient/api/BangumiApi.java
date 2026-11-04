@@ -173,20 +173,7 @@ public class BangumiApi {
             }
 
             // 同系列所有季信息
-            JSONArray seasons = result.optJSONArray("seasons");
-            if (seasons != null) {
-                info.seasons = new ArrayList<>();
-                for (int i = 0; i < seasons.length(); i++) {
-                    JSONObject seasonObj = seasons.getJSONObject(i);
-                    Bangumi.Season season = new Bangumi.Season();
-                    season.media_id = seasonObj.optLong("media_id", 0);
-                    season.season_id = seasonObj.optLong("season_id", 0);
-                    season.season_title = seasonObj.optString("season_title", "");
-                    season.cover = seasonObj.optString("cover", "");
-                    season.badge = seasonObj.optString("badge", "");
-                    info.seasons.add(season);
-                }
-            }
+            info.seasons = parseRelatedSeasons(result.optJSONArray("seasons"));
         }
 
         return info;
@@ -194,7 +181,8 @@ public class BangumiApi {
 
     public static ArrayList<Bangumi.Section> getSections(long season_id) throws IOException, JSONException {
         String url = "https://api.bilibili.com/pgc/web/season/section?season_id=" + season_id;
-        JSONObject all = new JSONObject(Objects.requireNonNull(Objects.requireNonNull(NetWorkUtil.get(url)).body()).string());  //得到一整个json
+        JSONObject all = NetWorkUtil.getJson(url);
+        if (all.optInt("code", -1) != 0) throw new JSONException("番剧选集加载失败（" + all.optInt("code", -1) + "）");
         JSONObject result = all.getJSONObject("result");
         ArrayList<Bangumi.Section> sectionList = new ArrayList<>();
 
@@ -209,7 +197,44 @@ public class BangumiApi {
             }
         }
 
+        for (int i=sectionList.size()-1;i>=0;i--) if(sectionList.get(i).episodeList.isEmpty()) sectionList.remove(i);
         return sectionList;
+    }
+
+    public static Bangumi getSeason(long seasonId) throws IOException, JSONException {
+        JSONObject body=NetWorkUtil.getJson("https://api.bilibili.com/pgc/view/web/season?season_id="+seasonId);
+        if(body.optInt("code",-1)!=0)throw new JSONException("番剧切季失败（"+body.optInt("code",-1)+"）");
+        Bangumi bangumi=new Bangumi();bangumi.info=parseSeasonInfo(body.getJSONObject("result"));
+        if(bangumi.info.season_id!=seasonId)throw new JSONException("番剧季信息不匹配");
+        bangumi.sectionList=getSections(seasonId);return bangumi;
+    }
+
+    static Bangumi.Info parseSeasonInfo(JSONObject x) throws JSONException {
+        Bangumi.Info i=new Bangumi.Info();i.season_id=x.getLong("season_id");i.media_id=x.optLong("media_id");
+        i.title=x.optString("title","");i.cover=x.optString("cover","");i.cover_horizontal=x.optString("horizontal_picture",i.cover);
+        i.type=x.optInt("type",1);i.type_name=x.optString("type_name","");i.area_name="";
+        JSONArray areas=x.optJSONArray("areas");if(areas!=null)for(int a=0;a<areas.length();a++){
+            JSONObject area=areas.optJSONObject(a);if(area!=null)i.area_name+=(i.area_name.isEmpty()?"":" | ")+area.optString("name");
+        }
+        i.subtitle=x.optString("subtitle","");i.evaluate=x.optString("evaluate","");i.staff=x.optString("staff","");i.record=x.optString("record","");
+        JSONObject rating=x.optJSONObject("rating");if(rating!=null){i.score=(float)rating.optDouble("score",0);i.count=rating.optInt("count");}
+        JSONObject newest=x.optJSONObject("new_ep");i.indexShow=newest==null?"":newest.optString("desc",newest.optString("index_show",""));
+        i.publish=new Bangumi.Publish();JSONObject publish=x.optJSONObject("publish");
+        if(publish!=null){i.publish.is_finish=publish.optInt("is_finish");i.publish.pub_time_show=publish.optString("pub_time_show","");}
+        i.stat=new Bangumi.Stat();JSONObject stat=x.optJSONObject("stat");
+        if(stat!=null){i.stat.views=stat.optInt("views");i.stat.favorites=stat.optInt("favorites");i.stat.series_follow=stat.optInt("series_follow");}
+        i.styles=new ArrayList<>();JSONArray styles=x.optJSONArray("styles");if(styles!=null)for(int s=0;s<styles.length();s++)i.styles.add(styles.optString(s));
+        i.seasons=parseRelatedSeasons(x.optJSONArray("seasons"));return i;
+    }
+
+    static ArrayList<Bangumi.Season> parseRelatedSeasons(JSONArray items) {
+        ArrayList<Bangumi.Season> out=new ArrayList<>();java.util.HashSet<Long> seen=new java.util.HashSet<>();
+        if(items!=null)for(int n=0;n<items.length();n++){
+            JSONObject x=items.optJSONObject(n);if(x==null||x.optLong("season_id")<=0||!seen.add(x.optLong("season_id")))continue;
+            Bangumi.Season s=new Bangumi.Season();s.season_id=x.optLong("season_id");s.media_id=x.optLong("media_id");
+            s.season_title=x.optString("season_title",x.optString("title","未命名季"));s.cover=x.optString("cover","");s.badge=x.optString("badge","");out.add(s);
+        }
+        return out;
     }
 
     public static Bangumi.Section analyzeSection(JSONObject jsonObject) throws JSONException {

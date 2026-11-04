@@ -111,6 +111,10 @@ public class BiliProtobufDanmakuParser extends BaseDanmakuParser {
 
                 item.textColor = color | 0xFF000000;
                 item.textShadowColor = (color | 0xFF000000) <= Color.BLACK ? Color.WHITE : Color.BLACK;
+                String senderHash = null;
+                try { senderHash = (String) elemClass.getField("midHash").get(elemObj); }
+                catch (NoSuchFieldException ignored) { /* Older/cached fixtures may omit the sender. */ }
+                master.flame.danmaku.danmaku.util.SelfDanmakuStyle.identify(item, ownUserHash, senderHash);
 
                 item.setTimer(mTimer);
             }

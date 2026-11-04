@@ -114,7 +114,8 @@ public class BrowserActivity extends BaseActivity {
             if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) {
                 updateNavigationState();
             } else {
-                loadUrl(isWebUrl(currentUrl) ? currentUrl : HOME_URL);
+                String initialUrl = getIntent().getStringExtra("url");
+                loadUrl(isWebUrl(currentUrl) ? currentUrl : isWebUrl(initialUrl) ? initialUrl : HOME_URL);
             }
         };
         try {

@@ -11,6 +11,7 @@ import java.util.List;
  */
 public class DashData {
     public static final int QN_AUTO = 0;
+    public static final int QN_240P = 6;
     public static final int QN_360P = 16;
     public static final int QN_480P = 32;
     public static final int QN_720P = 64;
@@ -23,7 +24,7 @@ public class DashData {
     // The player intentionally stops at 4K. 8K, HDR and Dolby Vision are not selectable formats.
     private static final int[] SUPPORTED_QUALITY_ORDER = {
             QN_4K, QN_1080P_60, QN_1080P_PLUS, QN_1080P,
-            QN_720P_60, QN_720P, QN_480P, QN_360P
+            QN_720P_60, QN_720P, QN_480P, QN_360P, QN_240P
     };
 
     public int duration; // 视频长度（秒）
@@ -105,25 +106,27 @@ public class DashData {
         switch (qn) {
             case QN_4K:
                 return new int[]{QN_4K, QN_1080P_60, QN_1080P_PLUS, QN_1080P,
-                        QN_720P_60, QN_720P, QN_480P, QN_360P};
+                        QN_720P_60, QN_720P, QN_480P, QN_360P, QN_240P};
             case QN_1080P_60:
                 return new int[]{QN_1080P_60, QN_1080P_PLUS, QN_1080P,
-                        QN_720P_60, QN_720P, QN_480P, QN_360P};
+                        QN_720P_60, QN_720P, QN_480P, QN_360P, QN_240P};
             case QN_1080P_PLUS:
                 return new int[]{QN_1080P_PLUS, QN_1080P, QN_720P_60,
-                        QN_720P, QN_480P, QN_360P};
+                        QN_720P, QN_480P, QN_360P, QN_240P};
             case QN_1080P:
-                return new int[]{QN_1080P, QN_720P_60, QN_720P, QN_480P, QN_360P};
+                return new int[]{QN_1080P, QN_720P_60, QN_720P, QN_480P, QN_360P, QN_240P};
             case QN_720P_60:
-                return new int[]{QN_720P_60, QN_720P, QN_480P, QN_360P};
+                return new int[]{QN_720P_60, QN_720P, QN_480P, QN_360P, QN_240P};
             case QN_720P:
-                return new int[]{QN_720P, QN_480P, QN_360P};
+                return new int[]{QN_720P, QN_480P, QN_360P, QN_240P};
             case QN_480P:
-                return new int[]{QN_480P, QN_360P};
+                return new int[]{QN_480P, QN_360P, QN_240P};
             case QN_360P:
-                return new int[]{QN_360P};
+                return new int[]{QN_360P, QN_240P};
+            case QN_240P:
+                return new int[]{QN_240P};
             default:
-                return new int[]{QN_360P};
+                return new int[]{QN_360P, QN_240P};
         }
     }
 
@@ -176,10 +179,10 @@ public class DashData {
 
     /** Maps automatic and legacy/special-format values to the capped request tier. */
     public static int normalizeRequestedQuality(int qn) {
-        // 16 and 64 are the legacy progressive-stream request values used by
+        // 6, 16 and 64 are the legacy progressive-stream request values used by
         // the download and old-player paths. They must remain intact; turning
         // them into 4K makes a 360P/720P request ask the wrong endpoint tier.
-        if (qn == QN_360P || qn == QN_720P) return qn;
+        if (qn == QN_240P || qn == QN_360P || qn == QN_720P) return qn;
         return isSupportedQuality(qn) ? qn : QN_4K;
     }
 
@@ -205,6 +208,8 @@ public class DashData {
                 return "480P";
             case QN_360P:
                 return "360P";
+            case QN_240P:
+                return "240P";
             default:
                 return "清晰度 " + qn;
         }

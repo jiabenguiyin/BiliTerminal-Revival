@@ -46,6 +46,12 @@ public class SearchActivity extends InstanceActivity {
     private boolean hasSearched;
     private String[] searchCategories;
     private TabLayoutMediator categoryMediator;
+    private TabLayout categoriesBar;
+    private TextView categorySelector;
+    private com.RobinNotBad.BiliClient.player.PlayerOptionsMenu categoryPicker;
+    private float searchClockTextSize;
+    private int resultsScrollState, categoryScrollDistance;
+    private boolean categoryChangedThisDrag = true;
     private RecyclerView historyRecyclerview;
     private RecyclerView suggestionsRecyclerview;
     SearchHistoryAdapter searchHistoryAdapter;
@@ -108,12 +114,19 @@ public class SearchActivity extends InstanceActivity {
 
             View searchBtn = findViewById(R.id.search);
             keywordInput = findViewById(R.id.keywordInput);
+            categorySelector = findViewById(R.id.search_category_picker);
+            categorySelector.setOnClickListener(ignored -> showCategoryPicker());
+            findViewById(android.R.id.content).addOnLayoutChangeListener((v, left, top, right, bottom,
+                    oldLeft, oldTop, oldRight, oldBottom) -> {
+                if (right - left != oldRight - oldLeft) v.post(this::setRound);
+            });
             searchBar = findViewById(R.id.searchbar);
             historyRecyclerview = findViewById(R.id.history_recyclerview);
             suggestionsRecyclerview = findViewById(R.id.suggestions_recyclerview);
             viewPager.setOffscreenPageLimit(1);
 
             keywordInput.setOnFocusChangeListener((view, b) -> {
+                setSearchCategoriesVisible(true);
                 if (b) {
                     // 获得焦点时，根据输入内容决定显示历史还是建议
                     String keyword = keywordInput.getText().toString();
@@ -157,13 +170,20 @@ public class SearchActivity extends InstanceActivity {
             };
             viewPager.setAdapter(vpfAdapter);
             TabLayout categories = findViewById(R.id.search_categories);
+            categoriesBar = categories;
             categoryMediator = new TabLayoutMediator(categories, viewPager,
                     (tab, position) -> tab.setText(searchCategories[position]));
             categoryMediator.attach();
+            setSearchCategoriesVisible(true);
+            updateSearchCategory(viewPager.getCurrentItem());
+            setRound();
 
             viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
                 @Override
                 public void onPageSelected(int position) {
+                    updateSearchCategory(position);
+                    setSearchCategoriesVisible(true);
+                    categoryChangedThisDrag = true;
                     if (position != 0) {
                         if (tutorial_show) {
                             tutorial_show = false;
@@ -350,6 +370,9 @@ public class SearchActivity extends InstanceActivity {
                 }
             }
             
+            setSearchCategoriesVisible(true);
+            categoryChangedThisDrag = true;
+            categoryScrollDistance = 0;
             if (hasSearched && Objects.equals(lastKeyword, str)) {
                 runOnUiThread(() -> {
                     keywordInput.clearFocus();
@@ -441,6 +464,7 @@ public class SearchActivity extends InstanceActivity {
     }
 
     @Override protected void onDestroy() {
+        if (categoryPicker != null) categoryPicker.dismiss();
         if (categoryMediator != null) categoryMediator.detach();
         if (handler != null) handler.removeCallbacksAndMessages(null);
         super.onDestroy();
@@ -456,6 +480,114 @@ public class SearchActivity extends InstanceActivity {
                 searchBar.setTranslationY(0f);
             }
         }
+        if (!hasSearched || resultsScrollState == RecyclerView.SCROLL_STATE_IDLE
+                || categoryChangedThisDrag || dy == 0 || categoriesBar == null || keywordInput.hasFocus()) return;
+        if ((categoryScrollDistance > 0) != (dy > 0)) categoryScrollDistance = 0;
+        categoryScrollDistance += dy;
+        int threshold = Math.round(24 * getResources().getDisplayMetrics().density);
+        if (Math.abs(categoryScrollDistance) >= threshold) {
+            boolean visible = categoryScrollDistance < 0;
+            if (visible != (categoriesBar.getVisibility() == View.VISIBLE)) {
+                setSearchCategoriesVisible(visible);
+                // Changing viewport height can itself emit onScrolled. Only one
+                // header change per physical drag prevents feedback and flicker.
+                categoryChangedThisDrag = true;
+            }
+        }
+    }
+
+    public void onSearchScrollState(SearchFragment source, int state, boolean atTop) {
+        if (!isCurrentSearchFragment(source)) return;
+        resultsScrollState = state;
+        if (state == RecyclerView.SCROLL_STATE_DRAGGING) {
+            categoryScrollDistance = 0; categoryChangedThisDrag = false;
+        }
+        if (atTop && (state == RecyclerView.SCROLL_STATE_IDLE || state == RecyclerView.SCROLL_STATE_DRAGGING)) {
+            boolean wasHidden = categoriesBar != null && categoriesBar.getVisibility() != View.VISIBLE;
+            setSearchCategoriesVisible(true);
+            if (wasHidden) categoryChangedThisDrag = true;
+        }
+    }
+
+    public void onSearchScrolled(SearchFragment source, int dy) {
+        if (isCurrentSearchFragment(source)) onScrolled(dy);
+    }
+
+    private boolean isCurrentSearchFragment(SearchFragment source) {
+        return viewPager != null && source == getSupportFragmentManager().findFragmentByTag("f" + viewPager.getCurrentItem());
+    }
+
+    private void setSearchCategoriesVisible(boolean visible) {
+        if (categoriesBar == null) return;
+        categoriesBar.setVisibility(visible && SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.SEARCH_SHOW_CATEGORY_TABS, false)
+                ? View.VISIBLE : View.GONE);
+    }
+
+    private void updateSearchCategory(int position) {
+        if (categorySelector == null || searchCategories == null || position < 0 || position >= searchCategories.length) return;
+        categorySelector.setText(searchCategories[position]);
+        categorySelector.setContentDescription(getString(R.string.search_category_picker_desc, searchCategories[position]));
+    }
+
+    private void showCategoryPicker() {
+        if (viewPager == null || categorySelector == null || isFinishing()) return;
+        if (categoryPicker != null) categoryPicker.dismiss();
+        categoryPicker = new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this, categorySelector);
+        for (int i = 0; i < searchCategories.length; i++)
+            categoryPicker.getMenu().add(0, 1000 + i, i, searchCategories[i]).setCheckable(true).setChecked(i == viewPager.getCurrentItem());
+        categoryPicker.setOnMenuItemClickListener(item -> {
+            int position = item.getItemId() - 1000;
+            if (position < 0 || position >= searchCategories.length) return false;
+            viewPager.setCurrentItem(position, false);
+            updateSearchCategory(position);
+            setSearchCategoriesVisible(true); categoryChangedThisDrag = true;
+            return true;
+        });
+        categoryPicker.show();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (categorySelector != null) {
+            setSearchCategoriesVisible(true);
+            updateSearchCategory(viewPager.getCurrentItem());
+            setRound();
+        }
+    }
+
+    @Override public void setRound() {
+        // This page has a compact title + category selector. Keep both usable
+        // when the round layout places the clock on its own line.
+        View heading = findViewById(R.id.search_heading);
+        TextView clock = findViewById(R.id.timeText);
+        if (heading == null || clock == null) return;
+        if (searchClockTextSize <= 0) searchClockTextSize = clock.getTextSize();
+        float density = getResources().getDisplayMetrics().density;
+        boolean round = SharedPreferencesUtil.getBoolean("player_ui_round", false);
+        View content = findViewById(android.R.id.content);
+        int available = content != null && content.getWidth() > 0 ? content.getWidth() : getResources().getDisplayMetrics().widthPixels;
+        if (window_width > 0) available = Math.min(available, window_width);
+        boolean stacked = round || available / density < 128 * Math.max(1f, getResources().getConfiguration().fontScale);
+        android.widget.RelativeLayout.LayoutParams time = new android.widget.RelativeLayout.LayoutParams(-2, -2);
+        android.widget.RelativeLayout.LayoutParams row = new android.widget.RelativeLayout.LayoutParams(-1, -2);
+        if (stacked) {
+            time.addRule(android.widget.RelativeLayout.CENTER_HORIZONTAL);
+            row.addRule(android.widget.RelativeLayout.BELOW, R.id.timeText);
+            int inset = round ? Math.max(Math.round(8 * density), Math.round(available * .12f))
+                    : Math.min(Math.round(6 * density), Math.round(available * .04f));
+            heading.setPadding(inset, 0, inset, 0);
+            clock.setTextSize(12); clock.setAlpha(round ? .85f : 1f);
+        } else {
+            time.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT);
+            time.rightMargin = Math.round(6 * density);
+            time.topMargin = time.bottomMargin = Math.round(3 * density);
+            row.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT);
+            row.addRule(android.widget.RelativeLayout.LEFT_OF, R.id.timeText);
+            row.leftMargin = Math.round(6 * density); row.rightMargin = Math.round(2 * density);
+            heading.setPadding(0, 0, 0, 0);
+            clock.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, searchClockTextSize); clock.setAlpha(1f);
+        }
+        clock.setLayoutParams(time); heading.setLayoutParams(row);
     }
 
     private void requestFragmentFocus(){

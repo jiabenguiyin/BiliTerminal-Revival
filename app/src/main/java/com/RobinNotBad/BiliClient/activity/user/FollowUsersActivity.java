@@ -25,6 +25,7 @@ import java.util.List;
 //2024-05-01
 
 public class FollowUsersActivity extends RefreshListActivity {
+    private AlertDialog cancelFollowDialog;
 
     private long mid;
     private ArrayList<UserInfo> userList;
@@ -68,18 +69,28 @@ public class FollowUsersActivity extends RefreshListActivity {
 
     private boolean confirmCancelFollow(UserInfo user, Runnable onSuccess) {
         if (!canCancelFollow() || user == null) return false;
+        if (cancelFollowDialog != null && cancelFollowDialog.isShowing()) return true;
+        final long accountMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        final boolean[] submitted = {false};
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("取消关注")
                 .setMessage("确定取消关注「" + user.name + "」吗？")
                 .setNegativeButton("取消", null)
-                .setPositiveButton("确定", null)
+                .setPositiveButton("取消关注", null)
                 .create();
-        com.RobinNotBad.BiliClient.util.MsgUtil.prepareAlertDialog(dialog);
+        cancelFollowDialog = dialog;
+        dialog.setOnDismissListener(ignored -> { if (cancelFollowDialog == dialog) cancelFollowDialog = null; });
+        com.RobinNotBad.BiliClient.ui.TerminalDialogStyle.prepareSeparatedActions(dialog);
         dialog.show();
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            if (submitted[0]) return;
+            submitted[0] = true;
             dialog.dismiss();
             CenterThreadPool.run(() -> {
                 try {
+                    if (accountMid != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) {
+                        MsgUtil.showMsg("账号已切换，请重新操作");return;
+                    }
                     int code = UserInfoApi.followUser(user.mid, false, user.relationAttribute);
                     if (code == 0) {
                         runOnUiThread(onSuccess);

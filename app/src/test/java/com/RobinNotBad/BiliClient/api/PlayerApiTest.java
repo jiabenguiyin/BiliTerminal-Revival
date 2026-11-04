@@ -3,6 +3,8 @@ package com.RobinNotBad.BiliClient.api;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import com.RobinNotBad.BiliClient.model.DashData;
 import com.RobinNotBad.BiliClient.model.DashVideoStream;
@@ -101,5 +103,81 @@ public class PlayerApiTest {
         stream.codecid = 7;
         stream.baseUrl = "https://example.test/" + id;
         return stream;
+    }
+
+    @Test public void missingQualityDescriptionsUseOnlyTheReturnedProgressiveQuality() throws Exception {
+        JSONObject response = new JSONObject().put("quality",80).put("accept_quality",new JSONArray())
+                .put("durl",new JSONArray().put(new JSONObject().put("url","https://example.invalid/video.mp4")));
+        assertArrayEquals(new int[]{80},PlayerApi.extractAvailableQualityValues(response,null));
+    }
+
+    @Test public void responseWithoutAProgressiveUrlDoesNotInventQualityChoices() throws Exception {
+        assertArrayEquals(new int[0],PlayerApi.extractAvailableQualityValues(new JSONObject().put("quality",80),null));
+    }
+
+    @Test public void responseWithoutActualQualityDoesNotPretendToBe1080p() throws Exception {
+        JSONObject response = new JSONObject().put("durl",new JSONArray().put(new JSONObject().put("url","https://example.invalid/video.mp4")));
+        assertArrayEquals(new int[0],PlayerApi.extractAvailableQualityValues(response,null));
+    }
+
+    @Test public void audioDownloadWorksWithoutAnyVideoOrQualityListAndRefreshesStaleUrls() throws Exception {
+        PlayerData data = new PlayerData();data.qn=120;data.videoUrl="https://example.invalid/old-video";data.audioUrl="https://example.invalid/expired";
+        PlayerApi.applyAudioDownloadData(data,audioResponse(audio("https://example.invalid/current",128000)));
+        assertEquals("https://example.invalid/current",data.audioUrl);assertEquals("",data.videoUrl);
+        assertEquals(0,data.qn);assertTrue(data.timeStamp>0);assertFalse(data.dashData.hasVideo());
+    }
+
+    @Test public void missingAudioIsReportedWithoutLeavingAnExpiredUrlBehind() throws Exception {
+        for(JSONObject response:new JSONObject[]{new JSONObject(),new JSONObject().put("dash",new JSONObject().put("audio",new JSONArray()))}) {
+            PlayerData data=new PlayerData();data.audioUrl="https://example.invalid/expired";data.audioBackupUrls.add(data.audioUrl);data.timeStamp=123;
+            try {PlayerApi.applyAudioDownloadData(data,response);fail("Missing audio must be reported");}
+            catch(org.json.JSONException expected){assertTrue(expected.getMessage().contains("音频流"));}
+            assertEquals("",data.audioUrl);assertTrue(data.audioBackupUrls.isEmpty());assertEquals(0,data.timeStamp);
+        }
+    }
+
+    @Test public void audioDownloadCanUseABackupWhenThePrimaryAddressIsEmpty() throws Exception {
+        PlayerData data=new PlayerData();
+        JSONObject stream=audio("",128000).put("backup_url",new JSONArray().put("https://example.invalid/backup"));
+        PlayerApi.applyAudioDownloadData(data,audioResponse(stream));
+        assertEquals("https://example.invalid/backup",data.audioUrl);assertTrue(data.audioBackupUrls.isEmpty());
+    }
+
+    @Test public void blankHighBitrateAudioDoesNotHideAUsableTrack() throws Exception {
+        PlayerData data=new PlayerData();
+        PlayerApi.applyAudioDownloadData(data,audioResponse(audio("",999999),audio("https://example.invalid/usable",64000)));
+        assertEquals("https://example.invalid/usable",data.audioUrl);
+    }
+
+    @Test public void compatibleAacIsPreferredToAnUnsupportedHigherBitrateTrack() throws Exception {
+        PlayerData data=new PlayerData();
+        JSONObject opus=audio("https://example.invalid/opus",999999).put("codecs","opus").put("mimeType","audio/webm");
+        PlayerApi.applyAudioDownloadData(data,audioResponse(opus,audio("https://example.invalid/aac",128000)));
+        assertEquals("https://example.invalid/aac",data.audioUrl);
+    }
+
+    @Test public void audioDownloadDoesNotParseOrRequireVideoRepresentations() throws Exception {
+        PlayerData data=new PlayerData();JSONObject response=audioResponse(audio("https://example.invalid/audio",128000));
+        response.getJSONObject("dash").put("video",new JSONArray().put("invalid video descriptor"));
+        PlayerApi.applyAudioDownloadData(data,response);
+        assertEquals("https://example.invalid/audio",data.audioUrl);
+    }
+
+    private JSONObject audio(String url,long bandwidth)throws Exception {
+        return new JSONObject().put("id",30280).put("base_url",url).put("bandwidth",bandwidth)
+                .put("mimeType","audio/mp4").put("codecs","mp4a.40.2");
+    }
+
+    @Test public void realVideoTwoFortyPResponseDoesNotBecomeAnEmptyQualityList() throws Exception {
+        JSONObject response=new JSONObject().put("quality",6).put("accept_quality",new JSONArray().put(6))
+                .put("support_formats",new JSONArray().put(new JSONObject().put("quality",6).put("new_description","240P 极速")))
+                .put("durl",new JSONArray().put(new JSONObject().put("url","https://example.invalid/video.mp4")));
+        assertArrayEquals(new int[]{6},PlayerApi.extractAvailableQualityValues(response,null));
+        PlayerData request=new PlayerData();request.qn=6;
+        assertTrue(PlayerApi.buildVideoPlayQuery(request).contains("&qn=6&"));
+    }
+    private JSONObject audioResponse(JSONObject... streams)throws Exception {
+        JSONArray audio=new JSONArray();for(JSONObject stream:streams)audio.put(stream);
+        return new JSONObject().put("dash",new JSONObject().put("audio",audio));
     }
 }

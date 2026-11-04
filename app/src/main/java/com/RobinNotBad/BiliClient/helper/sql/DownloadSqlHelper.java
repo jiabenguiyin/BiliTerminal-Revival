@@ -12,7 +12,7 @@ import com.RobinNotBad.BiliClient.util.VideoStorageUtil;
 
 public class DownloadSqlHelper extends SQLiteOpenHelper {
     public DownloadSqlHelper(@Nullable Context context) {
-        super(context, "download.db", null, 5);
+        super(context, "download.db", null, 6);
     }
 
     @Override
@@ -29,7 +29,8 @@ public class DownloadSqlHelper extends SQLiteOpenHelper {
                 "download_type TEXT DEFAULT 'video'," +
                 "audio_url TEXT," +
                 "storage_mode TEXT," +
-                "storage_ref TEXT)");
+                "storage_ref TEXT," +
+                "last_error TEXT DEFAULT '')");
     }
 
     @Override
@@ -48,6 +49,7 @@ public class DownloadSqlHelper extends SQLiteOpenHelper {
                         new Object[]{VideoStorageUtil.MODE_FILE,
                                 FileUtil.getVideoDownloadPath().getAbsolutePath()});
             }
+            if (oldVersion < 6) db.execSQL("ALTER TABLE download ADD COLUMN last_error TEXT DEFAULT ''");
         } catch (Throwable e) {
             MsgUtil.err(e);
         }

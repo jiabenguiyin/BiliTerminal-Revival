@@ -24,6 +24,12 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
         final List<SettingSection> sectionList = new ArrayList<>() {
             {
                 add(new SettingSection("switch", "长按倍速", "player_longclick", "", "true"));
+                add(new SettingSection("switch",getString(R.string.longpress_hint_enabled),PlayerSettingsUtil.LONGPRESS_HINT_ENABLED,
+                        getString(R.string.longpress_hint_enabled_desc),"true"));
+                add(new SettingSection("input_float",getString(R.string.longpress_hint_scale),PlayerSettingsUtil.LONGPRESS_HINT_SCALE,
+                        getString(R.string.longpress_hint_scale_desc),"0.75"));
+                add(new SettingSection("switch", getString(R.string.player_longpress_switch), SharedPreferencesUtil.PLAYER_LONGPRESS_SWITCH,
+                        getString(R.string.player_longpress_switch_desc), "true"));
                 add(new SettingSection("switch", "洗脑循环", "player_loop", "", "false"));
                 add(new SettingSection("switch", "普通播放允许后台", "player_background",
                         "控制普通视频和直播；听视频、听直播始终支持主页键与熄屏播放",
@@ -32,6 +38,15 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
                 add(new SettingSection("switch", "从历史位置播放", "player_from_last",
                         getString(R.string.desc_fromlast),
                         "true"));
+                add(new SettingSection("choose3", getString(R.string.pgc_skip_mode),
+                        com.RobinNotBad.BiliClient.player.PlaybackSegments.MODE,
+                        getString(R.string.pgc_skip_desc), "1", new String[]{"关闭", "手动跳过", "自动跳过一次"}));
+                add(new SettingSection("switch", getString(R.string.fine_volume),
+                        com.RobinNotBad.BiliClient.player.PlaybackVolume.ENABLED, getString(R.string.fine_volume_desc), "false"));
+                add(new SettingSection("switch", getString(R.string.seek_buttons),
+                        com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_BUTTONS, getString(R.string.seek_buttons_desc), "false"));
+                add(new SettingSection("input_int", getString(R.string.seek_seconds),
+                        com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_SECONDS, getString(R.string.seek_seconds_desc), "10"));
                 add(new SettingSection("switch", "显示实时人数", "player_show_online",
                         getString(R.string.desc_showonline),
                         "false"));
@@ -116,6 +131,12 @@ public class SettingTerminalPlayerActivity extends RefreshListActivity {
 
                 add(new SettingSection("switch", "显示旋转按钮", "player_ui_showRotateBtn", "", "true"));
                 add(new SettingSection("switch", "显示弹幕按钮", "player_ui_showDanmakuBtn", "", "true"));
+                add(new SettingSection("switch", getString(R.string.collection_playback_show),
+                        SharedPreferencesUtil.PLAYER_SHOW_COLLECTION_PLAYBACK,
+                        getString(R.string.collection_playback_desc), "false"));
+                add(new SettingSection("choose3", "缓存连播范围", SharedPreferencesUtil.PLAYER_CACHED_PLAYBACK_SCOPE,
+                        "当前合集只播已缓存条目，旧缓存按当前分P播放；全部缓存可作为歌单。不会联网补播。更改后从缓存列表重新打开播放生效。", "0",
+                        new String[]{"当前合集/分P", "全部缓存"}));
                 add(new SettingSection("switch", "显示清晰度按钮", "player_ui_showQualityBtn",
                         "", "true"));
                 add(new SettingSection("switch", "显示分P按钮", "player_ui_showPageBtn",

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reply_report">举报</string>
+    <string name="reply_report_cancel">取消</string>
+    <string name="reply_report_description">举报此条评论</string>
+    <string name="reply_report_choose_reason">选择举报原因</string>
+    <string name="reply_report_next">下一步</string>
+    <string name="reply_report_submit">提交</string>
+    <string name="reply_report_confirm_title">确认举报</string>
+    <string name="reply_report_confirm_message">举报原因：%1$s\n确认向哔哩哔哩提交此条评论的举报？</string>
+    <string name="reply_report_note_hint">备注（可留空；填写时为2–200字）</string>
+    <string name="reply_report_note_invalid">备注可留空；填写时需2–200字，不能只有空格</string>
+    <string name="reply_report_success">举报已提交</string>
+    <string name="reply_report_already">你已经举报过此条评论</string>
+    <string name="reply_report_failed">举报失败（错误码：%1$d），请稍后重试</string>
+    <string name="reply_report_network_failed">举报网络异常，未能确认提交结果；请稍后查看</string>
+    <string name="reply_report_response_failed">举报响应异常，未能确认提交结果</string>
+    <string name="reply_report_login">请先登录有效账号后再举报</string>
+    <string name="reply_report_account_changed">登录账号或凭据已变化，请重新打开评论区后举报</string>
+    <string name="reply_report_invalid_target">此条评论数据已变化，请刷新后举报</string>
+    <string name="reply_report_pending">此条评论的举报正在提交，请稍候</string>
+    <string name="reply_report_auth_failed">举报失败：登录校验失效，请重新登录</string>
+    <string name="reply_report_rate_limited">举报过于频繁，请稍后再试</string>
+    <string name="reply_report_note_rejected">举报失败：备注长度不符合平台要求，请修改后再试</string>
+    <item name="reply_report_reasons" type="id" />
+    <item name="reply_report_note" type="id" />
+    <!-- Index is the API reason code. Keep all 18 entries in order. -->
+    <string-array name="reply_report_reasons">
+        <item>其他</item>
+        <item>垃圾广告</item>
+        <item>色情</item>
+        <item>刷屏</item>
+        <item>引战</item>
+        <item>剧透</item>
+        <item>政治</item>
+        <item>人身攻击</item>
+        <item>内容不相关</item>
+        <item>违法违规</item>
+        <item>低俗</item>
+        <item>非法网站</item>
+        <item>赌博诈骗</item>
+        <item>传播不实信息</item>
+        <item>怂恿教唆信息</item>
+        <item>侵犯隐私</item>
+        <item>抢楼</item>
+        <item>青少年不良信息</item>
+    </string-array>
+</resources>

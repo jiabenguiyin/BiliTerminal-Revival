@@ -30,19 +30,22 @@ public class StableReleaseProbe extends Instrumentation {
             check(marker != null, "Missing upgrade marker");
             PackageInfo info = target.getPackageManager().getPackageInfo(target.getPackageName(), PackageManager.GET_SIGNATURES);
             if ("prepare".equals(args.getString("mode"))) {
-                check(info.versionCode == 2026103002 && "1.2.3-BETA".equals(info.versionName), "Expected previous Beta APK");
+                check(info.versionCode == Integer.parseInt(args.getString("previousCode", "2026110306"))
+                        && args.getString("previousVersion", "1.2.4-BETA").equals(info.versionName), "Expected previous Beta APK");
                 check(target.getSharedPreferences("stable_release_probe", Context.MODE_PRIVATE).edit()
                         .putString("marker", marker).commit(), "Cannot write upgrade marker");
             } else {
-                check(info.versionCode == 2026103003 && "1.2.3".equals(info.versionName), "Wrong stable package identity");
+                String version = args.getString("expectedVersion", "1.2.4");
+                int code = Integer.parseInt(args.getString("expectedCode", "2026110401"));
+                check(info.versionCode == code && version.equals(info.versionName), "Wrong stable package identity");
                 check((info.applicationInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0, "Shipped APK is debuggable");
                 check("94b1569cdc216f7b19acb1228e56a3dd8782f0adbc4e87e0d945c536e839f561"
                         .equals(sha(info.signatures[0].toByteArray())), "Signing certificate changed");
                 check(marker.equals(target.getSharedPreferences("stable_release_probe", Context.MODE_PRIVATE)
                         .getString("marker", null)), "Existing data was lost on upgrade");
                 String[] notes = target.getResources().getStringArray(id(target, "update_log_items", "array"));
-                check(notes.length == 5, "Wrong note count");
-                check("优化 Android 4.x、低内存设备和智能手表的运行稳定性".equals(notes[4]), "Last note changed");
+                check(notes.length == Integer.parseInt(args.getString("noteCount", "4")), "Wrong note count");
+                check("优化 Android 4.x、低内存设备和智能手表的运行稳定性".equals(notes[notes.length - 1]), "Last note changed");
                 StringBuilder text = new StringBuilder();
                 for (String note : notes) { if (text.length() > 0) text.append('\n'); text.append(note); }
                 check(args.getString("expectedNotesSha256").equals(sha(text.toString().getBytes("UTF-8"))), "Approved notes differ");
@@ -55,11 +58,11 @@ public class StableReleaseProbe extends Instrumentation {
                     while (about.findViewById(versionId) == null && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(40);
                     waitForIdleSync();
                     runOnMainSync(() -> {
-                        check("版本名\n1.2.3".equals(((TextView) about.findViewById(versionId)).getText().toString()), "About version differs");
-                        check("版本号\n2026103003".equals(((TextView) about.findViewById(codeId)).getText().toString()), "About code differs");
+                        check(("版本名\n" + version).equals(((TextView) about.findViewById(versionId)).getText().toString()), "About version differs");
+                        check(("版本号\n" + code).equals(((TextView) about.findViewById(codeId)).getText().toString()), "About code differs");
                         String visible = ((TextView) about.findViewById(notesId)).getText().toString();
                         for (String note : notes) check(visible.contains(note), "About note missing");
-                        check(visible.endsWith(notes[4]), "About last note differs");
+                        check(visible.endsWith(notes[notes.length - 1]), "About last note differs");
                         save(target, about);
                     });
                 } finally { runOnMainSync(about::finish); waitForIdleSync(); }

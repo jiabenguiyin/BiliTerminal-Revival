@@ -35,6 +35,9 @@ import org.json.JSONException;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public class BiliTerminal extends Application {
 
@@ -45,6 +48,7 @@ public class BiliTerminal extends Application {
 
     private static WeakReference<InstanceActivity> instance = new WeakReference<>(null);
     private static volatile boolean deferredInitializationStarted;
+    private static final Map<Activity, Boolean> activities = new WeakHashMap<>();
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -60,6 +64,7 @@ public class BiliTerminal extends Application {
             ErrorCatch.getInstance().init(context);
             SharedPreferencesUtil.sharedPreferences = getSharedPreferences("default", MODE_PRIVATE);
             AccountManager.migrateCurrentAccount();
+            com.RobinNotBad.BiliClient.util.MessageUnreadCounter.initialize();
             PlayerSettingsUtil.repairStoredValues();
             UiConfigurationUtil.repairStoredValues(this);
             String savedPlayer = SharedPreferencesUtil.getString("player", "null");
@@ -96,6 +101,8 @@ public class BiliTerminal extends Application {
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override
             public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+                activities.put(activity, Boolean.TRUE);
+                com.RobinNotBad.BiliClient.util.PageMotion.apply(activity);
                 DiagnosticLogManager.recordLifecycle(activity, "created");
             }
 
@@ -106,11 +113,13 @@ public class BiliTerminal extends Application {
 
             @Override
             public void onActivityResumed(Activity activity) {
+                com.RobinNotBad.BiliClient.util.PageMotion.apply(activity);
                 DiagnosticLogManager.recordLifecycle(activity, "resumed");
             }
 
             @Override
             public void onActivityPaused(Activity activity) {
+                com.RobinNotBad.BiliClient.util.PageMotion.apply(activity);
                 DiagnosticLogManager.recordLifecycle(activity, "paused");
             }
 
@@ -126,9 +135,24 @@ public class BiliTerminal extends Application {
 
             @Override
             public void onActivityDestroyed(Activity activity) {
+                activities.remove(activity);
+                com.RobinNotBad.BiliClient.util.PageMotion.forget(activity);
                 DiagnosticLogManager.recordLifecycle(activity, "destroyed");
             }
         });
+    }
+
+    /** Finish the task normally so Android cannot restore an unfinished screen after a SIGKILL. */
+    public static void exit(Activity caller) {
+        com.RobinNotBad.BiliClient.service.DownloadService.pause();
+        com.RobinNotBad.BiliClient.service.PlaybackKeepAliveService.stop(caller);
+        ArrayList<Activity> open = new ArrayList<>(activities.keySet());
+        if (Build.VERSION.SDK_INT >= 21) caller.finishAndRemoveTask();
+        else if (Build.VERSION.SDK_INT >= 16) caller.finishAffinity();
+        else caller.finish();
+        for (Activity activity : open) {
+            if (activity != null && !activity.isFinishing()) activity.finish();
+        }
     }
 
     /** Starts optional network work after the first activity has rendered. */
@@ -138,6 +162,8 @@ public class BiliTerminal extends Application {
         // Apply a previously verified relay configuration before SplashActivity
         // probes Bilibili on a separate background task.
         HotConfigManager.applyCachedConfig();
+        // Do not queue unread checks behind hot-config and dynamic-feed requests.
+        com.RobinNotBad.BiliClient.util.MessageUnreadCounter.refresh(false);
         runBackgroundCompat(() -> {
             try {
                 HotConfigManager.initialize();
@@ -156,16 +182,6 @@ public class BiliTerminal extends Application {
                 }
             }
 
-            if (SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.MESSAGE_UPDATE_CHECK_ENABLE, true)
-                    && SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) != 0) {
-                try {
-                    int messageUnread = MessageApi.checkMessageUnread();
-                    int privateMsgUnread = MessageApi.checkPrivateMsgUnread();
-                    SharedPreferencesUtil.putInt(SharedPreferencesUtil.MESSAGE_UPDATE_NUM, messageUnread + privateMsgUnread);
-                } catch (IOException | JSONException e) {
-                    SharedPreferencesUtil.putInt(SharedPreferencesUtil.MESSAGE_UPDATE_NUM, 0);
-                }
-            }
         });
     }
 

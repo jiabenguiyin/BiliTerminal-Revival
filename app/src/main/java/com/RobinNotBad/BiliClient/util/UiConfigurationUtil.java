@@ -22,6 +22,24 @@ public final class UiConfigurationUtil {
                 ? value : DEFAULT_SCALE;
     }
 
+    public static float parseScaleInput(String text, float fallback) {
+        float value;
+        try { value = text.trim().isEmpty() ? fallback : Float.parseFloat(text.trim()); }
+        catch (NumberFormatException error) { throw new NumberFormatException("界面大小请输入 0.25～2.00 倍之间的数值"); }
+        if (!isFinite(value) || value < MIN_SCALE || value > MAX_SCALE)
+            throw new NumberFormatException("界面大小请输入 0.25～2.00 倍之间的数值");
+        return value;
+    }
+
+    public static int parsePaddingInput(String text, int fallback) {
+        int value;
+        try { value = text.trim().isEmpty() ? fallback : Integer.parseInt(text.trim()); }
+        catch (NumberFormatException error) { throw new NumberFormatException("界面边距请输入 0～20 的整数（%）"); }
+        if (value < 0 || value > MAX_PADDING_PERCENT)
+            throw new NumberFormatException("界面边距请输入 0～20 的整数（%）");
+        return value;
+    }
+
     public static int normalizePadding(int value) {
         return Math.max(0, Math.min(MAX_PADDING_PERCENT, value));
     }

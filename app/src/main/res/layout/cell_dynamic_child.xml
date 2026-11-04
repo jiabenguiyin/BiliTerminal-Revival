@@ -27,7 +27,7 @@
 
         <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
             android:id="@+id/child_username"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginLeft="4dp"
             android:layout_marginStart="4dp"
@@ -36,6 +36,21 @@
             android:textSize="13sp"
             app:layout_constraintBottom_toBottomOf="@+id/child_avatar"
             app:layout_constraintStart_toEndOf="@id/child_avatar"
+            app:layout_constraintEnd_toStartOf="@id/child_dynamic_report"
+            app:layout_constraintTop_toTopOf="@id/child_avatar" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/child_dynamic_report"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="4dp"
+            android:padding="9dp"
+            android:scaleType="fitCenter"
+            android:background="@drawable/background_reply_report"
+            android:visibility="gone"
+            android:contentDescription="@string/dynamic_report_button"
+            app:srcCompat="@drawable/icon_reply_report"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="@id/child_avatar" />
 
         <TextView

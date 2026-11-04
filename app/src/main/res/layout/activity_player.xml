@@ -344,13 +344,41 @@
                         android:src="@drawable/icon_folder"
                         android:visibility="gone" />
 
+                    <TextView
+                        android:id="@+id/seek_back_btn"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:gravity="center"
+                        android:text="−10s"
+                        android:textColor="#ffffff"
+                        android:textSize="12sp"
+                        android:background="@drawable/background_button_compat"
+                        android:visibility="gone" />
+                    <TextView
+                        android:id="@+id/seek_forward_btn"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:gravity="center"
+                        android:text="+10s"
+                        android:textColor="#ffffff"
+                        android:textSize="12sp"
+                        android:background="@drawable/background_button_compat"
+                        android:visibility="gone" />
+
                 </LinearLayout>
 
             </HorizontalScrollView>
 
+            <ScrollView
+                android:id="@+id/right_toolbar_scroll"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:fillViewport="true"
+                android:scrollbars="none">
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:gravity="center"
                 android:orientation="vertical">
 
                 <ImageButton
@@ -380,7 +408,18 @@
                     android:scaleType="fitXY"
                     android:src="@mipmap/morehide" />
 
+                <ImageButton
+                    android:id="@+id/collection_order_btn"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/background_button_compat"
+                    android:contentDescription="@string/collection_playback_sequential"
+                    android:padding="5dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/icon_collection_sequence"
+                    android:visibility="gone" />
             </LinearLayout>
+            </ScrollView>
 
         </LinearLayout>
 
@@ -435,6 +474,40 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+            android:id="@+id/long_press_speed_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:layout_centerHorizontal="true"
+            android:layout_margin="4dp"
+            android:padding="3dp"
+            android:singleLine="true"
+            android:gravity="center"
+            android:background="@drawable/background_grey_cardview"
+            android:textColor="#ffffff"
+            android:textSize="10sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/segment_skip_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="40dp"
+            android:maxWidth="120dp"
+            android:layout_alignParentRight="true"
+            android:layout_above="@id/bottom_control"
+            android:layout_marginRight="40dp"
+            android:layout_marginBottom="6dp"
+            android:padding="6dp"
+            android:gravity="center"
+            android:textColor="#ffffff"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:background="@drawable/background_grey_cardview"
+            android:visibility="gone" />
 
         <LinearLayout
             android:id="@+id/loading_info"

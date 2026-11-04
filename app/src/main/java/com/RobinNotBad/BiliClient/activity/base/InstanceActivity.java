@@ -10,6 +10,19 @@ import com.RobinNotBad.BiliClient.activity.MenuActivity;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 public class InstanceActivity extends BaseActivity {
+    private final Runnable unreadObserver=this::refreshMessageIndicator;
+    protected void refreshMessageIndicator() {
+        com.RobinNotBad.BiliClient.ui.MessageBadgeStyle.title(findViewById(R.id.pageName),R.drawable.arrow_down,
+                com.RobinNotBad.BiliClient.util.MessageUnreadCounter.getCount());
+    }
+    @Override protected void onResume() {
+        super.onResume();
+        com.RobinNotBad.BiliClient.util.MessageUnreadCounter.observe(unreadObserver);
+    }
+    @Override protected void onPause() {
+        com.RobinNotBad.BiliClient.util.MessageUnreadCounter.unobserve(unreadObserver);
+        super.onPause();
+    }
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         if (SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.HOME_SWIPE_DISMISS_DISABLE, true)) {
@@ -21,6 +34,7 @@ public class InstanceActivity extends BaseActivity {
 
     public void setMenuClick() {
         findViewById(R.id.top).setOnClickListener(view -> menuClick.run());
+        refreshMessageIndicator();
     }
 
     public Runnable menuClick = (() -> {

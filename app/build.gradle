@@ -7,8 +7,8 @@ int betaVer = betaVerProperty == null ? 0 : betaVerProperty.toString().toInteger
 String betaProperty = project.findProperty("beta")?.toString()
 boolean betaBuild = (betaProperty == null ? false : betaProperty.equalsIgnoreCase("true")) || betaVer > 0
 String betaSuffix = project.findProperty("betaSuffix")?.toString()?.trim() ?: (betaVer > 0 ? betaVer.toString() : "")
-int releaseVersionCode = (project.findProperty("versionCode") ?: "2026103003").toString().toInteger()
-String releaseVersionName = (project.findProperty("versionName") ?: "1.2.3").toString()
+int releaseVersionCode = (project.findProperty("versionCode") ?: "2026110401").toString().toInteger()
+String releaseVersionName = (project.findProperty("versionName") ?: "1.2.4").toString()
 
 android {
 
@@ -133,6 +133,7 @@ dependencies {
     implementation 'org.jsoup:jsoup:1.10.2'
     //noinspection GradleCompatible
     implementation 'com.github.chrisbanes:PhotoView:2.3.0'
+    implementation 'com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0'
     implementation 'org.greenrobot:eventbus:3.2.0'
     // Geetest（目前没用到）
     //implementation 'com.geetest.sensebot:sensebot:4.4.2.1'

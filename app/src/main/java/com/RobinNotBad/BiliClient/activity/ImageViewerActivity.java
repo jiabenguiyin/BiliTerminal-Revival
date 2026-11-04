@@ -19,6 +19,7 @@ import java.util.ArrayList;
 
 public class ImageViewerActivity extends BaseActivity {
     private long longClickTimestamp;
+    private PhotoViewpager viewPager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,7 +34,7 @@ public class ImageViewerActivity extends BaseActivity {
             return;
         }
 
-        PhotoViewpager viewPager = findViewById(R.id.viewPager);
+        viewPager = findViewById(R.id.viewPager);
         TextView pageText = findViewById(R.id.text_page);
         pageText.setText("第 1/" + imageList.size() + "张");
 
@@ -71,5 +72,11 @@ public class ImageViewerActivity extends BaseActivity {
             public void onPageScrollStateChanged(int state) {
             }
         });
+        setTopbarExit();
+    }
+
+    @Override protected void onDestroy() {
+        if (viewPager != null) viewPager.setAdapter(null);
+        super.onDestroy();
     }
 }

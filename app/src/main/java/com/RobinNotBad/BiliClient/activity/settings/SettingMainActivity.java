@@ -6,8 +6,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.widget.Button;
-import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
 
@@ -92,6 +90,7 @@ public class SettingMainActivity extends InstanceActivity {
             menuSetting.setOnClickListener(view -> startActivity(new Intent(this, SettingMenuActivity.class)));
 
             //偏好设置
+            findViewById(R.id.storageSetting).setOnClickListener(v->startActivity(new Intent(this,SettingStorageActivity.class)));
             MaterialCardView prefSetting = findViewById(R.id.prefSetting);
             prefSetting.setOnClickListener(view -> {
                 Intent intent = new Intent();
@@ -163,26 +162,7 @@ public class SettingMainActivity extends InstanceActivity {
                         }));
                     });
                 AlertDialog dialog = dialogBuilder.create();
-                dialog.setOnShowListener(ignored -> {
-                    // The global UI scale can make this confirmation dialog
-                    // exceed a watch's viewport and hide its action buttons.
-                    TextView message = dialog.findViewById(android.R.id.message);
-                    if (message != null) {
-                        message.setTextSize(12);
-                    }
-                    TextView title = dialog.findViewById(
-                            getResources().getIdentifier("alertTitle", "id", "android"));
-                    if (title != null) title.setTextSize(16);
-                    Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-                    Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-                    if (negative != null) negative.setTextSize(12);
-                    if (positive != null) positive.setTextSize(12);
-                    if (dialog.getWindow() != null) {
-                        int width = getResources().getDisplayMetrics().widthPixels;
-                        dialog.getWindow().setLayout((int) (width * 0.92f),
-                                android.view.WindowManager.LayoutParams.WRAP_CONTENT);
-                    }
-                });
+                MsgUtil.prepareAlertDialog(dialog);
                 dialog.show();
             });
 

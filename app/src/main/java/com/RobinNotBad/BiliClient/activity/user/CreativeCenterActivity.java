@@ -1,72 +1,90 @@
 package com.RobinNotBad.BiliClient.activity.user;
 
-import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.os.Bundle;
-import android.view.View;
 import android.widget.TextView;
-
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
-import com.RobinNotBad.BiliClient.api.CreativeCenterApi;
+import com.RobinNotBad.BiliClient.api.CreatorArchiveApi;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
-import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.StringUtil;
-
-import org.json.JSONException;
 import org.json.JSONObject;
 
 public class CreativeCenterActivity extends BaseActivity {
-    @SuppressLint("SetTextI18n")
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        asyncInflate(R.layout.activity_creative_center, (view, id) -> CenterThreadPool.run(() -> {
+    private CreatorArchiveApi.Session session;
+    private boolean ready;
+    private int generation;
+    private TextView status;
+    private static final int[] VALUES = {R.id.totalFans_number, R.id.totalClick_number,
+            R.id.totalLike_number, R.id.totalCoin_number, R.id.totalFavourite_number,
+            R.id.totalShare_number, R.id.totalReply_number, R.id.totalDm_number};
+    private static final String[] TOTALS = {"total_fans", "total_click", "total_like", "total_coin",
+            "total_fav", "total_share", "total_reply", "total_dm"};
+    private static final String[] INCREMENTS = {"incr_fans", "incr_click", "inc_like", "inc_coin",
+            "inc_fav", "inc_share", "incr_reply", "incr_dm"};
+
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        asyncInflate(R.layout.activity_creative_center, (view, id) -> {
+            if (isDestroyed()) return;
+            setTopbarExit();
+            status = findViewById(R.id.creator_statistics_status);
+            findViewById(R.id.creator_manage).setOnClickListener(v ->
+                    startActivity(new Intent(this, CreatorArchiveActivity.class)));
+            status.setOnClickListener(v -> refresh());
+            ready = true;
+            refresh();
+        });
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (ready && session != null && !session.isCurrent()) refresh();
+    }
+
+    private void refresh() {
+        final int request = ++generation;
+        for (int id : VALUES) ((TextView) findViewById(id)).setText("—");
+        ((TextView) findViewById(R.id.beUpTime)).setText("—");
+        status.setText("正在加载投稿数据…");
+        try { session = CreatorArchiveApi.capture(); }
+        catch (CreatorArchiveApi.Failure error) { status.setText(error.getMessage() + " · 点击重试"); return; }
+        final CreatorArchiveApi.Session account = session;
+        // Keep archive management available if statistics are unavailable.
+        CenterThreadPool.run(() -> {
             try {
-                JSONObject stats = CreativeCenterApi.getVideoStat();
-                String beUPTime = (String) CreativeCenterApi.getBeUPTime().result;
-
+                JSONObject stats = CreatorArchiveApi.statistics(account);
                 runOnUiThread(() -> {
-                    try {
-                        if (stats == null) {
-                            MsgUtil.showMsg("先去成为UP主吧~");
-                            finish();
-                        } else {
-                            setStatsText(R.id.totalFans_number, stats, "total_fans", "incr_fans");
-                            setStatsText(R.id.totalClick_number, stats, "total_click", "incr_click");
-                            setStatsText(R.id.totalLike_number, stats, "total_like", "inc_like");
-                            setStatsText(R.id.totalCoin_number, stats, "total_coin", "inc_coin");
-                            setStatsText(R.id.totalFavourite_number, stats, "total_fav", "inc_fav");
-                            setStatsText(R.id.totalShare_number, stats, "total_share", "inc_share");
-                            setStatsText(R.id.totalReply_number, stats, "total_reply", "incr_reply");
-                            setStatsText(R.id.totalDm_number, stats, "total_dm", "incr_dm");
-                            TextView textBeUpTime = findViewById(R.id.beUpTime);
-                            textBeUpTime.setText(beUPTime);
-                        }
-                    } catch (Exception e) {
-                        runOnUiThread(() -> MsgUtil.err(e));
-                    }
-
-                    View scrollView = findViewById(R.id.scrollView);
-                    scrollView.setFocusable(true);
-                    scrollView.setFocusableInTouchMode(true);
-                    scrollView.requestFocus();
+                    if (!accepts(request, account)) return;
+                    for (int i = 0; i < VALUES.length; i++) setStatsText(VALUES[i], stats, TOTALS[i], INCREMENTS[i]);
+                    status.setText("当前账号投稿数据 · 点击刷新");
                 });
-            } catch (Exception e) {
-                runOnUiThread(() -> MsgUtil.err(e));
+                try {
+                    String age = CreatorArchiveApi.creatorAge(account);
+                    runOnUiThread(() -> { if (accepts(request, account)) ((TextView) findViewById(R.id.beUpTime)).setText(age); });
+                } catch (Exception ignored) { /* Age is optional. Keep successful statistics. */ }
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (accepts(request, account)) status.setText(CreatorArchiveApi.message(error) + " · 点击重试");
+                });
             }
-        }));
+        });
     }
 
-    @SuppressLint("SetTextI18n")
-    private void setStatsText(int viewId, JSONObject jsonObject, String totalKey, String incrKey) throws JSONException {
-        TextView textView = findViewById(viewId);
-        int totalValue = jsonObject.getInt(totalKey);
-        int incrValue = jsonObject.getInt(incrKey);
-
-        String totalText = StringUtil.toWan(totalValue);
-        String incrSymbol = (incrValue < 0) ? "" : "+";
-        String incrText = StringUtil.toWan(incrValue);
-
-        textView.setText(totalText + incrSymbol + incrText);
+    private boolean accepts(int request, CreatorArchiveApi.Session account) {
+        if (isDestroyed() || request != generation || session != account) return false;
+        if (!account.isCurrent()) { refresh(); return false; }
+        return true;
     }
+
+    private void setStatsText(int viewId, JSONObject object, String totalKey, String incrementKey) {
+        String value = object.has(totalKey) && !object.isNull(totalKey) ? StringUtil.toWan(object.optLong(totalKey)) : "—";
+        if (object.has(incrementKey) && !object.isNull(incrementKey)) {
+            long increment = object.optLong(incrementKey);
+            value += " (" + (increment < 0 ? "" : "+") + StringUtil.toWan(increment) + ")";
+        }
+        ((TextView) findViewById(viewId)).setText(value);
+    }
+
+    @Override protected void onDestroy() { generation++; super.onDestroy(); }
 }

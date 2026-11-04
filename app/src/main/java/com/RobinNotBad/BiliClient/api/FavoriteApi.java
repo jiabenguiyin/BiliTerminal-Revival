@@ -118,6 +118,10 @@ public class FavoriteApi {
     }
 
     static String buildFavoriteVideosUrl(long fid, int page, String keyword, boolean allFolders) {
+        return buildFavoriteVideosUrl(fid,page,keyword,allFolders,"mtime");
+    }
+
+    static String buildFavoriteVideosUrl(long fid, int page, String keyword, boolean allFolders, String order) {
         String query = keyword == null ? "" : keyword.trim();
         if (allFolders && query.isEmpty()) {
             throw new IllegalArgumentException("全部收藏的浏览必须合并各收藏夹，不能使用空关键词的跨收藏夹搜索");
@@ -128,7 +132,7 @@ public class FavoriteApi {
                 .put("pn", page)
                 .put("ps", 20)
                 .put("keyword", query)
-                .put("order", "mtime")
+                .put("order", com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.normalize(order))
                 .put("type", allFolders ? 1 : 0)
                 .put("tid", 0)
                 .put("platform", "web");
@@ -136,7 +140,12 @@ public class FavoriteApi {
 
     public static ApiResult getFavoriteVideos(long fid, int page, String keyword, boolean allFolders,
                                                List<VideoCard> videoList) throws IOException, JSONException {
-        JSONObject result = NetWorkUtil.getJson(buildFavoriteVideosUrl(fid, page, keyword, allFolders));
+        return getFavoriteVideos(fid,page,keyword,allFolders,videoList,"mtime");
+    }
+
+    public static ApiResult getFavoriteVideos(long fid, int page, String keyword, boolean allFolders,
+                                               List<VideoCard> videoList,String order) throws IOException, JSONException {
+        JSONObject result = NetWorkUtil.getJson(buildFavoriteVideosUrl(fid, page, keyword, allFolders,order));
         return parseFavoriteVideos(result, videoList);
     }
 

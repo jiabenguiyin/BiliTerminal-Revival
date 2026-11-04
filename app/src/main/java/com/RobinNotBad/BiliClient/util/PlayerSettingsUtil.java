@@ -12,6 +12,8 @@ public final class PlayerSettingsUtil {
     private static final String DANMAKU_TRANSPARENCY = "player_danmaku_transparency";
     private static final String DANMAKU_SPEED = "player_danmaku_speed";
     public static final String LIVE_DANMAKU_DURATION_FACTOR = "player_live_danmaku_duration_factor";
+    public static final String LONGPRESS_HINT_ENABLED = "player_longpress_hint_enabled";
+    public static final String LONGPRESS_HINT_SCALE = "player_longpress_hint_scale";
     private static final String VOLUME_STEP = "player_volume_step";
 
     private PlayerSettingsUtil() {
@@ -26,6 +28,7 @@ public final class PlayerSettingsUtil {
         writeFloatIfInvalid(DANMAKU_TRANSPARENCY, 0.5f, 0.0f, 1.0f);
         writeFloatIfInvalid(DANMAKU_SPEED, 1.0f, 0.1f, 5.0f);
         writeFloatIfInvalid(LIVE_DANMAKU_DURATION_FACTOR, 2.0f, 1.0f, 3.0f);
+        writeFloatIfInvalid(LONGPRESS_HINT_SCALE, 0.75f, 0.5f, 1.25f);
         writeIntIfInvalid(VOLUME_STEP, 5, 1, 30);
     }
 
@@ -67,12 +70,17 @@ public final class PlayerSettingsUtil {
                 readFloatValue(LIVE_DANMAKU_DURATION_FACTOR, 2.0f)) : getDanmakuSpeed();
     }
 
+    public static float getLongPressHintScale() {
+        return normalizeFloat(LONGPRESS_HINT_SCALE,readFloatValue(LONGPRESS_HINT_SCALE,0.75f));
+    }
+
     /** Volume gesture/button step as a percentage of the device media volume range. */
     public static int getVolumeStep() {
         return getInt(VOLUME_STEP, 5, 1, 30);
     }
 
     public static int normalizeInt(String key, int value) {
+        if (com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_SECONDS.equals(key)) return Math.max(1, Math.min(120, value));
         if (VOLUME_STEP.equals(key)) return Math.max(1, Math.min(30, value));
         return value;
     }
@@ -81,7 +89,9 @@ public final class PlayerSettingsUtil {
         float fallback;
         float min;
         float max;
-        if (INTERACTION_SCALE.equals(key)) {
+        if (LONGPRESS_HINT_SCALE.equals(key)) {
+            fallback=0.75f;min=0.5f;max=1.25f;
+        } else if (INTERACTION_SCALE.equals(key)) {
             fallback = 0.7f;
             min = 0.5f;
             max = 1.0f;

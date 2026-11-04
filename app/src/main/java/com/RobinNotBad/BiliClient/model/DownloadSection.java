@@ -22,6 +22,7 @@ public class DownloadSection {
     public String child;
     public String name_short;
     public String state;
+    public String lastError = "";
     public String downloadType;
     public String audioUrl;
     public String storageMode;
@@ -34,6 +35,8 @@ public class DownloadSection {
         id = cursor.getInt(0);
         type = cursor.getString(1);
         state = cursor.getString(2);
+        int errorIndex = cursor.getColumnIndex("last_error");
+        if (errorIndex >= 0 && !cursor.isNull(errorIndex)) lastError = cursor.getString(errorIndex);
         aid = cursor.getLong(3);
         cid = cursor.getLong(4);
         qn = cursor.getInt(5);

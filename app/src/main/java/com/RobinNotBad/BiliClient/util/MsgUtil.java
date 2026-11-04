@@ -9,8 +9,6 @@ import android.graphics.Typeface;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -228,45 +226,9 @@ public class MsgUtil {
         context.startActivity(intent);
     }
 
-    /**
-     * Keep platform dialogs usable on watches and devices with large font
-     * scaling. Call this after create() and before show().
-     */
+    /** Apply the shared dark rounded appearance after create() and before show(). */
     public static void prepareAlertDialog(AlertDialog dialog) {
-        if (dialog == null) return;
-        dialog.setOnShowListener(ignored -> {
-            Window window = dialog.getWindow();
-            if (window != null) {
-                int width = BiliTerminal.context.getResources().getDisplayMetrics().widthPixels;
-                int dialogWidth = Math.max(ToolsUtil.dp2px(180), Math.round(width * 0.92f));
-                window.setLayout(Math.min(width, dialogWidth),
-                        WindowManager.LayoutParams.WRAP_CONTENT);
-                window.getDecorView().setMinimumWidth(0);
-            }
-
-            TextView message = dialog.findViewById(android.R.id.message);
-            if (message != null) {
-                message.setTextSize(14);
-                message.setMaxLines(12);
-                message.setVerticalScrollBarEnabled(true);
-                message.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
-            }
-
-            Button[] buttons = {
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE),
-                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE),
-                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-            };
-            for (Button button : buttons) {
-                if (button == null) continue;
-                button.setTextSize(13);
-                button.setMinHeight(ToolsUtil.dp2px(40));
-                button.setMinimumHeight(ToolsUtil.dp2px(40));
-                button.setPadding(ToolsUtil.dp2px(6), 0, ToolsUtil.dp2px(6), 0);
-                button.setMaxLines(1);
-                button.setEllipsize(TextUtils.TruncateAt.END);
-            }
-        });
+        com.RobinNotBad.BiliClient.ui.TerminalDialogStyle.prepare(dialog);
     }
 
     public static int dp(Context context, int value) {

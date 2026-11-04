@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.widget.EditText;
 
 import com.RobinNotBad.BiliClient.R;
+import com.RobinNotBad.BiliClient.BiliTerminal;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
 import com.RobinNotBad.BiliClient.activity.settings.UIPreviewActivity;
 import com.RobinNotBad.BiliClient.util.Logu;
@@ -48,14 +49,14 @@ public class SetupUIActivity extends BaseActivity {
         });
 
         findViewById(R.id.preview).setOnClickListener(view -> {
-            save();
+            if (!save()) return;
             Intent intent = new Intent();
             intent.setClass(SetupUIActivity.this, UIPreviewActivity.class);
             startActivity(intent);
         });
 
         findViewById(R.id.confirm).setOnClickListener(view -> {
-            save();
+            if (!save()) return;
             Intent intent = new Intent();
             intent.setClass(SetupUIActivity.this, IntroductionActivity.class);
             startActivity(intent);
@@ -75,35 +76,26 @@ public class SetupUIActivity extends BaseActivity {
         });
     }
 
-    private void save() {
-        if (!uiScaleInput.getText().toString().isEmpty()) {
-            try {
-                float dpiTimes = Float.parseFloat(uiScaleInput.getText().toString());
-                SharedPreferencesUtil.putFloat("dpi", UiConfigurationUtil.normalizeScale(dpiTimes));
-            } catch (NumberFormatException ignored) {
-                SharedPreferencesUtil.putFloat("dpi", UiConfigurationUtil.DEFAULT_SCALE);
-            }
-            Logu.i("dpi", uiScaleInput.getText().toString());
-        }
-
-        if (!uiPaddingH.getText().toString().isEmpty()) {
-            try {
-                int paddingH = Integer.parseInt(uiPaddingH.getText().toString());
-                SharedPreferencesUtil.putInt("paddingH_percent",
-                        UiConfigurationUtil.normalizePadding(paddingH));
-            } catch (NumberFormatException ignored) {
-            }
-            Logu.i("paddingH", uiPaddingH.getText().toString());
-        }
-
-        if (!uiPaddingV.getText().toString().isEmpty()) {
-            try {
-                int paddingV = Integer.parseInt(uiPaddingV.getText().toString());
-                SharedPreferencesUtil.putInt("paddingV_percent",
-                        UiConfigurationUtil.normalizePadding(paddingV));
-            } catch (NumberFormatException ignored) {
-            }
-            Logu.i("paddingV", uiPaddingV.getText().toString());
+    private boolean save() {
+        EditText parsing = uiScaleInput;
+        try {
+            float scale = UiConfigurationUtil.parseScaleInput(uiScaleInput.getText().toString(),
+                    SharedPreferencesUtil.getFloat("dpi", UiConfigurationUtil.DEFAULT_SCALE));
+            parsing = uiPaddingH;
+            int horizontal = UiConfigurationUtil.parsePaddingInput(parsing.getText().toString(),
+                    SharedPreferencesUtil.getInt("paddingH_percent", 0));
+            parsing = uiPaddingV;
+            int vertical = UiConfigurationUtil.parsePaddingInput(parsing.getText().toString(),
+                    SharedPreferencesUtil.getInt("paddingV_percent", 0));
+            SharedPreferencesUtil.getSharedPreferences().edit().putFloat("dpi", scale)
+                    .putInt("paddingH_percent", horizontal).putInt("paddingV_percent", vertical).apply();
+            BiliTerminal.DPI_FORCE_CHANGE = true;
+            for (EditText input : new EditText[]{uiScaleInput, uiPaddingH, uiPaddingV}) input.setError(null);
+            return true;
+        } catch (NumberFormatException error) {
+            parsing.setError(error.getMessage());
+            parsing.requestFocus();
+            return false;
         }
     }
 }

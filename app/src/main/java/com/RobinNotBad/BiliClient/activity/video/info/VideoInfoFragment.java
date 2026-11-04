@@ -9,6 +9,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -90,6 +92,7 @@ public class VideoInfoFragment extends BaseFragment {
     final ActivityResultLauncher<Intent> favLauncher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), new ActivityResultCallback<>() {
         @Override
         public void onActivityResult(ActivityResult o) {
+            if (fav == null || getView() == null) return;
             int code = o.getResultCode();
             if (code == RESULT_ADDED) {
                 fav.setImageResource(R.drawable.icon_fav_1);
@@ -143,6 +146,9 @@ public class VideoInfoFragment extends BaseFragment {
     private Animation shakeAnimation;
     private Runnable tripleActionRunnable;
     private boolean isTripleInProgress = false;
+    private boolean tripleRequestInFlight;
+    private final Handler tripleResultHandler = new Handler(Looper.getMainLooper());
+    private com.RobinNotBad.BiliClient.ui.VideoReportController reportController;
 
     public VideoInfoFragment() {
     }
@@ -207,6 +213,9 @@ public class VideoInfoFragment extends BaseFragment {
         }
 
         ImageView cover = rootview.findViewById(R.id.img_cover);
+        if(reportController!=null)reportController.close();
+        reportController=new com.RobinNotBad.BiliClient.ui.VideoReportController(requireActivity(),
+                rootview.findViewById(R.id.video_report_button),videoInfo.aid);
         TextView title = rootview.findViewById(R.id.text_title);
         description = rootview.findViewById(R.id.description);
         tagsText = rootview.findViewById(R.id.tags);
@@ -288,6 +297,8 @@ public class VideoInfoFragment extends BaseFragment {
             fav.setImageResource(R.drawable.icon_fav_1);
 
         playerData = videoInfo.toPlayerData(0);
+        playerData.favoritePlaybackToken = requireActivity().getIntent().getStringExtra(
+                com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.TOKEN);
 
         // 1.1.6: 详情页只负责展示内容；播放地址在用户真正点击播放时再请求，
         // 避免 Android 4.x 打开详情页时同时拉播放流和评论/相关内容。
@@ -432,6 +443,8 @@ public class VideoInfoFragment extends BaseFragment {
 
         //收藏
         rootview.findViewById(R.id.layout_fav).setOnClickListener(view1 -> {
+            if (!isAdded() || getView() != rootview
+                    || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
             Intent intent = new Intent();
             intent.setClass(requireContext(), AddFavoriteActivity.class);
             intent.putExtra("aid", videoInfo.aid);
@@ -474,6 +487,8 @@ public class VideoInfoFragment extends BaseFragment {
 
         //转发
         relay.setOnClickListener((view1) -> {
+            if (!isAdded() || getView() != rootview
+                    || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
             Intent intent = new Intent();
             intent.setClass(requireContext(), SendDynamicActivity.class);
             writeDynamicLauncher.launch(intent);
@@ -507,6 +522,7 @@ public class VideoInfoFragment extends BaseFragment {
         rootview.findViewById(R.id.layout_like).setOnLongClickListener(v -> {
             if (SharedPreferencesUtil.getBoolean("like_one_triple", true) &&
                     SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) != 0) {
+                if (isTripleInProgress || tripleRequestInFlight) return true;
 
                 if (shakeAnimation == null) {
                     shakeAnimation = AnimationUtils.loadAnimation(requireContext(), R.anim.shake);
@@ -517,27 +533,41 @@ public class VideoInfoFragment extends BaseFragment {
                 coin.startAnimation(shakeAnimation);
                 fav.startAnimation(shakeAnimation);
 
-                isTripleInProgress = true;
-                tripleActionRunnable = () -> {
+                Runnable tripleAction = () -> {
+                    isTripleInProgress = false;
+                    tripleActionRunnable = null;
                     like.clearAnimation();
                     coin.clearAnimation();
                     fav.clearAnimation();
-
+                    if (!isAdded() || getView() != rootview) return;
+                    tripleRequestInFlight = true;
+                    final long targetAid = aid;
                     CenterThreadPool.run(() -> {
+                        int result;
+                        Exception failure;
                         try {
-                            int code = LikeCoinFavApi.triple(aid);
-                            if (code == 0) {
+                            result = LikeCoinFavApi.triple(targetAid);
+                            failure = null;
+                        } catch (Exception e) {
+                            result = -1;
+                            failure = e;
+                        }
+                        final int code = result;
+                        final Exception error = failure;
+                        tripleResultHandler.post(() -> {
+                            tripleRequestInFlight = false;
+                            if (!isAdded() || getView() != rootview) return;
+                            if (error != null) MsgUtil.err("三连失败", error);
+                            else if (code == 0) {
                                 coin.setImageResource(R.drawable.icon_coin_1);
                                 like.setImageResource(R.drawable.icon_like_1);
                                 fav.setImageResource(R.drawable.icon_fav_1);
                                 MsgUtil.showMsg("三连成功");
                             } else MsgUtil.showMsg("三连失败，错误码：" + code);
-                        } catch (Exception e) {
-                            MsgUtil.err("三连失败", e);
-                        }
+                        });
                     });
                 };
-                like.postDelayed(tripleActionRunnable, 2000);
+                scheduleTripleAction(tripleAction);
 
                 return true;
             }
@@ -553,16 +583,21 @@ public class VideoInfoFragment extends BaseFragment {
         });
     }
 
+    private void scheduleTripleAction(Runnable action) {
+        isTripleInProgress = true;
+        tripleActionRunnable = action;
+        // A detached View can no longer remove tasks queued on its old Handler.
+        // Keep scheduling and cancellation on this stable main-thread Handler.
+        tripleResultHandler.postDelayed(action, 2000);
+    }
+
     private void cancelTripleAction() {
-        if (isTripleInProgress) {
-            isTripleInProgress = false;
-            if (tripleActionRunnable != null) {
-                like.removeCallbacks(tripleActionRunnable);
-            }
-            like.clearAnimation();
-            coin.clearAnimation();
-            fav.clearAnimation();
-        }
+        isTripleInProgress = false;
+        if (tripleActionRunnable != null) tripleResultHandler.removeCallbacks(tripleActionRunnable);
+        tripleActionRunnable = null;
+        if (like != null) like.clearAnimation();
+        if (coin != null) coin.clearAnimation();
+        if (fav != null) fav.clearAnimation();
     }
 
 
@@ -683,6 +718,13 @@ public class VideoInfoFragment extends BaseFragment {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @Override
+    public void onDestroyView() {
+        if(reportController!=null){reportController.close();reportController=null;}
+        cancelTripleAction();
+        super.onDestroyView();
     }
 
     @Override

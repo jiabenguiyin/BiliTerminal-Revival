@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.RobinNotBad.BiliClient.R;
+import com.RobinNotBad.BiliClient.api.SearchException;
 import com.RobinNotBad.BiliClient.listener.OnLoadMoreListener;
 import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomGridManager;
 import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
@@ -43,7 +44,11 @@ public class SearchFragment extends Fragment {
         emptyView = view.findViewById(R.id.emptyTip);
 
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout);
-        swipeRefreshLayout.setEnabled(false);
+        swipeRefreshLayout.setEnabled(true);
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            if (keyword != null && !keyword.isEmpty() && refreshListener != null) refreshListener.onRefresh();
+            else setRefreshing(false);
+        });
 
         recyclerView = view.findViewById(R.id.recyclerView);
         recyclerView.setLayoutManager(getLayoutManager());
@@ -51,14 +56,11 @@ public class SearchFragment extends Fragment {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
                 super.onScrollStateChanged(recyclerView, newState);
+                if (getActivity() instanceof SearchActivity)
+                    ((SearchActivity) getActivity()).onSearchScrollState(SearchFragment.this, newState, !recyclerView.canScrollVertically(-1));
                 if (newState != RecyclerView.SCROLL_STATE_DRAGGING) return;
 
-                if (!recyclerView.canScrollVertically(-1)) {
-                    if (requireActivity() instanceof SearchActivity) {
-                        SearchActivity activity = (SearchActivity) requireActivity();  //不能向上滚动了就显示搜索栏
-                        activity.onScrolled(-114);
-                    }
-                } else if (listener != null && !recyclerView.canScrollVertically(1) && !swipeRefreshLayout.isRefreshing() && !bottom) {
+                if (recyclerView.canScrollVertically(-1) && listener != null && !recyclerView.canScrollVertically(1) && !swipeRefreshLayout.isRefreshing() && !bottom) {
                     goOnLoad();
                 }
             }
@@ -77,7 +79,7 @@ public class SearchFragment extends Fragment {
 
                     if (requireActivity() instanceof SearchActivity) {
                         SearchActivity activity = (SearchActivity) requireActivity();
-                        activity.onScrolled(dy);
+                        activity.onSearchScrolled(SearchFragment.this, dy);
                     }
                 }
             }
@@ -94,7 +96,10 @@ public class SearchFragment extends Fragment {
     }
 
     public void setRefreshing(boolean bool) {
-        runOnUiThread(() -> { if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(bool); });
+        runOnUiThread(() -> {
+            if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(bool);
+            if (bool && emptyView != null) emptyView.setVisibility(View.GONE);
+        });
     }
 
     public void setOnLoadMoreListener(OnLoadMoreListener loadMore) {
@@ -125,7 +130,12 @@ public class SearchFragment extends Fragment {
 
     public void showEmptyView(boolean empty) {
         if (emptyView != null) {
-            runOnUiThread(() -> emptyView.setVisibility(empty ? View.VISIBLE : View.GONE));
+            runOnUiThread(() -> {
+                if (getView() == null || emptyView == null) return;
+                emptyView.setText("暂无搜索结果");
+                emptyView.setOnClickListener(null);
+                emptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
+            });
         }
     }
 
@@ -135,17 +145,31 @@ public class SearchFragment extends Fragment {
     }
 
     public void report(Throwable e) {
-        MsgUtil.err(e);
+        final String message = SearchException.userMessage(e);
+        runOnUiThread(() -> {
+            if (getView() == null || emptyView == null) return;
+            if (recyclerView.getAdapter() == null || recyclerView.getAdapter().getItemCount() == 0) {
+                emptyView.setText(message + "\n点击重试");
+                emptyView.setVisibility(View.VISIBLE);
+                emptyView.setOnClickListener(view -> {
+                    if (!isRefreshing() && refreshListener != null) {
+                        setRefreshing(true);
+                        refreshListener.onRefresh();
+                    }
+                });
+            }
+            MsgUtil.showMsgLong(message);
+        });
     }
 
     public void loadFail() {
-        page--;
+        page = Math.max(1, page - 1);
         MsgUtil.showMsgLong("加载失败");
         setRefreshing(false);
     }
 
     public void loadFail(Throwable e) {
-        page--;
+        page = Math.max(1, page - 1);
         report(e);
         setRefreshing(false);
     }

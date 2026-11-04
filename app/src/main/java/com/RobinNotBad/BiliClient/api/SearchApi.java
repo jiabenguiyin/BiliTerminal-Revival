@@ -40,11 +40,8 @@ public class SearchApi {
 
         JSONObject all = NetWorkUtil.getJson(ConfInfoApi.signWBI(url)); // 得到一整个json
 
-        if (all.isNull("data"))
-            return null;
-        JSONObject data = all.getJSONObject("data"); // 搜索列表中的data项又是一个json，把它提出来
-
-        seid = data.getString("seid");
+        JSONObject data = parseSearchData(all);
+        seid = data.optString("seid", "");
 
         if (data.has("result") && !data.isNull("result"))
             return data.getJSONArray("result"); // 其实这还不是我们要的结果，下面的函数对它进行再次拆解 这里做了判空
@@ -64,16 +61,33 @@ public class SearchApi {
 
         JSONObject all = NetWorkUtil.getJson(ConfInfoApi.signWBI(url)); // 得到一整个json
 
-        if (all.isNull("data"))
-            return null;
-        JSONObject data = all.getJSONObject("data"); // 搜索列表中的data项又是一个json，把它提出来
-
-        seid = data.getString("seid");
+        JSONObject data = parseSearchData(all);
+        seid = data.optString("seid", "");
 
         if (data.has("result") && !data.isNull("result"))
             return data.get("result"); // 其实这还不是我们要的结果，下面的函数对它进行再次拆解 这里做了判空
         else
             return null;
+    }
+
+    public static JSONObject parseSearchData(JSONObject response) throws SearchException {
+        int code = response.optInt("code", -1);
+        JSONObject data = response.optJSONObject("data");
+        if (code == -352 || code == -412 || code == -509
+                || !response.optString("v_voucher", "").isEmpty()
+                || data != null && !data.optString("v_voucher", "").isEmpty()) {
+            throw new SearchException(SearchException.Reason.VERIFICATION,
+                    "B 站要求安全验证，暂时无法搜索；请稍后重试，或在官方网页完成验证后再试");
+        }
+        if (code == -101) throw new SearchException(SearchException.Reason.LOGIN, "登录状态已失效，请重新登录后搜索");
+        if (code != 0) throw new SearchException(SearchException.Reason.SERVICE, "搜索服务返回错误（" + code + "），请稍后重试");
+        if (data == null) throw new SearchException(SearchException.Reason.CONTENT, "搜索返回内容异常，请稍后重试");
+        Object result = data.opt("result");
+        boolean empty = !data.has("result") && data.optInt("numResults", -1) == 0;
+        if (!(result instanceof JSONArray) && !(result instanceof JSONObject)
+                && result != JSONObject.NULL && !empty)
+            throw new SearchException(SearchException.Reason.CONTENT, "搜索返回内容异常，请稍后重试");
+        return data;
     }
 
     /** PGC searches have independent pagination and must not share the mutable video search keyword. */
@@ -91,12 +105,8 @@ public class SearchApi {
     public static MediaSearchResult parseMediaSearchResponse(JSONObject response, int page, String type)
             throws IOException {
         validateMediaType(type);
-        int code = response.optInt("code", -1);
-        if (code != 0) throw new IOException("搜索失败（" + code + "）：" + response.optString("message", "请稍后重试"));
-        JSONObject data = response.optJSONObject("data");
-        if (data == null) throw new IOException("搜索返回内容异常，请稍后重试");
+        JSONObject data = parseSearchData(response);
         JSONArray result = data.optJSONArray("result");
-        if (result == null && data.has("v_voucher")) throw new IOException("搜索需要验证，请稍后重试");
         boolean omittedEmptyResult = !data.has("result") && data.optInt("numResults", -1) == 0;
         if (result == null && !omittedEmptyResult && (!data.has("result") || !data.isNull("result"))) {
             throw new IOException("搜索返回内容异常，请稍后重试");

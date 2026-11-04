@@ -3,13 +3,16 @@ package com.RobinNotBad.BiliClient.adapter.viewpager;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
-import androidx.fragment.app.FragmentStatePagerAdapter;
+import androidx.fragment.app.FragmentPagerAdapter;
 
 import java.util.List;
 
 //ViewPagerAdapter，适用于各类需要翻页的场景
 
-public class ViewPagerFragmentAdapter extends FragmentStatePagerAdapter {
+// The callers supply a fixed list of Fragment instances. Detach offscreen views
+// instead of destroying and later reusing those instances: destruction unregisters
+// their ActivityResultLaunchers, which cannot be reused on the next visit.
+public class ViewPagerFragmentAdapter extends FragmentPagerAdapter {
 
     private final List<Fragment> fragmentList;
     final FragmentManager fm;

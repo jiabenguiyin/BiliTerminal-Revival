@@ -237,6 +237,16 @@
             tools:text="备案号：xxxxxxxxx" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/season_choose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pgc_seasons"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/text_record" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/section_choose"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -244,7 +254,7 @@
             android:text="正片 点击切换"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/text_record" />
+            app:layout_constraintTop_toBottomOf="@+id/season_choose" />
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/episodes"

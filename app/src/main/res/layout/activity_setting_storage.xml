@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <include android:id="@+id/top" layout="@layout/cell_topbar" />
+    <com.RobinNotBad.BiliClient.ui.widget.RotaryScrollView
+        android:id="@+id/storage_scroll" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:layout_below="@id/top">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="@dimen/activity_padding_horizontal">
+            <TextView android:id="@+id/storage_stats" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="正在计算存储占用…" android:textSize="13sp" android:padding="8dp" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/storage_clear_cache"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="清理程序缓存" android:textAllCaps="false" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp"
+                android:text="清理图片缓存及24小时前的临时文件，保留播放和上传所需文件。"
+                android:textSize="11sp" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/storage_clear_apk"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="清理更新安装包" android:textAllCaps="false" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp"
+                android:text="仅清理应用最近下载的更新安装包，不会卸载当前应用。" android:textSize="11sp" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/storage_manage_videos"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="管理已缓存的视频" android:textAllCaps="false" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/storage_refresh"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                android:text="刷新占用" android:textAllCaps="false" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp"
+                android:text="清理程序缓存不会删除已缓存的视频、登录账号、历史记录或收藏信息。" android:textSize="11sp" />
+        </LinearLayout>
+    </com.RobinNotBad.BiliClient.ui.widget.RotaryScrollView>
+</RelativeLayout>

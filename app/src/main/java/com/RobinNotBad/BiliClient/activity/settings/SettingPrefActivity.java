@@ -31,6 +31,8 @@ public class SettingPrefActivity extends RefreshListActivity {
                         "true"));
                 add(new SettingSection("switch", "搜索建议", "search_suggestions_enable",
                         getString(R.string.desc_search_suggestions_enable), "true"));
+                add(new SettingSection("switch", getString(R.string.search_show_category_tabs), SharedPreferencesUtil.SEARCH_SHOW_CATEGORY_TABS,
+                        getString(R.string.search_show_category_tabs_desc), "false"));
                 add(new SettingSection("switch", "默认搜索内容", SharedPreferencesUtil.SEARCH_DEFAULT_CONTENT_ENABLE,
                         getString(R.string.desc_search_default_content_enable), "false"));
                 add(new SettingSection("switch", "识别链接", "link_enable", getString(R.string.desc_link_enable), "true"));
@@ -44,6 +46,8 @@ public class SettingPrefActivity extends RefreshListActivity {
                         getString(R.string.desc_dynamic_update_check_enable), "true"));
                 add(new SettingSection("switch", "消息数量检查", SharedPreferencesUtil.MESSAGE_UPDATE_CHECK_ENABLE,
                         getString(R.string.desc_message_update_check_enable), "true"));
+                add(new SettingSection("switch", getString(R.string.message_menu_arrow_dot), SharedPreferencesUtil.MESSAGE_MENU_ARROW_DOT_ENABLE,
+                        getString(R.string.message_menu_arrow_dot_desc), "true"));
                 add(new SettingSection("switch", "私信自动已读", SharedPreferencesUtil.PRIVATE_MSG_AUTO_READ_ENABLE,
                         getString(R.string.desc_private_msg_auto_read_enable), "true"));
                 add(new SettingSection("switch", "我的关注列表分组", SharedPreferencesUtil.FOLLOW_GROUP_MODE,
@@ -66,6 +70,8 @@ public class SettingPrefActivity extends RefreshListActivity {
                 add(new SettingSection("switch", "加载渐入渐出动画", SharedPreferencesUtil.LOAD_TRANSITION,
                         getString(R.string.desc_load_transition),
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP ? "true" : "false"));
+                add(new SettingSection("switch", getString(R.string.disable_page_motion),
+                        com.RobinNotBad.BiliClient.util.PageMotion.DISABLED, getString(R.string.disable_page_motion_desc), "false"));
                 add(new SettingSection("switch", "翻动时不加载图片", "image_no_load_onscroll",
                         getString(R.string.desc_img_no_load_onscroll), "false"));
                 add(new SettingSection("switch", "异步加载布局", SharedPreferencesUtil.ASYNC_INFLATE_ENABLE,

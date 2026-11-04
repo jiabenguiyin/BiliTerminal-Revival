@@ -15,6 +15,7 @@ import com.RobinNotBad.BiliClient.model.DashData;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.VipQualityPolicy;
+import com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,6 +26,13 @@ public class SettingQualityActivity extends BaseActivity {
     private static final String VIP_60FPS_MID = "vip_60fps_mid";
     private static final String VIP_60FPS_CHECKED = "vip_60fps_checked";
     QualityChooseAdapter adapter;
+    private String preferenceKey=NetworkPlaybackQuality.DEFAULT;
+
+    private LinkedHashMap<String,Integer> choices() {
+        LinkedHashMap<String,Integer> map=new LinkedHashMap<>();
+        if(!NetworkPlaybackQuality.DEFAULT.equals(preferenceKey))map.put(getString(R.string.quality_inherit),-1);
+        map.putAll(getQnMap());return map;
+    }
 
     static LinkedHashMap<String, Integer> getQnMap() {
         LinkedHashMap<String, Integer> map = new LinkedHashMap<>();
@@ -65,10 +73,12 @@ public class SettingQualityActivity extends BaseActivity {
             finish();
         });
 
-        setPageName("请选择清晰度");
+        preferenceKey=NetworkPlaybackQuality.preferenceKey(getIntent().getStringExtra(NetworkPlaybackQuality.EXTRA_KEY));
+        setPageName(getString(NetworkPlaybackQuality.MOBILE.equals(preferenceKey)?R.string.quality_mobile:
+                NetworkPlaybackQuality.WIFI.equals(preferenceKey)?R.string.quality_wifi:R.string.quality_default));
 
         adapter = new QualityChooseAdapter(this);
-        adapter.setNameList(new ArrayList<>(getQnMap().keySet()));
+        adapter.setNameList(new ArrayList<>(choices().keySet()));
         adapter.setOnItemClickListener((this::save));
 
         recyclerView.setLayoutManager(new CustomLinearManager(this));
@@ -81,7 +91,7 @@ public class SettingQualityActivity extends BaseActivity {
         if (mid == 0) {
             SharedPreferencesUtil.putBoolean(VIP_60FPS, false);
             SharedPreferencesUtil.putLong(VIP_60FPS_MID, 0);
-            adapter.setNameList(new ArrayList<>(getQnMap().keySet()));
+            adapter.setNameList(new ArrayList<>(choices().keySet()));
             normalizeSavedQuality();
             return;
         }
@@ -108,14 +118,15 @@ public class SettingQualityActivity extends BaseActivity {
                 SharedPreferencesUtil.putLong(VIP_60FPS_CHECKED, System.currentTimeMillis());
             }
             runOnUiThread(() -> {
-                adapter.setNameList(new ArrayList<>(getQnMap().keySet()));
+                if(isDestroyed()||mid!=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0))return;
+                adapter.setNameList(new ArrayList<>(choices().keySet()));
                 normalizeSavedQuality();
             });
         });
     }
 
     private void normalizeSavedQuality() {
-        int saved = SharedPreferencesUtil.getInt("play_qn", 0);
+        int saved = SharedPreferencesUtil.getInt(preferenceKey,NetworkPlaybackQuality.DEFAULT.equals(preferenceKey)?0:-1);
         long mid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
         if (VipQualityPolicy.shouldResetRestrictedQuality(
                 saved,
@@ -125,15 +136,15 @@ public class SettingQualityActivity extends BaseActivity {
                 SharedPreferencesUtil.getLong(VIP_60FPS_CHECKED, 0),
                 System.currentTimeMillis())) {
             // 会员失效后按当前视频实际可用的最高画质播放，避免卡在受限的高帧率档位。
-            SharedPreferencesUtil.putInt("play_qn", 0);
+            SharedPreferencesUtil.putInt(preferenceKey, 0);
         }
     }
 
     private void save(int position) {
         String str = adapter.getName(position);
-        LinkedHashMap<String, Integer> qnMap = getQnMap();
+        LinkedHashMap<String, Integer> qnMap = choices();
         if (qnMap.containsKey(str))
-            SharedPreferencesUtil.putInt("play_qn", Objects.requireNonNull(qnMap.get(str)));
+            SharedPreferencesUtil.putInt(preferenceKey, Objects.requireNonNull(qnMap.get(str)));
         finish();
     }
 }

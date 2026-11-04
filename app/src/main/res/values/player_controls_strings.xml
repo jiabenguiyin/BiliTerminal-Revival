@@ -1,0 +1,12 @@
+<resources>
+    <string name="player_options_title">播放选项</string>
+    <string name="player_options_close">关闭</string>
+    <string name="player_option_on">%1$s，已开启</string>
+    <string name="player_option_off">%1$s，已关闭</string>
+    <string name="player_longpress_speed_hint">长按倍速中 · %1$.1fx</string>
+    <string name="reply_top_setting">置顶神力</string>
+    <string name="reply_top_setting_desc">默认开启。有管理权限时显示视频、动态评论的置顶按钮。关闭后隐藏置顶入口，已置顶的评论仍正常显示。</string>
+    <string name="reply_top_setting_disabled">置顶神力已关闭</string>
+    <string name="setting_enabled_feedback">已开启：%1$s</string>
+    <string name="setting_disabled_feedback">已关闭：%1$s</string>
+</resources>

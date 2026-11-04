@@ -2,6 +2,7 @@ package com.RobinNotBad.BiliClient.activity.video.local;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
+import android.content.Intent;
 import android.view.View;
 import android.widget.TextView;
 
@@ -41,6 +42,8 @@ public class LocalListActivity extends InstanceActivity {
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
         swipeRefreshLayout.setOnRefreshListener(this::refresh);
         emptyTip = findViewById(R.id.emptyTip);
+        emptyTip.setText("尚无已完成的缓存\n下载进度和失败原因请到“下载列表”查看\n点击打开下载列表");
+        emptyTip.setOnClickListener(view -> startActivity(new Intent(this, DownloadListActivity.class)));
         TextView pageName = findViewById(R.id.pageName);
         pageName.setText("缓存");
 
@@ -144,6 +147,16 @@ public class LocalListActivity extends InstanceActivity {
         VideoStorageUtil.Node subtitles = folder.find("subtitles");
         localVideo.danmakuFileList.add(danmaku == null ? "" : danmaku.getUriString());
         localVideo.subtitleFolderLocators.add(subtitles == null ? "" : subtitles.getLocator());
+        com.RobinNotBad.BiliClient.player.CachedPlaybackItem item = new com.RobinNotBad.BiliClient.player.CachedPlaybackItem();
+        int index = localVideo.videoFileList.size() - 1;
+        item.title = index < localVideo.pageList.size() ? localVideo.pageList.get(index) : localVideo.title;
+        item.media = localVideo.videoFileList.get(index);
+        item.danmaku = localVideo.danmakuFileList.get(index);
+        item.subtitles = localVideo.subtitleFolderLocators.get(index);
+        item.folder = folder.getLocator();
+        item.audioOnly = Boolean.TRUE.equals(localVideo.audioOnlyList.get(index));
+        com.RobinNotBad.BiliClient.player.CachedCollectionMetadata.readInto(folder, item);
+        localVideo.playbackItems.add(item);
     }
 
     private void checkEmpty() {

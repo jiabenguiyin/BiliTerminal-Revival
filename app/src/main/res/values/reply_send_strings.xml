@@ -1,0 +1,8 @@
+<resources>
+    <string name="reply_send_in_progress">发送中…</string>
+    <string name="reply_send_submitted">评论已提交，正在确认发布状态</string>
+    <string name="reply_send_verified">评论已发布</string>
+    <string name="reply_send_pending">评论已提交，暂未确认显示，请稍后刷新，勿重复发送</string>
+    <string name="reply_send_uncertain">服务器未返回可确认的评论，请刷新评论区核对后再操作</string>
+    <string name="reply_send_account_changed">账号已切换，请重新打开评论页后发送</string>
+</resources>

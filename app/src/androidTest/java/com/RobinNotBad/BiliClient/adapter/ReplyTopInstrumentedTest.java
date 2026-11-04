@@ -55,6 +55,8 @@ public class ReplyTopInstrumentedTest {
     private OkHttpClient oldClient;
     private long oldMid;
     private String oldCsrf;
+    private Object oldTopEnabled;
+    private java.util.Map<String, ?> oldDisplayPreferences;
     private TestActivity host;
 
     @Before public void setUp() throws Exception {
@@ -81,6 +83,9 @@ public class ReplyTopInstrumentedTest {
         }).build());
         oldMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
         oldCsrf = SharedPreferencesUtil.getString("csrf", "");
+        oldTopEnabled = SharedPreferencesUtil.getSharedPreferences().getAll().get(SharedPreferencesUtil.REPLY_TOP_ENABLED);
+        oldDisplayPreferences = SharedPreferencesUtil.getSharedPreferences().getAll();
+        SharedPreferencesUtil.removeValue(SharedPreferencesUtil.REPLY_TOP_ENABLED);
         SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, 42);
         SharedPreferencesUtil.putString("csrf", "pin-test-csrf");
         host = (TestActivity) instrumentation.startActivitySync(new Intent(
@@ -94,6 +99,135 @@ public class ReplyTopInstrumentedTest {
         clients.set(oldClient);
         SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, oldMid);
         SharedPreferencesUtil.putString("csrf", oldCsrf);
+        if (oldTopEnabled == null) SharedPreferencesUtil.removeValue(SharedPreferencesUtil.REPLY_TOP_ENABLED);
+        else SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, (Boolean) oldTopEnabled);
+        android.content.SharedPreferences.Editor editor = SharedPreferencesUtil.getSharedPreferences().edit();
+        for (String key : new String[]{"dpi", "density", "player_ui_round"}) {
+            Object value = oldDisplayPreferences.get(key);
+            if (value == null) editor.remove(key);
+            else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+            else if (value instanceof Float) editor.putFloat(key, (Float) value);
+            else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+        }
+        editor.commit();
+    }
+
+    @Test public void watchConfirmationFitsRoundAndSquareScreensAndRealCancelDoesNotPost() throws Exception {
+        for (boolean round : new boolean[]{false, true}) for (float scale : new float[]{.5f, 1f, 2f}) {
+            relaunchDisplay(scale, round);
+            Reply reply = fixture(8101); ArrayList<Reply> list = new ArrayList<>(); list.add(reply);
+            ReplyAdapter adapter = new ReplyAdapter(host, list, reply.oid, 0, 1, 3, 42);
+            AtomicReference<AlertDialog> shown = new AtomicReference<>();
+            instrumentation.runOnMainSync(() -> { AlertDialog dialog = adapter.createReplyTopDialog(reply); shown.set(dialog); dialog.show(); });
+            settle();
+            instrumentation.runOnMainSync(() -> {
+                AlertDialog dialog = shown.get();
+                assertDialogVisible(dialog, round);
+                if (scale == 1f) saveDialog(dialog, round ? "pin-dialog-round.png" : "pin-dialog-square.png");
+                tap(dialog, dialog.getButton(AlertDialog.BUTTON_NEGATIVE));
+            });
+            instrumentation.waitForIdleSync();
+            assertFalse(shown.get().isShowing()); assertTrue(posts.isEmpty()); assertFalse(reply.isTop);
+        }
+    }
+
+    @Test public void boundedDialogScrollsTheExplanationWhileConfirmationStaysTouchable() throws Exception {
+        relaunchDisplay(2f, true);
+        Reply reply = fixture(8102); ArrayList<Reply> list = new ArrayList<>(); list.add(reply);
+        ReplyAdapter adapter = new ReplyAdapter(host, list, reply.oid, 0, 17, 3, 42);
+        AtomicReference<AlertDialog> shown = new AtomicReference<>();
+        instrumentation.runOnMainSync(() -> { AlertDialog dialog = adapter.createReplyTopDialog(reply); shown.set(dialog); dialog.show(); });
+        settle();
+        instrumentation.runOnMainSync(() -> {
+            AlertDialog dialog = shown.get();
+            android.widget.TextView message = dialog.findViewById(android.R.id.message);
+            message.setText(message.getText()+"\n"+message.getText()+"\n"+message.getText());
+        });
+        settle();
+        instrumentation.runOnMainSync(() -> {
+            AlertDialog dialog = shown.get(); assertDialogVisible(dialog, true);
+            android.widget.TextView message = dialog.findViewById(android.R.id.message);
+            android.widget.ScrollView scroll = (android.widget.ScrollView) message.getParent().getParent();
+            assertTrue("Long instructions must scroll without covering the buttons", scroll.getChildAt(0).getHeight() > scroll.getHeight());
+            scroll.fullScroll(View.FOCUS_DOWN);
+            tap(dialog, dialog.getButton(AlertDialog.BUTTON_POSITIVE));
+        });
+        await(() -> reply.isTop); awaitReady(adapter);
+        assertEquals(1, posts.size()); assertEquals("1", posts.remove().queryParameter("action"));
+        instrumentation.runOnMainSync(() -> { AlertDialog dialog = adapter.createReplyTopDialog(reply); shown.set(dialog); dialog.show(); });
+        settle();
+        instrumentation.runOnMainSync(() -> {
+            AlertDialog dialog = shown.get(); assertDialogVisible(dialog, true);
+            assertEquals(host.getString(R.string.reply_unpin), ((android.widget.TextView) dialog.findViewById(android.R.id.title)).getText().toString());
+            saveDialog(dialog, "unpin-dialog-round.png");
+            tap(dialog, dialog.getButton(AlertDialog.BUTTON_POSITIVE));
+        });
+        await(() -> !reply.isTop); awaitReady(adapter);
+        assertEquals(1, posts.size()); assertEquals("0", posts.remove().queryParameter("action"));
+    }
+
+    private void relaunchDisplay(float scale, boolean round) {
+        SharedPreferencesUtil.putFloat("dpi", scale);
+        SharedPreferencesUtil.putBoolean("player_ui_round", round);
+        instrumentation.runOnMainSync(host::finish); instrumentation.waitForIdleSync();
+        host = (TestActivity) instrumentation.startActivitySync(new Intent(instrumentation.getTargetContext(), TestActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        instrumentation.runOnMainSync(() -> {
+            host.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            if (android.os.Build.VERSION.SDK_INT >= 19) host.getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        });
+        settle();
+    }
+
+    private void settle() { instrumentation.waitForIdleSync(); SystemClock.sleep(150); instrumentation.waitForIdleSync(); }
+
+    private void assertDialogVisible(AlertDialog dialog, boolean round) {
+        View decor = dialog.getWindow().getDecorView();
+        int width = host.findViewById(android.R.id.content).getWidth();
+        int height = host.findViewById(android.R.id.content).getHeight();
+        android.util.DisplayMetrics physical = new android.util.DisplayMetrics();
+        host.getWindowManager().getDefaultDisplay().getRealMetrics(physical);
+        assertEquals("Watch fixture must retain its full panel width", physical.widthPixels, width);
+        assertEquals("Watch fixture must retain its full panel height", physical.heightPixels, height);
+        assertTrue(decor.getWidth() > 0); assertTrue(decor.getHeight() > 0);
+        assertTrue("Dialog width exceeds viewport", decor.getWidth() <= width * (round ? .71f : .91f));
+        assertTrue("Dialog height exceeds viewport", decor.getHeight() <= height * (round ? .71f : .91f));
+        float minimumWidth = Math.min(Math.min(width, height) * (round ? .60f : .80f),
+                300 * host.getResources().getDisplayMetrics().density);
+        assertTrue("Dialog shrank to stale system-bar metrics: " + decor.getWidth() + " < " + minimumWidth,
+                decor.getWidth() >= minimumWidth);
+        android.graphics.Rect frame = new android.graphics.Rect(); decor.getGlobalVisibleRect(frame);
+        for (int which : new int[]{AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_POSITIVE}) {
+            android.widget.Button action = dialog.getButton(which);
+            android.graphics.Rect rect = new android.graphics.Rect();
+            assertTrue(action.getGlobalVisibleRect(rect)); assertTrue(frame.contains(rect));
+            assertEquals("Button is clipped vertically", action.getHeight(), rect.height());
+            assertEquals("Button is clipped horizontally", action.getWidth(), rect.width());
+        }
+        android.graphics.drawable.Drawable background = ((View) dialog.getButton(AlertDialog.BUTTON_POSITIVE).getParent().getParent()).getBackground();
+        assertTrue(background instanceof android.graphics.drawable.GradientDrawable);
+        if (android.os.Build.VERSION.SDK_INT >= 24)
+            assertEquals(0xff262626, ((android.graphics.drawable.GradientDrawable) background).getColor().getDefaultColor());
+    }
+
+    private void tap(AlertDialog dialog, View target) {
+        int[] point = new int[2]; target.getLocationInWindow(point);
+        long time = SystemClock.uptimeMillis();
+        for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) {
+            android.view.MotionEvent event = android.view.MotionEvent.obtain(time, time + (action == 0 ? 0 : 50), action,
+                    point[0]+target.getWidth()/2f, point[1]+target.getHeight()/2f, 0);
+            dialog.dispatchTouchEvent(event); event.recycle();
+        }
+    }
+
+    private void saveDialog(AlertDialog dialog, String filename) {
+        View decor = dialog.getWindow().getDecorView();
+        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(decor.getWidth(), decor.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+        decor.draw(new android.graphics.Canvas(bitmap));
+        try (java.io.FileOutputStream output = host.openFileOutput(filename, 0)) { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output); }
+        catch (java.io.IOException error) { throw new AssertionError(error); }
+        finally { bitmap.recycle(); }
     }
 
     @Test public void pinAndUnpinUseCorrectThreadAndOnlyUpdateAfterSuccess() {
@@ -173,6 +307,34 @@ public class ReplyTopInstrumentedTest {
         await(() -> target.isTop);
         awaitReady(adapter);
         assertEquals(1, posts.size());
+    }
+
+    @Test public void disabledPinPowerHidesEveryThreadControlAndBlocksAlreadyOpenDialogs() {
+        for (int type : new int[]{1, 11, 17, 23}) {
+            Reply reply = fixture(9000 + type); reply.setTop(true);
+            ArrayList<Reply> replies = new ArrayList<>(); replies.add(reply);
+            ReplyAdapter adapter = new ReplyAdapter(host, replies, reply.oid, 0, type, 3, 42);
+            ReplyAdapter.ReplyHolder[] holder = new ReplyAdapter.ReplyHolder[1];
+            instrumentation.runOnMainSync(() -> {
+                SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, true);
+                ReplyAdapter.ReplyHolder row = (ReplyAdapter.ReplyHolder) adapter.onCreateViewHolder(new FrameLayout(host), 1);
+                holder[0] = row;
+                adapter.onBindViewHolder(row, 1); assertEquals(View.VISIBLE, row.pinBtn.getVisibility());
+                AlertDialog dialog = adapter.createReplyTopDialog(reply); dialog.show();
+                SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, false);
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+                adapter.onBindViewHolder(row, 1); assertEquals(View.GONE, row.pinBtn.getVisibility());
+                assertTrue(reply.isTop); assertTrue(reply.message.toString().startsWith("[置顶]"));
+            });
+            // AlertDialog posts its button callback. Keep the setting disabled until it runs.
+            instrumentation.waitForIdleSync();
+            assertTrue(posts.isEmpty());
+            instrumentation.runOnMainSync(() -> {
+                SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, true);
+                adapter.onBindViewHolder(holder[0], 1); assertEquals(View.VISIBLE, holder[0].pinBtn.getVisibility());
+            });
+        }
+        assertTrue(posts.isEmpty());
     }
 
     @Test public void topStatePreservesSpansAndDoesNotAffectOtherThreads() {

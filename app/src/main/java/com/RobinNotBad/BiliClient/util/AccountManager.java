@@ -351,6 +351,7 @@ public final class AccountManager {
     }
 
     private static void clearAccountScopedState(SharedPreferences.Editor editor) {
+        MessageUnreadCounter.invalidate();
         editor.remove("dynamic_update_baseline");
         editor.putInt(SharedPreferencesUtil.DYNAMIC_UPDATE_NUM, 0);
         editor.putInt(SharedPreferencesUtil.MESSAGE_UPDATE_NUM, 0);

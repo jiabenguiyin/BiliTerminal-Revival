@@ -46,7 +46,7 @@ public class ReplyFragment extends RefreshListFragment {
     protected long aid, mid;
     protected int sort = 3;
     protected int type;
-    protected int count;
+    protected int count = -1;
     protected ArrayList<Reply> replyList;
     protected ReplyAdapter replyAdapter;
     public int replyType = ReplyApi.REPLY_TYPE_VIDEO;
@@ -131,7 +131,7 @@ public class ReplyFragment extends RefreshListFragment {
         super.onCreate(savedInstanceState);
         if (getArguments() != null) {
             aid = getArguments().getLong("aid", 0);
-            count = getArguments().getInt("count", 0);
+            count = getArguments().getInt("count", -1);
             type = getArguments().getInt("type", 0);
             replyType = type;
             dontload = getArguments().getBoolean("dontload", false);
@@ -273,6 +273,9 @@ public class ReplyFragment extends RefreshListFragment {
             if (replyList == null || replyAdapter == null || recyclerView == null) return;
             showReplyList();
             if (reply.root == 0) {
+                // A refresh can load the reply while its background publication check
+                // is still running. The later confirmation must not insert it twice.
+                if (findRootReplyIndex(reply.rpid) >= 0) return;
                 LinearLayoutManager layoutManager = (LinearLayoutManager) Objects.requireNonNull(recyclerView.getLayoutManager());
                 int pos = 0;
                 replyList.add(pos, reply);

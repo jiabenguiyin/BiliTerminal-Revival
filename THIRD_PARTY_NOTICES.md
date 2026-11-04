@@ -15,3 +15,13 @@ pagination metadata and handles verification/error responses explicitly.
 
 The existing BiliClient authorship and licenses remain applicable to the
 original code. No other Re-BiliTerminal modules or dependencies are bundled.
+
+## Subsampling Scale Image View
+
+- Project: https://github.com/davemorrissey/subsampling-scale-image-view
+- Author: David Morrissey and contributors.
+- Dependency: `com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0`.
+- License: Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+
+Used for file-backed, subsampled image tiles in the image viewer. Static
+images retain full-resolution zoom without allocating a full-size bitmap.

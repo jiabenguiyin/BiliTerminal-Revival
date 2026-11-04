@@ -5,6 +5,7 @@ import static com.RobinNotBad.BiliClient.util.StringUtil.toWan;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.graphics.Color;
 import android.text.SpannableStringBuilder;
@@ -37,6 +38,7 @@ import com.RobinNotBad.BiliClient.listener.OnItemClickListener;
 import com.RobinNotBad.BiliClient.model.Reply;
 import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.RobinNotBad.BiliClient.ui.widget.RadiusBackgroundSpan;
+import com.RobinNotBad.BiliClient.ui.ReplyReportDialog;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
@@ -77,6 +79,8 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     private long highlightRpid = -1;
     private final int highlightColor = Color.argb(110, 254, 103, 154);
     private final Set<Long> pendingTopRequests = new HashSet<>();
+    private final Set<Long> pendingReportRequests = new HashSet<>();
+    private ReplyReportDialog activeReportDialog;
     private final Set<Long> appliedDeletions = new HashSet<>();
     private final long accountMid;
     OnItemClickListener listener;
@@ -152,9 +156,11 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                         listener.onItemClick(0);
                     writeReply.sort.setText(sorts[sort]);
                 });
-                writeReply.count_label.setText(count == 0
+                // Bangumi details can omit the total. A missing/stale zero is not
+                // evidence of an empty list once actual replies have been loaded.
+                writeReply.count_label.setText(replyList.isEmpty() && count == 0
                         ? "暂无评论，来发第一条吧"
-                        : "共" + count + "条评论");
+                        : count > 0 ? "共" + count + "条评论" : "评论");
             }
         }
         if (holder instanceof ReplyHolder) {
@@ -241,7 +247,8 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             StringUtil.setCopy(replyHolder.message);
             replyHolder.message.setOnTouchListener(new StringUtil.ClickableSpanTouchListener());
 
-            boolean canPin = oid > 0 && reply.rpid > 0 && ReplyApi.canManageReplyTop(
+            boolean canPin = SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, true)
+                    && oid > 0 && reply.rpid > 0 && ReplyApi.canManageReplyTop(
                     SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0), up_mid, reply.root);
             replyHolder.pinBtn.setVisibility(canPin ? View.VISIBLE : View.GONE);
             replyHolder.pinBtn.setEnabled(!pendingTopRequests.contains(reply.rpid));
@@ -250,6 +257,11 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             TooltipCompat.setTooltipText(replyHolder.pinBtn, pinLabel);
             replyHolder.pinBtn.setColorFilter(reply.isTop ? Color.rgb(0xfe, 0x67, 0x9a) : Color.WHITE);
             replyHolder.pinBtn.setOnClickListener(canPin ? view -> createReplyTopDialog(reply).show() : null);
+
+            replyHolder.reportBtn.setVisibility(View.VISIBLE);
+            replyHolder.reportBtn.setEnabled(!pendingReportRequests.contains(reply.rpid));
+            TooltipCompat.setTooltipText(replyHolder.reportBtn, context.getString(R.string.reply_report_description));
+            replyHolder.reportBtn.setOnClickListener(view -> openReplyReportDialog(reply));
 
             replyHolder.likeCount.setText(toWan(reply.likeCount));
 
@@ -452,17 +464,121 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         }
     }
 
+    private void openReplyReportDialog(Reply reply) {
+        if (activeReportDialog != null && activeReportDialog.isShowing()) return;
+        if (!isReportHostAlive()) return;
+        if (accountMid != ReplyStateSync.account()) {
+            MsgUtil.showMsg(context.getString(R.string.reply_report_account_changed));
+            return;
+        }
+        if (!isCurrentReportTarget(reply, oid, reply == null ? 0 : reply.rpid)) {
+            MsgUtil.showMsg(context.getString(R.string.reply_report_invalid_target));
+            return;
+        }
+        if (pendingReportRequests.contains(reply.rpid)) {
+            MsgUtil.showMsg(context.getString(R.string.reply_report_pending));
+            return;
+        }
+        try {
+            ReplyReportDialog dialog = createReplyReportDialog(reply);
+            activeReportDialog = dialog;
+            dialog.setOnDismissListener(ignored -> {
+                if (activeReportDialog == dialog) activeReportDialog = null;
+            });
+            dialog.show();
+        } catch (IllegalStateException invalidAccount) {
+            MsgUtil.showMsg(context.getString(R.string.reply_report_login));
+        }
+    }
+
+    ReplyReportDialog createReplyReportDialog(Reply reply) {
+        long requestOid = oid, requestRpid = reply.rpid;
+        ReplyApi.ReportAccount account = ReplyApi.captureReportAccount();
+        return new ReplyReportDialog(context, (reason, note) ->
+                reportReply(reply, requestOid, requestRpid, account, reason, note));
+    }
+
+    private boolean isCurrentReportTarget(Reply reply, long requestOid, long requestRpid) {
+        if (reply == null || oid != requestOid || reply.oid != requestOid || reply.rpid != requestRpid
+                || !replyList.contains(reply) || !ReplyApi.isValidReportTarget(requestOid, requestRpid, replyType))
+            return false;
+        ReplyStateStore.State state = ReplyStateSync.STORE.get(accountMid, replyType, requestOid, requestRpid);
+        return state == null || !state.deleted;
+    }
+
+    private void reportReply(Reply reply, long requestOid, long requestRpid, ReplyApi.ReportAccount account,
+                             int reason, String note) {
+        if (accountMid != ReplyStateSync.account() || !account.isCurrent()) {
+            MsgUtil.showMsg(context.getString(R.string.reply_report_account_changed));
+            return;
+        }
+        if (!isCurrentReportTarget(reply, requestOid, requestRpid)) {
+            MsgUtil.showMsg(context.getString(R.string.reply_report_invalid_target));
+            return;
+        }
+        if (!pendingReportRequests.add(requestRpid)) return;
+        notifyDataSetChanged();
+        CenterThreadPool.run(() -> {
+            String feedback;
+            try {
+                int code = ReplyApi.reportReply(requestOid, requestRpid, replyType, reason, note, account);
+                switch (code) {
+                    case 0: feedback = context.getString(R.string.reply_report_success); break;
+                    case ReplyApi.REPORT_ALREADY_REPORTED:
+                        feedback = context.getString(R.string.reply_report_already); break;
+                    case -101:
+                    case -111: feedback = context.getString(R.string.reply_report_auth_failed); break;
+                    case -509:
+                    case 12019: feedback = context.getString(R.string.reply_report_rate_limited); break;
+                    case 12077: feedback = context.getString(R.string.reply_report_note_rejected); break;
+                    default: feedback = context.getString(R.string.reply_report_failed, code);
+                }
+            } catch (IOException error) {
+                feedback = context.getString(R.string.reply_report_network_failed);
+            } catch (JSONException error) {
+                feedback = context.getString(R.string.reply_report_response_failed);
+            } catch (IllegalStateException error) {
+                feedback = context.getString(account.isCurrent()
+                        ? R.string.reply_report_pending : R.string.reply_report_account_changed);
+            } finally {
+                CenterThreadPool.runOnUiThread(() -> {
+                    pendingReportRequests.remove(requestRpid);
+                    notifyDataSetChanged();
+                });
+            }
+            String result = feedback;
+            CenterThreadPool.runOnUiThread(() -> {
+                if (accountMid == ReplyStateSync.account() && account.isCurrent() && isReportHostAlive())
+                    MsgUtil.showMsgLong(result);
+            });
+        });
+    }
+
+    private boolean isReportHostAlive() {
+        Context candidate = context;
+        while (candidate instanceof ContextWrapper) {
+            if (candidate instanceof Activity) {
+                Activity activity = (Activity) candidate;
+                return !activity.isFinishing() && (android.os.Build.VERSION.SDK_INT < 17 || !activity.isDestroyed());
+            }
+            Context next = ((ContextWrapper) candidate).getBaseContext();
+            if (next == candidate) break;
+            candidate = next;
+        }
+        return false;
+    }
+
     AlertDialog createReplyTopDialog(Reply reply) {
         boolean pin = !reply.isTop;
-        return new AlertDialog.Builder(context)
-                .setTitle(pin ? R.string.reply_pin : R.string.reply_unpin)
-                .setMessage(pin ? R.string.reply_pin_confirm : R.string.reply_unpin_confirm)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(android.R.string.ok, (dialog, which) -> changeReplyTop(reply, pin))
-                .create();
+        return new com.RobinNotBad.BiliClient.ui.ReplyTopDialog(context, pin,
+                () -> changeReplyTop(reply, pin));
     }
 
     private void changeReplyTop(Reply reply, boolean pinned) {
+        if (!SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, true)) {
+            MsgUtil.showMsg(context.getString(R.string.reply_top_setting_disabled));
+            return;
+        }
         long accountMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
         if (!ReplyApi.canManageReplyTop(accountMid, up_mid, reply.root)
                 || !replyList.contains(reply) || !pendingTopRequests.add(reply.rpid)) return;
@@ -471,6 +587,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         CenterThreadPool.run(() -> {
             try {
                 if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) != accountMid) return;
+                if (!SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.REPLY_TOP_ENABLED, true)) return;
                 int code = ReplyApi.setReplyTop(requestOid, reply.rpid, replyType, pinned);
                 CenterThreadPool.runOnUiThread(() -> {
                     if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) != accountMid) return;
@@ -635,6 +752,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         final ImageView replyAvatar;
         final ImageView dislikeBtn;
         final ImageView pinBtn;
+        final android.widget.ImageButton reportBtn;
         final LinearLayout childReplies;
         final TextView message;
         final TextView userName;
@@ -656,6 +774,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             replyAvatar = itemView.findViewById(R.id.replyAvatar);
             dislikeBtn = itemView.findViewById(R.id.dislikeBtn);
             pinBtn = itemView.findViewById(R.id.item_reply_top);
+            reportBtn = itemView.findViewById(R.id.reportbutton);
             childReplies = itemView.findViewById(R.id.repliesList);
             message = itemView.findViewById(R.id.replyText);
             userName = itemView.findViewById(R.id.replyUsername);

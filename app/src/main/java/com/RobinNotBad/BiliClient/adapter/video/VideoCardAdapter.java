@@ -25,6 +25,11 @@ public class VideoCardAdapter extends RecyclerView.Adapter<VideoCardHolder> {
     final Context context;
     final List<VideoCard> videoCardList;
     OnItemLongClickListener longClickListener;
+    private com.RobinNotBad.BiliClient.listener.OnItemClickListener clickListener;
+
+    public void setOnItemClickListener(com.RobinNotBad.BiliClient.listener.OnItemClickListener listener) {
+        clickListener = listener;
+    }
 
     public VideoCardAdapter(Context context, List<VideoCard> videoCardList) {
         this.context = context;
@@ -53,6 +58,11 @@ public class VideoCardAdapter extends RecyclerView.Adapter<VideoCardHolder> {
         holder.showVideoCard(videoCard, context);
 
         holder.itemView.setOnClickListener(view -> {
+            if (clickListener != null) {
+                int index = holder.getAdapterPosition();
+                if (index != RecyclerView.NO_POSITION) clickListener.onItemClick(index);
+                return;
+            }
             switch (videoCard.type) {
                 case "video":
                     TerminalContext.getInstance().enterVideoDetailPage(context, videoCard.aid, videoCard.bvid, "video");
@@ -66,7 +76,9 @@ public class VideoCardAdapter extends RecyclerView.Adapter<VideoCardHolder> {
 
         holder.itemView.setOnLongClickListener(view -> {
             if (longClickListener != null) {
-                longClickListener.onItemLongClick(position);
+                int index=holder.getAdapterPosition();
+                if(index==RecyclerView.NO_POSITION)return false;
+                longClickListener.onItemLongClick(index);
                 return true;
             } else
                 return false;

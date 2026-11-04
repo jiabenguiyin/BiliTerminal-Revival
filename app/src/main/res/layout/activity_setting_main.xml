@@ -574,6 +574,77 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/storageSetting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="visible">
+
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <ImageView
+                        android:id="@+id/storageSetting_go"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:layout_marginRight="8dp"
+                        android:layout_marginEnd="8dp"
+                        android:layout_marginBottom="16dp"
+                        app:srcCompat="@drawable/arrow_forward"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+
+                    <ImageView
+                        android:id="@+id/storageSetting_icon"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginLeft="8dp"
+                        android:layout_marginStart="8dp"
+                        android:adjustViewBounds="true"
+                        app:srcCompat="@drawable/icon_storage"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintVertical_bias="0.5" />
+
+                    <TextView
+                        android:id="@+id/storageSetting_title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="8dp"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:lines="1"
+                        android:text="存储空间"
+                        android:textSize="12sp"
+                        app:layout_constraintBottom_toTopOf="@+id/storageSetting_description"
+                        app:layout_constraintEnd_toStartOf="@+id/storageSetting_go"
+                        app:layout_constraintStart_toEndOf="@+id/storageSetting_icon"
+                        app:layout_constraintTop_toTopOf="parent" />
+
+                    <com.RobinNotBad.BiliClient.ui.widget.MarqueeTextView
+                        android:id="@+id/storageSetting_description"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="8dp"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginBottom="10dp"
+                        android:singleLine="true"
+                        android:text="查看空间占用，清理图片、临时缓存和安装包"
+                        android:textSize="11sp"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toStartOf="@+id/storageSetting_go"
+                        app:layout_constraintStart_toEndOf="@+id/storageSetting_icon"
+                        app:layout_constraintTop_toBottomOf="@+id/storageSetting_title" />
+
+                </androidx.constraintlayout.widget.ConstraintLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/laboratory"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">

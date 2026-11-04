@@ -1,0 +1,15 @@
+<resources>
+    <string name="pgc_skip_mode">番剧片头片尾跳过</string>
+    <string name="pgc_skip_desc">使用官方片段信息，默认手动跳过。自动模式每集每段只跳一次，手动拖回后不会再次强制跳过。没有片段信息时保持正常播放。</string>
+    <string name="fine_volume">精细音量调节</string>
+    <string name="fine_volume_desc" formatted="false">默认关闭。开启后，音量按钮、按键和手势按设定百分比调节播放器音量（0～100%），可细调到1%。不改变系统音量，实际音量仍受系统档位影响。</string>
+    <string name="seek_buttons">显示快进快退按钮</string>
+    <string name="seek_buttons_desc">在展开工具栏中显示快退和快进，直播不显示。小屏可横向滑动工具栏，空间不足时使用列表菜单。</string>
+    <string name="seek_seconds">快进快退秒数</string>
+    <string name="seek_seconds_desc">范围1～120秒，默认10秒。</string>
+    <string name="disable_page_motion">关闭页面转场动画</string>
+    <string name="disable_page_motion_desc">关闭应用内页面进入和返回的转场，默认关闭。图片渐变由“加载渐入渐出动画”单独控制。</string>
+    <string name="pgc_seasons">同系列切季</string>
+    <string name="pgc_season_loading">正在加载所选季…</string>
+    <string name="pgc_continue">继续播放：%1$s</string>
+</resources>

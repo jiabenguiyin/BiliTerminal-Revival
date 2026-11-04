@@ -7,7 +7,7 @@
     <content>
         <item>
             <type>0</type>
-            <text>搜索结果第一页为视频列表，第二页为专栏列表，第三页为用户列表，第四页为直播列表</text>
+            <text>点击顶部当前分类，可选择视频、番剧、影视、专栏、用户或直播；也可左右滑动切换。偏好设置中可开启整排分类栏。</text>
             <style>bold</style>
             <color>#ffffff</color>
         </item>

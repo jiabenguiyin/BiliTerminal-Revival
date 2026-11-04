@@ -20,6 +20,7 @@ public class UpListAdapter extends UserListAdapter {
 
     public UpListAdapter(Context context, ArrayList<UserInfo> userList) {
         super(context, userList);
+        setOnItemLongClickListener((position,user)->com.RobinNotBad.BiliClient.ui.UserRelationActions.show(context,user,null));
     }
 
     @NonNull

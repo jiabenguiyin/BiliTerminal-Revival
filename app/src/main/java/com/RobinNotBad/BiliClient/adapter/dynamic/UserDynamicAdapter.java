@@ -104,6 +104,7 @@ public class UserDynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
                 dynamicHolder.childDynamicHolder.showDynamic(context, dynamic.dynamic_forward, true);
                 dynamicHolder.cell_dynamic_child.setVisibility(View.VISIBLE);
             } else {
+                if(dynamicHolder.childDynamicHolder!=null)dynamicHolder.childDynamicHolder.closeReports();
                 dynamicHolder.cell_dynamic_child.setVisibility(View.GONE);
             }
 
@@ -120,6 +121,7 @@ public class UserDynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
 
     @Override
     public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        if(holder instanceof DynamicHolder)((DynamicHolder)holder).closeReports();
         super.onViewRecycled(holder);
     }
 
@@ -176,6 +178,7 @@ public class UserDynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
         public void setFollowState(UserInfo userInfo) {
             boolean followed = FollowRelationUtil.isFollowingAttribute(userInfo.relationAttribute);
             userInfo.followed = followed;
+            followBtn.setChecked(followed);
             userInfo.followsMe = FollowRelationUtil.isFollowingAttribute(userInfo.beRelationAttribute);
             msgBtn.setVisibility(followed ? View.VISIBLE : View.GONE);
             followBtn.setBackgroundTintList(ColorStateList
@@ -282,46 +285,14 @@ public class UserDynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
             if ((userInfo.mid == SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
                     || (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) || (userInfo.mid == 0))
                 this.followBtn.setVisibility(View.GONE);
-            else
+            else {
+                this.followBtn.setVisibility(View.VISIBLE);
                 this.followBtn.setChecked(userInfo.followed);
-            this.followBtn.setOnClickListener(btn -> {
-                followBtn.setEnabled(false);
-                final int oldRelationAttribute = userInfo.relationAttribute;
-                final boolean wasFollowed = FollowRelationUtil.isFollowingAttribute(oldRelationAttribute);
-                final boolean nextFollowed = !wasFollowed;
-                userInfo.relationAttribute = nextFollowed ? 1 : 0;
-                this.setFollowState(userInfo);
-                CenterThreadPool.run(() -> {
-                    try {
-                        int result = UserInfoApi.followUser(
-                                userInfo.mid,
-                                nextFollowed,
-                                oldRelationAttribute);
-                        String msg;
-                        if (result == 0) {
-                            if (!nextFollowed)
-                                msg = "已取消关注";
-                            else if (userInfo.followsMe)
-                                msg = "已互粉";
-                            else
-                                msg = "关注成功";
-                        } else {
-                            userInfo.relationAttribute = oldRelationAttribute;
-                            CenterThreadPool.runOnUiThread(() -> this.setFollowState(userInfo));
-                            if (result == 22015)
-                                msg = "被B站风控系统拦截了\n（无法解决，详见公告）";
-                            else
-                                msg = "操作失败（原因未知）：" + result;
-                        }
-                        MsgUtil.showMsg(msg);
-                    } catch (Exception e) {
-                        userInfo.relationAttribute = oldRelationAttribute;
-                        CenterThreadPool.runOnUiThread(() -> this.setFollowState(userInfo));
-                        MsgUtil.err(e);
-                    }
-                    CenterThreadPool.runOnUiThread(() -> followBtn.setEnabled(true));
-                });
-            });
+            }
+            this.followBtn.setTag(userInfo);
+            Runnable relationChanged=()->{if(followBtn.getTag()==userInfo)this.setFollowState(userInfo);};
+            this.followBtn.setOnClickListener(btn -> com.RobinNotBad.BiliClient.ui.UserRelationActions.toggleFollow(context,userInfo,relationChanged));
+            this.followBtn.setOnLongClickListener(btn -> com.RobinNotBad.BiliClient.ui.UserRelationActions.show(context,userInfo,relationChanged));
 
             this.setFollowState(userInfo);
 

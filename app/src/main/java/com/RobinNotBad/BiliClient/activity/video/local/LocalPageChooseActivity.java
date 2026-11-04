@@ -61,6 +61,8 @@ public class LocalPageChooseActivity extends BaseActivity {
             playerData.title = pageList.get(position);
             try {
                 Intent player = PlayerApi.jumpToPlayer(playerData);
+                player.putExtra(com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot.TOKEN,
+                        getIntent().getStringExtra(com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot.TOKEN));
                 if (audioOnlyList != null && position < audioOnlyList.size()
                         && Boolean.TRUE.equals(audioOnlyList.get(position))) {
                     player.putExtra("audio_only", true);

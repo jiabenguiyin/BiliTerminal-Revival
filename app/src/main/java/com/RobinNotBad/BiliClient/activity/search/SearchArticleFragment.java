@@ -63,7 +63,7 @@ public class SearchArticleFragment extends SearchFragment {
                     });
                 } else setBottom(true);
             } catch (Exception e) {
-                report(e);
+                loadFail(e);
             }
             setRefreshing(false);
         });
@@ -72,6 +72,9 @@ public class SearchArticleFragment extends SearchFragment {
     public void refreshInternal() {
         CenterThreadPool.runOnUiThread(() -> {
             page = 1;
+            bottom = false;
+            showEmptyView(false);
+            setRefreshing(true);
             if (this.articleCardAdapter == null)
                 this.articleCardAdapter = new ArticleCardAdapter(this.requireContext(), this.articleCardList);
             int size_old = this.articleCardList.size();

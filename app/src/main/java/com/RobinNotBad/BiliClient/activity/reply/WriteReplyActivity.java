@@ -66,6 +66,8 @@ public class WriteReplyActivity extends BaseActivity {
     private TextView selectedImageText;
     private LinearLayout selectedImagePreview;
     private View selectedImageScroll;
+    private MaterialCardView sendButton;
+    private TextView sendLabel;
     private final ActivityResultLauncher<Intent> imageLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
@@ -103,6 +105,7 @@ public class WriteReplyActivity extends BaseActivity {
         if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) {
             MsgUtil.showMsg("还没有登录喵~");
             finish();
+            return;
         }
 
         Intent intent = getIntent();
@@ -117,63 +120,75 @@ public class WriteReplyActivity extends BaseActivity {
         selectedImageText = findViewById(R.id.selected_images);
         selectedImagePreview = findViewById(R.id.selected_image_preview);
         selectedImageScroll = findViewById(R.id.selected_image_scroll);
-        MaterialCardView send = findViewById(R.id.send);
+        sendButton = findViewById(R.id.send);
+        sendLabel = findViewById(R.id.send_reply_label);
 
         if (parentSender != null && !parentSender.isEmpty()) {
             editText.setText("回复 @" + parentSender + " :");
             editText.setSelection(editText.getText().length());
         }
 
-        send.setOnClickListener(view -> {
+        sendButton.setOnClickListener(view -> {
             if (sent) {
                 MsgUtil.showMsg("正在发送中");
                 return;
             }
-            sent = true;
+            // Read views and freeze attachments on the main thread before entering the IO queue.
+            final String text = editText.getText().toString();
+            if (text.trim().isEmpty()) {
+                MsgUtil.showMsg("请先输入评论文字，评论需要文字内容才能带图片~");
+                return;
+            }
+            if (checkKy(text) && dontKyPlease) {
+                dontKyPlease = false;
+                MsgUtil.showDialog("保护措施……", getString(R.string.reply_dont_ky), 15);
+                return;
+            }
+            final ArrayList<Uri> images = new ArrayList<>(selectedImages);
+            final long account = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+            setSending(true);
             CenterThreadPool.run(() -> {
-                String text = editText.getText().toString();
-                if (text.trim().isEmpty()) {
-                    sent = false;
-                    runOnUiThread(() -> MsgUtil.showMsg("请先输入评论文字，评论需要文字内容才能带图片~"));
-                    return;
-                }
-                if (checkKy(text) && dontKyPlease) {
-                    sent = false;
-                    dontKyPlease = false;
-                    MsgUtil.showDialog("保护措施……", getString(R.string.reply_dont_ky), 15);
-                    return;
-                }
                 try {
                     JSONArray pictures = new JSONArray();
-                    for (Uri uri : selectedImages) {
+                    for (Uri uri : images) {
+                        if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                            throw new IllegalStateException(getString(R.string.reply_send_account_changed));
                         pictures.put(ImageUploadApi.toReplyPicture(
                                 ImageUploadApi.upload(getApplicationContext(), uri)));
                     }
+                    if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                        throw new IllegalStateException(getString(R.string.reply_send_account_changed));
                     Pair<Integer, Reply> result = ReplyApi.sendReply(oid, rpid, parent, text, replyType,
                             pictures.length() == 0 ? null : pictures.toString());
                     int resultCode = result.first;
                     Reply resultReply = result.second;
 
-                    if (resultCode == 0 && resultReply != null) {
-                        boolean visible = ReplyApi.isReplyVisible(oid, resultReply.rpid, replyType);
-                        if (visible) {
-                            runOnUiThread(() -> MsgUtil.showMsg("发送成功>w<"));
-                            EventBus.getDefault().post(new ReplyEvent(1, resultReply, pos, oid));
+                    if (resultCode == 0 && resultReply != null && resultReply.rpid > 0) {
+                        runOnUiThread(() -> {
+                            if (isDestroyed()) return;
+                            MsgUtil.showMsg(getString(R.string.reply_send_submitted));
                             finish();
-                        } else {
-                            sent = false;
-                            runOnUiThread(() -> MsgUtil.showMsg(
-                                    "服务器暂未确认评论已发布，请稍后刷新评论区"));
-                        }
+                        });
+                        // Public visibility is a separate acknowledgement. Do not hold the
+                        // composer open through its requests/backoff, or invite a duplicate POST.
+                        CenterThreadPool.run(() -> confirmSubmittedReply(account, oid, replyType, resultReply, pos));
                     } else {
-                        String toastMsg = "评论发送失败：\n"
+                        String toastMsg = resultCode == 0 ? getString(R.string.reply_send_uncertain) : "评论发送失败：\n"
                                 + (msgMap.containsKey(resultCode) ? msgMap.get(resultCode) : resultCode);
-                        runOnUiThread(() -> MsgUtil.showMsg(toastMsg));
-                        sent = false;
+                        runOnUiThread(() -> {
+                            if (isDestroyed()) return;
+                            setSending(false);
+                            MsgUtil.showMsg(toastMsg);
+                        });
                     }
                 } catch (Exception e) {
-                    sent = false;
-                    runOnUiThread(() -> MsgUtil.err(e));
+                    runOnUiThread(() -> {
+                        if (isDestroyed()) return;
+                        setSending(false);
+                        if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                            MsgUtil.showMsg(getString(R.string.reply_send_account_changed));
+                        else MsgUtil.err(e);
+                    });
                 }
             });
         });
@@ -191,6 +206,29 @@ public class WriteReplyActivity extends BaseActivity {
 
         findViewById(R.id.emote).setOnClickListener(view ->
                 emoteLauncher.launch(new Intent(this, EmoteActivity.class).putExtra("from", EmoteApi.BUSINESS_REPLY)));
+    }
+
+    private void setSending(boolean sending) {
+        sent = sending;
+        sendButton.setEnabled(!sending);
+        sendLabel.setText(sending ? R.string.reply_send_in_progress : R.string.btn_send);
+        editText.setEnabled(!sending);
+        findViewById(R.id.pick_image).setEnabled(!sending);
+        findViewById(R.id.emote).setEnabled(!sending);
+    }
+
+    private static void confirmSubmittedReply(long account, long oid, int type, Reply reply, int pos) {
+        if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) return;
+        boolean confirmed;
+        try { confirmed = ReplyApi.isReplyVisible(oid, reply.rpid, type); }
+        catch (Exception error) { confirmed = false; }
+        final boolean visible = confirmed;
+        CenterThreadPool.runOnUiThread(() -> {
+            if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) return;
+            if (visible) EventBus.getDefault().post(new ReplyEvent(1, reply, pos, oid));
+            MsgUtil.showMsg(com.RobinNotBad.BiliClient.BiliTerminal.context.getString(visible
+                    ? R.string.reply_send_verified : R.string.reply_send_pending));
+        });
     }
 
     /**
@@ -257,6 +295,7 @@ public class WriteReplyActivity extends BaseActivity {
             deleteParams.setMargins(0, 0, ToolsUtil.dp2px(1), 0);
             item.addView(delete, deleteParams);
             delete.setOnClickListener(view -> {
+                if (sent) return;
                 selectedImages.remove(index);
                 updateImagePreview();
             });

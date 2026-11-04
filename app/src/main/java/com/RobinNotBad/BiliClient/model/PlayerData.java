@@ -34,6 +34,11 @@ public class PlayerData implements Parcelable {
     public DashData dashData; // DASH格式数据
     public String audioUrl = "";
     public ArrayList<String> audioBackupUrls = new ArrayList<>();
+    public String favoritePlaybackToken;
+    public boolean explicitOnlineQueue;
+    public long seasonId, episodeId;
+    public int seasonType = 1;
+    public String clipSegments = "[]";
 
     public PlayerData() {
     }
@@ -65,6 +70,9 @@ public class PlayerData implements Parcelable {
         audioBackupUrls = in.createStringArrayList();
         if (audioBackupUrls == null) audioBackupUrls = new ArrayList<>();
         danmakuCount = in.readLong();
+        favoritePlaybackToken = in.readString();
+        explicitOnlineQueue = in.readInt() != 0;
+        seasonId = in.readLong(); episodeId = in.readLong(); seasonType = in.readInt(); clipSegments = in.readString();
         // dashData不序列化，下载时会重新获取
     }
 
@@ -106,6 +114,9 @@ public class PlayerData implements Parcelable {
         dest.writeString(audioUrl);
         dest.writeStringList(audioBackupUrls);
         dest.writeLong(danmakuCount);
+        dest.writeString(favoritePlaybackToken);
+        dest.writeInt(explicitOnlineQueue ? 1 : 0);
+        dest.writeLong(seasonId); dest.writeLong(episodeId); dest.writeInt(seasonType); dest.writeString(clipSegments);
         // dashData不序列化，下载时会重新获取
     }
 

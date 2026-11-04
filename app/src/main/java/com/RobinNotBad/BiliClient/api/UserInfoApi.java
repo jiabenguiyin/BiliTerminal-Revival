@@ -493,6 +493,37 @@ public class UserInfoApi {
 
 
     public static int getUserVideos(long mid, int page, String searchKeyword, List<VideoCard> videoList) throws IOException, JSONException {
+        UserVideoPage result = getUserVideoPage(mid, page, videoList);
+        return result.code == 0 ? (result.isBottom ? 1 : 0) : -1;
+    }
+
+    public static final class UserVideoPage extends com.RobinNotBad.BiliClient.model.ApiResult {
+        public int page, pageSize = 40, rawCount;
+        public long count = -1;
+        public int totalPages() {
+            if (count < 0) return -1;
+            return count == 0 ? 0 : (int) Math.min(Integer.MAX_VALUE, (count - 1) / pageSize + 1);
+        }
+    }
+
+    public static UserVideoPage getUserVideoPage(long mid, int page, List<VideoCard> output) throws IOException, JSONException {
+        return getUserVideoPage(mid, page, "pubdate", output);
+    }
+
+    public static UserVideoPage getUserVideoPage(long mid, int page, String order, List<VideoCard> output) throws IOException, JSONException {
+        if (mid <= 0 || page <= 0) throw new IllegalArgumentException("投稿分页参数无效");
+        String url = buildUserVideosUrl(mid, page, order);
+        JSONObject all = NetWorkUtil.getJson(ConfInfoApi.signWBI(DmImgParamUtil.getDmImgParamsUrl(url)));
+        return parseUserVideoPage(all, page, output);
+    }
+
+    static String buildUserVideosUrl(long mid, int page) {
+        return buildUserVideosUrl(mid, page, "pubdate");
+    }
+
+    static String buildUserVideosUrl(long mid, int page, String order) {
+        if (!"pubdate".equals(order) && !"click".equals(order) && !"stow".equals(order))
+            throw new IllegalArgumentException("投稿排序参数无效");
         String url = "https://api.bilibili.com/x/space/wbi/arc/search"
                 + new NetWorkUtil.FormData()
                 .setUrlParam(true)
@@ -500,36 +531,46 @@ public class UserInfoApi {
                 .put("keyword", "")
                 .put("mid", mid)
                 .put("order_avoided", true)
-                .put("order", "pubdate")
+                .put("order", order)
                 .put("pn", page)
                 .put("ps", 40)
                 .put("tid", 0)
                 .put("platform", "web")
                 .put("index", 1)
                 .put("web_location", 1550101);
-        JSONObject all = NetWorkUtil.getJson(ConfInfoApi.signWBI(DmImgParamUtil.getDmImgParamsUrl(url)));
-        if (all.has("data") && !all.isNull("data")) {
-            JSONObject data = all.getJSONObject("data");
-            JSONObject list = data.optJSONObject("list");
-            if (list == null) return -1;
-            if (list.has("vlist") && !list.isNull("vlist")) {
-                JSONArray vlist = list.getJSONArray("vlist");
-                if (vlist.length() == 0) return 1;
-                for (int i = 0; i < vlist.length(); i++) {
-                    JSONObject card = vlist.getJSONObject(i);
-                    String cover = card.getString("pic");
-                    long play = card.getLong("play");
-                    String playStr = StringUtil.toWan(play) + "观看";
-                    long aid = card.getLong("aid");
-                    String bvid = card.getString("bvid");
-                    String upName = card.getString("author");
-                    String title = card.getString("title");
+        return url;
+    }
 
-                    videoList.add(new VideoCard(title, upName, playStr, cover, aid, bvid));
-                }
-                return 0;
-            } else return -1;
-        } else return -1;
+    static UserVideoPage parseUserVideoPage(JSONObject response, int page, List<VideoCard> output) throws JSONException {
+        UserVideoPage result = new UserVideoPage();
+        result.fromJson(response); result.page = page;
+        if (result.code != 0) return result;
+        JSONObject data = response.optJSONObject("data");
+        JSONObject list = data == null ? null : data.optJSONObject("list");
+        JSONArray videos = list == null ? null : list.optJSONArray("vlist");
+        if (videos == null) throw new JSONException("投稿列表格式无效");
+        JSONObject info = data.optJSONObject("page");
+        if (info != null) {
+            int actualPage = info.optInt("pn", page);
+            if (actualPage != page) throw new JSONException("投稿分页未前进，请重试");
+            result.pageSize = Math.max(1, info.optInt("ps", 40));
+            result.count = info.optLong("count", -1);
+        }
+        result.rawCount = videos.length();
+        if (result.count == 0 && result.rawCount > 0) result.count = -1;
+        java.util.ArrayList<VideoCard> parsed = new java.util.ArrayList<>();
+        for (int i = 0; i < videos.length(); i++) {
+            JSONObject card = videos.optJSONObject(i);
+            if (card == null || card.optLong("aid") <= 0) continue;
+            long plays = card.optLong("play", -1);
+            String title = com.RobinNotBad.BiliClient.util.SearchQueryUtil.plainResultTitle(card.optString("title"));
+            VideoCard video = new VideoCard(title, card.optString("author"), plays < 0 ? "" : StringUtil.toWan(plays) + "观看",
+                    card.optString("pic"), card.optLong("aid"), card.optString("bvid"));
+            if (FavoritePlaybackSource.playableCard(video)) parsed.add(video);
+        }
+        output.addAll(parsed);
+        result.isBottom = result.rawCount == 0 || result.count >= 0 && (long) page * result.pageSize >= result.count;
+        return result;
     }
 
 

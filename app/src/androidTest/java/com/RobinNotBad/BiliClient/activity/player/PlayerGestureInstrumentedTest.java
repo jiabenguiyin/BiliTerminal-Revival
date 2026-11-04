@@ -55,6 +55,13 @@ public class PlayerGestureInstrumentedTest {
         preference("player_scale", true);
         preference("player_doublemove", true);
         preference("player_singlemove", true);
+        preference(SharedPreferencesUtil.PLAYER_ANTI_MISTOUCH, true);
+        preference(SharedPreferencesUtil.PLAYER_SHOW_COLLECTION_PLAYBACK, false);
+        preference("player_longclick", true);
+        preference(com.RobinNotBad.BiliClient.util.PlayerSettingsUtil.LONGPRESS_HINT_ENABLED,true);
+        preference(com.RobinNotBad.BiliClient.util.PlayerSettingsUtil.LONGPRESS_HINT_SCALE,.75f);
+        preference(SharedPreferencesUtil.PLAYER_LONGPRESS_SWITCH, true);
+        preference(SharedPreferencesUtil.PLAYER_BRIGHTNESS_GESTURE, true);
         preference(SharedPreferencesUtil.PLAYER_SWIPE_SEEK, true);
         preference(SharedPreferencesUtil.PLAYER_ZOOM_TAP_SEEK, false);
         preference("player_autolandscape", false);
@@ -83,6 +90,16 @@ public class PlayerGestureInstrumentedTest {
         }
         assertTrue("Local player did not prepare", (Boolean) field("isPrepared"));
         assertFalse("Local video inherited live mode", (Boolean) field("isLiveMode"));
+        boolean[] laidOut={false};long layoutDeadline=SystemClock.uptimeMillis()+5000;
+        do {
+            instrumentation.runOnMainSync(()->{
+                View surface=(View)field("layout_control"), picture=(View)field("layout_video");
+                laidOut[0]=surface.getWidth()>0&&surface.getHeight()>0&&picture.getWidth()>0&&picture.getHeight()>0
+                        &&!surface.isLayoutRequested()&&!picture.isLayoutRequested()&&field("progress_str")!=null;
+            });
+            if(!laidOut[0])SystemClock.sleep(30);
+        } while(!laidOut[0]&&SystemClock.uptimeMillis()<layoutDeadline);
+        assertTrue("Player geometry must be laid out before setting pan boundaries",laidOut[0]);
         instrumentation.runOnMainSync(() -> {
             controls = (View) field("layout_control");
             video = (View) field("layout_video");
@@ -107,7 +124,8 @@ public class PlayerGestureInstrumentedTest {
             if (entry.getValue() == null) SharedPreferencesUtil.removeValue(entry.getKey());
             else if (entry.getValue() instanceof Boolean) {
                 SharedPreferencesUtil.putBoolean(entry.getKey(), (Boolean) entry.getValue());
-            } else SharedPreferencesUtil.putInt(entry.getKey(), (Integer) entry.getValue());
+            } else if(entry.getValue() instanceof Float)SharedPreferencesUtil.putFloat(entry.getKey(),(Float)entry.getValue());
+            else SharedPreferencesUtil.putInt(entry.getKey(), (Integer) entry.getValue());
         }
         if (media != null) media.delete();
     }
@@ -127,6 +145,281 @@ public class PlayerGestureInstrumentedTest {
         assertTrue((Boolean) field("zoomedSingleFingerSeekMode"));
         instrumentation.runOnMainSync(() -> invoke("hideControlsForTest"));
         assertFalse((Boolean) field("zoomedSingleFingerSeekMode"));
+    }
+
+    @Test public void fastReleaseWithoutMoveDoesNotOpenControlsOrCountAsADoubleTap() {
+        for (boolean scaling : new boolean[]{true, false}) for (boolean antiMistouch : new boolean[]{true, false}) {
+            configureSwipeFixture(scaling, antiMistouch);
+            instrumentation.runOnMainSync(() -> {
+                float x = controls.getWidth() * 0.25f, end = controls.getWidth() * 0.65f;
+                float y = seekGestureY(x, end);
+                long down = SystemClock.uptimeMillis();
+                event(down, MotionEvent.ACTION_DOWN, x, y);
+                event(down, MotionEvent.ACTION_UP, end, y);
+            });
+            assertNoTapAfterSwipe("release-only; scaling=" + scaling + ", anti=" + antiMistouch);
+        }
+    }
+
+    @Test public void coalescedOutAndBackHistoryIsStillASwipeEvenWhenReleaseReturnsToStart() {
+        for (boolean scaling : new boolean[]{true, false}) for (boolean antiMistouch : new boolean[]{true, false}) {
+            configureSwipeFixture(scaling, antiMistouch);
+            instrumentation.runOnMainSync(() -> {
+                float x = controls.getWidth() * 0.25f, end = controls.getWidth() * 0.65f;
+                float y = seekGestureY(x, end);
+                long down = SystemClock.uptimeMillis();
+                event(down, MotionEvent.ACTION_DOWN, x, y);
+                MotionEvent release = MotionEvent.obtain(down, down + 10, MotionEvent.ACTION_MOVE, end, y, 0);
+                release.addBatch(down + 20, x, y, 1f, 1f, 0);
+                release.setAction(MotionEvent.ACTION_UP);
+                controls.dispatchTouchEvent(release); release.recycle();
+            });
+            assertNoTapAfterSwipe("coalesced out/back; scaling=" + scaling + ", anti=" + antiMistouch);
+        }
+    }
+
+    @Test public void shortDiagonalSwipeDoesNotRequireSeekOrVolumeRecognitionToSuppressClick() {
+        for (boolean scaling : new boolean[]{true, false}) for (boolean antiMistouch : new boolean[]{true, false}) {
+            configureSwipeFixture(scaling, antiMistouch);
+            instrumentation.runOnMainSync(() -> {
+                float x = controls.getWidth() * 0.25f;
+                float delta = ViewConfiguration.get(player).getScaledTouchSlop() * 0.8f;
+                float y = seekGestureY(x, x + delta);
+                long down = SystemClock.uptimeMillis();
+                event(down, MotionEvent.ACTION_DOWN, x, y);
+                event(down, MotionEvent.ACTION_MOVE, x + delta, y + delta);
+                event(down, MotionEvent.ACTION_UP, x + delta, y + delta);
+            });
+            assertNoTapAfterSwipe("diagonal; scaling=" + scaling + ", anti=" + antiMistouch);
+        }
+    }
+
+    @Test public void aRealTapWithSmallJitterStillWorksImmediatelyAfterAnIgnoredFling() {
+        for (boolean scaling : new boolean[]{true, false}) for (boolean antiMistouch : new boolean[]{true, false}) {
+            configureSwipeFixture(scaling, antiMistouch);
+            instrumentation.runOnMainSync(() -> {
+                float x = controls.getWidth() * 0.25f, end = controls.getWidth() * 0.65f;
+                float y = seekGestureY(x, end);
+                long down = SystemClock.uptimeMillis();
+                event(down, MotionEvent.ACTION_DOWN, x, y);
+                event(down, MotionEvent.ACTION_UP, end, y);
+            });
+            assertNoTapAfterSwipe("before real tap");
+            instrumentation.runOnMainSync(() -> {
+                float x = controls.getWidth() * 0.25f;
+                float delta = ViewConfiguration.get(player).getScaledTouchSlop() / 3f;
+                float y = seekGestureY(x, x + delta);
+                long down = SystemClock.uptimeMillis();
+                event(down, MotionEvent.ACTION_DOWN, x, y);
+                event(down, MotionEvent.ACTION_MOVE, x + delta, y);
+                event(down, MotionEvent.ACTION_UP, x + delta, y);
+            });
+            instrumentation.waitForIdleSync();
+            assertEquals(View.VISIBLE, ((View) field("layout_top")).getVisibility());
+            assertFalse("A valid tap must not become a double-tap playback action", (Boolean) field("isPlaying"));
+        }
+    }
+
+    @Test public void accessibilityClickStillWorksAfterSwipeCancellation() {
+        configureSwipeFixture(true, true);
+        instrumentation.runOnMainSync(() -> {
+            float x = controls.getWidth() * 0.25f, end = controls.getWidth() * 0.65f;
+            float y = seekGestureY(x, end);
+            long down = SystemClock.uptimeMillis();
+            event(down, MotionEvent.ACTION_DOWN, x, y);
+            event(down, MotionEvent.ACTION_UP, end, y);
+        });
+        assertNoTapAfterSwipe("before accessibility click");
+        instrumentation.runOnMainSync(() -> assertTrue(controls.performClick()));
+        assertEquals(View.VISIBLE, ((View) field("layout_top")).getVisibility());
+    }
+
+    @Test public void longPressShowsItsActualTemporarySpeedUntilReleaseOrCancel() throws Exception {
+        for (int action : new int[]{MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL}) {
+            long[] down = {0}; float[] point = new float[2];
+            instrumentation.runOnMainSync(() -> {
+                invoke("hideControlsForTest"); invoke("cancelPendingSingleTap");
+                set("isPlaying", true); invoke("startPlaybackPlayers");
+                point[0] = controls.getWidth() * 0.3f; point[1] = seekGestureY(point[0], point[0]);
+                down[0] = SystemClock.uptimeMillis();
+                event(down[0], MotionEvent.ACTION_DOWN, point[0], point[1]);
+            });
+            long until = SystemClock.uptimeMillis() + 5000;
+            while (!(Boolean) field("onLongClick") && SystemClock.uptimeMillis() < until) SystemClock.sleep(40);
+            assertTrue("Long press did not activate", (Boolean) field("onLongClick"));
+            TextView activeHint = player.findViewById(R.id.long_press_speed_hint);
+            until = SystemClock.uptimeMillis() + 3000;
+            while (activeHint.getWidth() <= 0 && SystemClock.uptimeMillis() < until) SystemClock.sleep(20);
+            instrumentation.runOnMainSync(() -> {
+                TextView hint = player.findViewById(R.id.long_press_speed_hint);
+                assertEquals(View.VISIBLE, hint.getVisibility()); assertTrue(hint.getText().toString().contains("长按倍速中"));
+                assertTrue(hint.getText().toString().endsWith("x"));
+                assertTrue("Speed hint must stay at the top", hint.getTop() >= 0 && hint.getBottom() <= controls.getHeight() / 3);
+                saveControls("player-longpress-hint.png");
+                event(down[0], action, point[0], point[1]);
+                assertFalse((Boolean) field("onLongClick")); assertEquals(View.GONE, hint.getVisibility());
+                assertEquals("x 1.0", ((TextView) field("text_speed")).getText().toString());
+                invoke("playerPause");
+            });
+        }
+    }
+
+    @Test public void longPressHintCanBeHiddenWithoutDisablingTemporarySpeed() {
+        SharedPreferencesUtil.putBoolean(com.RobinNotBad.BiliClient.util.PlayerSettingsUtil.LONGPRESS_HINT_ENABLED,false);
+        instrumentation.runOnMainSync(()->{
+            invoke("startLongPressSpeed");assertTrue((Boolean)field("onLongClick"));
+            assertEquals(View.GONE,player.findViewById(R.id.long_press_speed_hint).getVisibility());
+            assertFalse("Temporary speed must still change",((TextView)field("text_speed")).getText().toString().equals("x 1.0"));
+            invoke("stopLongPressSpeed");assertFalse((Boolean)field("onLongClick"));
+            assertEquals("x 1.0",((TextView)field("text_speed")).getText().toString());
+        });
+    }
+
+    @Test public void hintScaleKeepsTheWholeBannerInsideTheSmallPlayer() {
+        float[] sizes=new float[3];int i=0;
+        for(float scale:new float[]{.5f,.75f,1.25f}) {
+            SharedPreferencesUtil.putFloat(com.RobinNotBad.BiliClient.util.PlayerSettingsUtil.LONGPRESS_HINT_SCALE,scale);
+            instrumentation.runOnMainSync(()->invoke("startLongPressSpeed"));instrumentation.waitForIdleSync();SystemClock.sleep(100);
+            final int index=i++;
+            instrumentation.runOnMainSync(()->{
+                TextView hint=player.findViewById(R.id.long_press_speed_hint);Rect visible=new Rect();
+                assertTrue(hint.getGlobalVisibleRect(visible));assertEquals(hint.getWidth(),visible.width());assertEquals(hint.getHeight(),visible.height());
+                assertTrue(hint.getWidth()<=controls.getWidth()*.73f);assertEquals(1,hint.getMaxLines());
+                assertNotNull(hint.getLayout());assertEquals(0,hint.getLayout().getEllipsisCount(0));
+                assertTrue(hint.getPaint().measureText(hint.getText().toString())<=hint.getWidth()-hint.getCompoundPaddingLeft()-hint.getCompoundPaddingRight()+1);
+                sizes[index]=hint.getTextSize();saveControls("player-longpress-hint-scale-"+index+".png");invoke("stopLongPressSpeed");
+            });
+        }
+        assertTrue(sizes[0]<=sizes[1]);assertTrue(sizes[1]<=sizes[2]);assertTrue(sizes[0]<sizes[2]);
+    }
+
+    @Test public void longPressOwnsVerticalMotionWithSwitchingEnabledOrDisabled() throws Exception {
+        AudioManager audio=(AudioManager)player.getSystemService(android.content.Context.AUDIO_SERVICE);
+        int originalVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+        try {
+            for(boolean enabled:new boolean[]{true,false}) for(float fraction:new float[]{.35f,.65f}) {
+                SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.PLAYER_LONGPRESS_SWITCH,enabled);
+                long[] down={0};float[] point=new float[2];float[] brightness={0};int[] volume={0};
+                instrumentation.runOnMainSync(()->{
+                    invoke("hideControlsForTest");invoke("cancelPendingSingleTap");
+                    audio.setStreamVolume(AudioManager.STREAM_MUSIC,Math.max(1,audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)/2),0);
+                    volume[0]=audio.getStreamVolume(AudioManager.STREAM_MUSIC);brightness[0]=player.getWindow().getAttributes().screenBrightness;
+                    set("isPlaying",true);invoke("startPlaybackPlayers");
+                    point[0]=controls.getWidth()*fraction;point[1]=controls.getHeight()*.5f;
+                    down[0]=SystemClock.uptimeMillis();event(down[0],MotionEvent.ACTION_DOWN,point[0],point[1]);
+                });
+                long deadline=SystemClock.uptimeMillis()+4000;while(!(Boolean)field("onLongClick")&&SystemClock.uptimeMillis()<deadline)SystemClock.sleep(20);
+                assertTrue((Boolean)field("onLongClick"));
+                instrumentation.runOnMainSync(()->{
+                    event(down[0],MotionEvent.ACTION_MOVE,point[0],point[1]-controls.getHeight()*.35f);
+                    event(down[0],MotionEvent.ACTION_UP,point[0],point[1]-controls.getHeight()*.35f);
+                    assertEquals(volume[0],audio.getStreamVolume(AudioManager.STREAM_MUSIC));
+                    assertEquals(brightness[0],player.getWindow().getAttributes().screenBrightness,0f);
+                    assertFalse((Boolean)field("onLongClick"));assertEquals("x 1.0",((TextView)field("text_speed")).getText().toString());
+                    assertFalse((Boolean)field("brightnessAdjusting"));assertFalse((Boolean)field("verticalAdjusting"));
+                    invoke("playerPause");
+                });
+            }
+        } finally { audio.setStreamVolume(AudioManager.STREAM_MUSIC,originalVolume,0); }
+    }
+
+    @Test public void zoomedLongPressCanPanWithoutChangingSpeedVolumeOrBrightness()throws Exception{
+        zoom();AudioManager audio=(AudioManager)player.getSystemService(android.content.Context.AUDIO_SERVICE);
+        int volume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);float brightness=player.getWindow().getAttributes().screenBrightness;
+        for(boolean switching:new boolean[]{true,false}){
+            SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.PLAYER_LONGPRESS_SWITCH,switching);
+            instrumentation.runOnMainSync(()->{
+                video.setX((Float)field("video_origX"));video.setY((Float)field("video_origY"));
+                invoke("hideControlsForTest");invoke("cancelPendingSingleTap");
+                float x=controls.getWidth()*.5f,y=controls.getHeight()*.5f;long down=SystemClock.uptimeMillis();
+                event(down,MotionEvent.ACTION_DOWN,x,y);invoke("startLongPressSpeed");
+                assertTrue((Boolean)field("longPressPanSequence"));assertFalse((Boolean)field("longPressSwitchSequence"));
+                String speed=((TextView)field("text_speed")).getText().toString();float before=video.getX();
+                event(down,MotionEvent.ACTION_MOVE,x+controls.getWidth()*.20f,y-controls.getHeight()*.15f);
+                assertNotEquals(before,video.getX(),.1f);assertTrue((Boolean)field("onLongClick"));
+                assertEquals(speed,((TextView)field("text_speed")).getText().toString());
+                assertEquals(volume,audio.getStreamVolume(AudioManager.STREAM_MUSIC));assertEquals(brightness,player.getWindow().getAttributes().screenBrightness,0f);
+                assertEquals(View.GONE,((View)field("layout_top")).getVisibility());
+                event(down,MotionEvent.ACTION_UP,x+controls.getWidth()*.20f,y-controls.getHeight()*.15f);
+                assertFalse((Boolean)field("onLongClick"));assertEquals("x 1.0",((TextView)field("text_speed")).getText().toString());
+                assertFalse((Boolean)field("longPressPanSequence"));
+            });
+        }
+    }
+
+    @Test public void delayedVideoLayoutDoesNotUndoAnAlreadyZoomedPan()throws Exception{
+        zoom();float[] moved={0};
+        instrumentation.runOnMainSync(()->{
+            invoke("changeVideoSize");float x=controls.getWidth()*.5f,y=controls.getHeight()*.5f;long down=SystemClock.uptimeMillis();
+            event(down,MotionEvent.ACTION_DOWN,x,y);event(down,MotionEvent.ACTION_MOVE,x+controls.getWidth()*.20f,y);
+            event(down,MotionEvent.ACTION_UP,x+controls.getWidth()*.20f,y);moved[0]=video.getX();assertTrue(moved[0]>0);
+        });
+        SystemClock.sleep(160);instrumentation.waitForIdleSync();
+        instrumentation.runOnMainSync(()->assertEquals("Delayed centering must preserve the newer pan",moved[0],video.getX(),1f));
+    }
+
+    @Test public void ordinaryVerticalDragStillAdjustsVolumeWithoutALongPress() {
+        AudioManager audio=(AudioManager)player.getSystemService(android.content.Context.AUDIO_SERVICE);
+        int saved=audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+        try {
+            instrumentation.runOnMainSync(()->{
+                invoke("hideControlsForTest");audio.setStreamVolume(AudioManager.STREAM_MUSIC,Math.max(1,audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)/2),0);
+                int before=audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+                float x=controls.getWidth()*.65f,y=controls.getHeight()*.7f;long down=SystemClock.uptimeMillis();
+                event(down,MotionEvent.ACTION_DOWN,x,y);event(down,MotionEvent.ACTION_MOVE,x,y-controls.getHeight()*.4f);
+                event(down,MotionEvent.ACTION_UP,x,y-controls.getHeight()*.4f);
+                assertTrue(audio.getStreamVolume(AudioManager.STREAM_MUSIC)>before);
+            });
+        } finally {audio.setStreamVolume(AudioManager.STREAM_MUSIC,saved,0);}
+    }
+
+    @Test public void expandedToolsLeaveTheLockClearAndLoopRespondsAtItsDrawnPosition() {
+        instrumentation.runOnMainSync(() -> {
+            invoke("showcon"); player.findViewById(R.id.menu_btn).performClick();
+        });
+        instrumentation.waitForIdleSync();
+        if ((Boolean) field("menu_opened")) {
+            instrumentation.runOnMainSync(() -> {
+                Rect lock = new Rect(), menu = new Rect();
+                assertTrue(player.findViewById(R.id.screen_lock_btn).getGlobalVisibleRect(lock));
+                assertTrue(player.findViewById(R.id.right_second).getGlobalVisibleRect(menu));
+                assertFalse("Expanded toolbar covers lock: " + menu + " / " + lock, Rect.intersects(menu, lock));
+                View loop = player.findViewById(R.id.loop_btn);
+                ((android.widget.HorizontalScrollView) player.findViewById(R.id.right_second)).scrollTo(loop.getLeft(), 0);
+            });
+            instrumentation.waitForIdleSync();
+            boolean before = (Boolean) field("loop_enabled");
+            tapControl(player.findViewById(R.id.loop_btn));
+            assertNotEquals(before, field("loop_enabled")); assertFalse((Boolean) field("screenLocked"));
+        } else {
+            instrumentation.runOnMainSync(() -> {
+                com.RobinNotBad.BiliClient.player.PlayerOptionsMenu menu =
+                        (com.RobinNotBad.BiliClient.player.PlayerOptionsMenu) field("playbackOptionsMenu");
+                assertTrue(menu.isShowing());
+                boolean before = (Boolean) field("loop_enabled");
+                assertTrue(menu.getMenu().performIdentifierAction(102, 0));
+                assertNotEquals(before, field("loop_enabled")); assertFalse((Boolean) field("screenLocked"));
+            });
+        }
+    }
+
+    private void configureSwipeFixture(boolean scaling, boolean antiMistouch) {
+        SharedPreferencesUtil.putBoolean("player_scale", scaling);
+        SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.PLAYER_ANTI_MISTOUCH, antiMistouch);
+        instrumentation.runOnMainSync(() -> {
+            invoke("setVideoGestures");
+            video.setScaleX(scaling ? 2f : 1f); video.setScaleY(scaling ? 2f : 1f);
+            if (scaling) ((ViewScaleGestureListener) field("scaleGestureListener")).can_reset = true;
+            invoke("cancelPendingSingleTap"); invoke("hideControlsForTest");
+        });
+        instrumentation.waitForIdleSync();
+    }
+
+    private void assertNoTapAfterSwipe(String message) {
+        instrumentation.waitForIdleSync();
+        assertEquals(message, View.GONE, ((View) field("layout_top")).getVisibility());
+        assertEquals(message, 0L, field("timestamp_click"));
+        assertFalse(message, (Boolean) field("isPlaying"));
     }
 
     @Test public void doubleTapDoesNotExecuteSingleTapOrSwitchZoomMode() throws Exception {
@@ -151,7 +444,9 @@ public class PlayerGestureInstrumentedTest {
         awaitSingleTap();
         assertTrue("Double tap should resume: live=" + field("isLiveMode")
                 + ", locked=" + field("screenLocked") + ", clickTime=" + field("timestamp_click")
-                + ", disabled=" + field("gesture_click_disabled"), (Boolean) field("isPlaying"));
+                + ", disabled=" + field("gesture_click_disabled") + ", prepared=" + field("isPrepared")
+                + ", ended=" + field("playbackCompleted") + ", position="
+                + ((tv.danmaku.ijk.media.player.IMediaPlayer) field("ijkPlayer")).getCurrentPosition(), (Boolean) field("isPlaying"));
         assertFalse("Double tap must not enter seek mode", (Boolean) field("zoomedSingleFingerSeekMode"));
         assertEquals(2f, video.getScaleX(), 0.01f);
     }
@@ -177,7 +472,13 @@ public class PlayerGestureInstrumentedTest {
         zoom();
         float oldX = video.getX();
         drag();
-        assertTrue("Zoomed single-finger gesture should move the picture", video.getX() > oldX);
+        if(video.getX()<=oldX)instrumentation.runOnMainSync(()->saveControls("player-pan-failure.png"));
+        assertTrue("Zoomed single-finger gesture should move the picture: old="+oldX+", x="+video.getX()
+                +", width="+field("video_width")+", control="+controls.getWidth()+", scale="+video.getScaleX()
+                +", long="+field("onLongClick")+", flick="+field("longPressSwitchSequence")
+                +", start="+field("surfaceDownX")+", last="+field("lastSurfaceX")+", prev="+field("previousX")
+                +", seek="+field("zoomedSingleFingerSeekMode")+", vertical="+field("verticalAdjusting")
+                +", brightness="+field("brightnessAdjusting")+", scaled="+field("gesture_scaled")+", origin="+field("video_origX"), video.getX() > oldX);
         assertFalse((Boolean) field("zoomedSingleFingerSeekMode"));
         instrumentation.runOnMainSync(() -> {
             video.setScaleX(1f);
@@ -386,7 +687,11 @@ public class PlayerGestureInstrumentedTest {
             Rect full = new Rect();
             int[] location = new int[2];
             lock.getLocationInWindow(location);
-            full.set(location[0], location[1], location[0] + lock.getWidth(), location[1] + lock.getHeight());
+            int[] rootOffset = new int[2];
+            lock.getRootView().getLocationInWindow(rootOffset);
+            // getGlobalVisibleRect is expressed in the root view's coordinates.
+            full.set(location[0] - rootOffset[0], location[1] - rootOffset[1],
+                    location[0] - rootOffset[0] + lock.getWidth(), location[1] - rootOffset[1] + lock.getHeight());
             Rect visible = new Rect();
             assertTrue(lock.getGlobalVisibleRect(visible));
             saveControls("player-square-controls.png");
@@ -394,7 +699,7 @@ public class PlayerGestureInstrumentedTest {
             int[] controlsLocation = new int[2];
             controls.getLocationInWindow(controlsLocation);
             assertTrue("Lock should be on the left",
-                    full.exactCenterX() < controlsLocation[0] + controls.getWidth() / 2f);
+                    full.exactCenterX() < controlsLocation[0] - rootOffset[0] + controls.getWidth() / 2f);
         });
         tapControl(lock);
         assertTrue("Lock did not receive its drawn-center tap", (Boolean) field("screenLocked"));
@@ -437,9 +742,32 @@ public class PlayerGestureInstrumentedTest {
     }
 
     private void tapControl(View button) {
+        // showcon changes GONE ancestors to VISIBLE. Idle does not imply a completed
+        // measure/layout pass; use the settled drawn bounds before injecting a tap.
+        Rect previous = new Rect();
+        int stable = 0;
+        long deadline = SystemClock.uptimeMillis() + 3000;
+        while (stable < 3 && SystemClock.uptimeMillis() < deadline) {
+            Rect current = new Rect(); boolean[] ready = {true};
+            instrumentation.runOnMainSync(() -> {
+                ready[0] = button.getGlobalVisibleRect(current) && !current.isEmpty();
+                View ancestor = button;
+                while (ancestor != null) {
+                    if (ancestor.isLayoutRequested()) ready[0] = false;
+                    ancestor = ancestor.getParent() instanceof View ? (View) ancestor.getParent() : null;
+                }
+            });
+            stable = ready[0] && current.equals(previous) ? stable + 1 : 0;
+            previous.set(current);
+            SystemClock.sleep(20);
+        }
+        assertTrue("Control layout did not settle before touch injection", stable >= 3);
         instrumentation.runOnMainSync(() -> {
             Rect rect = new Rect();
             assertTrue("Control is not visible", button.getGlobalVisibleRect(rect));
+            int[] rootOffset = new int[2];
+            button.getRootView().getLocationInWindow(rootOffset);
+            rect.offset(rootOffset[0], rootOffset[1]);
             long down = SystemClock.uptimeMillis();
             MotionEvent press = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN,
                     rect.exactCenterX(), rect.exactCenterY(), 0);
@@ -541,6 +869,7 @@ public class PlayerGestureInstrumentedTest {
     private void preference(String key, Object value) {
         oldPreferences.put(key, SharedPreferencesUtil.getSharedPreferences().getAll().get(key));
         if (value instanceof Boolean) SharedPreferencesUtil.putBoolean(key, (Boolean) value);
+        else if(value instanceof Float)SharedPreferencesUtil.putFloat(key,(Float)value);
         else SharedPreferencesUtil.putInt(key, (Integer) value);
     }
 

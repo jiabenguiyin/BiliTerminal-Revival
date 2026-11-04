@@ -31,6 +31,9 @@ import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
+import com.RobinNotBad.BiliClient.util.BangumiProgressStore;
+import com.RobinNotBad.BiliClient.model.PlayerData;
+import com.RobinNotBad.BiliClient.player.PlayerOptionsMenu;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 
@@ -47,6 +50,9 @@ public class BangumiInfoFragment extends Fragment {
     private Button section_choose;
     private TextView episode_choose;
     private Bangumi bangumi;
+    private long restoredSeason, restoredEpisode;
+    private volatile int seasonGeneration;
+    private PlayerOptionsMenu seasonsMenu;
 
     public static BangumiInfoFragment newInstance(long mediaId) {
         Bundle args = new Bundle();
@@ -64,6 +70,7 @@ public class BangumiInfoFragment extends Fragment {
             mediaId = arguments.getLong("media_id");
         }
         rootView = inflater.inflate(R.layout.fragment_media_info, container, false);
+        if(savedInstanceState!=null){restoredSeason=savedInstanceState.getLong("pgc_season");restoredEpisode=savedInstanceState.getLong("pgc_episode");}
         return rootView;
     }
 
@@ -73,7 +80,7 @@ public class BangumiInfoFragment extends Fragment {
         episodeRecyclerView = rootView.findViewById(R.id.rv_episode_list);
         //拉数据
         CenterThreadPool
-                .supplyAsyncWithLiveData(() -> BangumiApi.getBangumi(mediaId))
+                .supplyAsyncWithLiveData(() -> restoredSeason>0 ? BangumiApi.getSeason(restoredSeason) : BangumiApi.getBangumi(mediaId))
                 .observe(getViewLifecycleOwner(), (result) -> result.onSuccess((bangumi) -> {
                     this.bangumi = bangumi;
                     initView();
@@ -101,7 +108,12 @@ public class BangumiInfoFragment extends Fragment {
         TextView record = rootView.findViewById(R.id.text_record);
         section_choose = rootView.findViewById(R.id.section_choose);
         episode_choose = rootView.findViewById(R.id.episode_choose);
-        selectedSection = 0;
+        int[] saved=BangumiProgressStore.selection(bangumi,restoredEpisode>0?restoredEpisode:BangumiProgressStore.episode(bangumi.info.season_id));
+        selectedSection=saved[0];selectedEpisode=saved[1];restoredEpisode=0;
+        Button seasonButton=rootView.findViewById(R.id.season_choose);
+        seasonButton.setVisibility(bangumi.info.seasons!=null&&bangumi.info.seasons.size()>1?View.VISIBLE:View.GONE);
+        seasonButton.setEnabled(true);
+        seasonButton.setOnClickListener(v->showSeasonChoices());
 
         rootView.setVisibility(View.GONE);
 
@@ -238,23 +250,29 @@ public class BangumiInfoFragment extends Fragment {
             if (activity instanceof VideoInfoActivity) {
                 ((VideoInfoActivity) activity).replyFragment.setRefreshing(false);
             }
+            onFinishLoad();
             return;
         }
 
-        section_choose.setText(bangumi.sectionList.get(0).title + " 点击切换");
+        section_choose.setText(bangumi.sectionList.get(selectedSection).title + " 点击切换");
         section_choose.setOnClickListener(v -> getSectionChooseDialog().show());
         episode_choose.setOnClickListener(v -> getEposideChooseDialog().show());
 
-        adapter.setData(bangumi.sectionList.get(0).episodeList);
+        adapter.setData(bangumi.sectionList.get(selectedSection).episodeList);
+        adapter.setSelectedItemIndex(selectedEpisode);
         episodeRecyclerView.setLayoutManager(new CustomLinearManager(requireContext(), LinearLayoutManager.HORIZONTAL, false));
         episodeRecyclerView.setAdapter(adapter);
+        episodeRecyclerView.scrollToPosition(selectedEpisode);
 
         //play button setting
         playButton.setOnClickListener(v -> {
             Bangumi.Episode episode = bangumi.sectionList.get(selectedSection).episodeList.get(selectedEpisode);
             Glide.get(requireContext()).clearMemory();
             Intent intent = new Intent(v.getContext(), JumpToPlayerActivity.class);
-            intent.putExtra("data", episode.toPlayerData());
+            PlayerData data=episode.toPlayerData();data.episodeId=episode.id;
+            data.seasonId=bangumi.info.season_id;data.seasonType=bangumi.info.type;
+            data.title=bangumi.info.title+" · "+episode.title+" "+episode.title_long;
+            intent.putExtra("data", data);
             startActivity(intent);
         });
         playButton.setOnLongClickListener(v -> {
@@ -324,13 +342,62 @@ public class BangumiInfoFragment extends Fragment {
     }
 
     private void refreshReplies() {
+        if(bangumi==null||bangumi.sectionList.isEmpty())return;
+        Bangumi.Episode selected=bangumi.sectionList.get(selectedSection).episodeList.get(selectedEpisode);
+        ((Button)rootView.findViewById(R.id.btn_play)).setText(
+                BangumiProgressStore.position(bangumi.info.season_id,selected.id,selected.cid)>0
+                        ?getString(R.string.pgc_continue,selected.title):"播放："+selected.title);
+        episode_choose.setText("快速选择 · "+selected.title);
         Activity activity = getActivity();
         if (activity instanceof VideoInfoActivity) {
             ((VideoInfoActivity) activity).setCurrentAid(bangumi.sectionList.get(selectedSection).episodeList.get(selectedEpisode).aid);
         }
     }
 
+    private void showSeasonChoices() {
+        if(bangumi.info.seasons==null||getActivity()==null)return;
+        if(seasonsMenu!=null)seasonsMenu.dismiss();
+        final ArrayList<Bangumi.Season> seasons=new ArrayList<>(bangumi.info.seasons);
+        seasonsMenu=new PlayerOptionsMenu(requireActivity(),rootView.findViewById(R.id.season_choose));
+        for(int i=0;i<seasons.size();i++)seasonsMenu.getMenu().add(0,i+1,i,seasons.get(i).season_title)
+                .setCheckable(true).setChecked(seasons.get(i).season_id==bangumi.info.season_id);
+        seasonsMenu.setOnMenuItemClickListener(item->{loadSeason(seasons.get(item.getItemId()-1).season_id);return true;});
+        seasonsMenu.show();
+    }
+
+    private void loadSeason(long seasonId) {
+        if(bangumi.info.season_id==seasonId)return;
+        final int generation=++seasonGeneration;
+        rootView.findViewById(R.id.season_choose).setEnabled(false);MsgUtil.showMsg(getString(R.string.pgc_season_loading));
+        CenterThreadPool.run(()->{
+            try {
+                Bangumi loaded=BangumiApi.getSeason(seasonId);
+                CenterThreadPool.runOnUiThread(()->{
+                    if(generation!=seasonGeneration||!isAdded()||getView()==null)return;
+                    bangumi=loaded;restoredSeason=seasonId;initView();
+                });
+            }catch(Exception error){CenterThreadPool.runOnUiThread(()->{
+                if(generation!=seasonGeneration||!isAdded()||getView()==null)return;
+                rootView.findViewById(R.id.season_choose).setEnabled(true);MsgUtil.showMsg("切季失败，请重试");
+            });}
+        });
+    }
+
+    @Override public void onSaveInstanceState(@NonNull Bundle state) {
+        super.onSaveInstanceState(state);
+        if(bangumi!=null){state.putLong("pgc_season",bangumi.info.season_id);
+            if(!bangumi.sectionList.isEmpty())state.putLong("pgc_episode",bangumi.sectionList.get(selectedSection).episodeList.get(selectedEpisode).id);}
+    }
+    @Override public void onDestroyView() {
+        seasonGeneration++;if(dialog!=null)dialog.dismiss();if(seasonsMenu!=null)seasonsMenu.dismiss();
+        super.onDestroyView();rootView=null;
+    }
+    @Override public void onResume() {
+        super.onResume();if(bangumi!=null&&rootView!=null)refreshReplies();
+    }
+
     public void onFinishLoad() {
+        if (rootView != null) rootView.setVisibility(View.VISIBLE);
         try {
             Activity activity = requireActivity();
             if (activity instanceof VideoInfoActivity) {

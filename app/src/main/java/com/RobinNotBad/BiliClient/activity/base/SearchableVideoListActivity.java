@@ -78,7 +78,7 @@ public abstract class SearchableVideoListActivity extends RefreshListActivity {
         configureVideoAdapter();
         setAdapter(videoCardAdapter);
         setOnRefreshListener(this::reloadVideos);
-        setOnLoadMoreListener(number -> { if (!loading) requestPage(number); });
+        setOnLoadMoreListener(number -> { if (!loading&&canReloadVideos()) requestPage(number);else if(!canReloadVideos()){page=Math.max(1,number-1);setRefreshing(false);} });
         emptyView.setOnClickListener(view -> {
             if (!loading && !bottom) requestPage(page + 1);
             else if (!loading) reloadVideos();
@@ -95,6 +95,7 @@ public abstract class SearchableVideoListActivity extends RefreshListActivity {
     }
 
     protected final void reloadVideos() {
+        if(!canReloadVideos()){setRefreshing(false);return;}
         generation++;
         page = 1;
         cursor = new ApiResult();
@@ -169,6 +170,11 @@ public abstract class SearchableVideoListActivity extends RefreshListActivity {
     }
 
     protected void configureVideoAdapter() { }
+    protected boolean canReloadVideos(){return true;}
+    protected final String playbackQuery() { return keyword; }
+    protected final ApiResult playbackCursor() { return cursor; }
+    protected final int playbackPage() { return page; }
+    protected final boolean playbackBottom() { return bottom; }
     protected boolean deduplicateVideos() { return false; }
     protected abstract ApiResult loadVideos(int page, String keyword, ApiResult previous, List<VideoCard> output)
             throws Exception;

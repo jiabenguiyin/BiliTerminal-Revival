@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.widget.EditText;
+import androidx.appcompat.app.AlertDialog;
 
 import com.RobinNotBad.BiliClient.BiliTerminal;
 import com.RobinNotBad.BiliClient.R;
@@ -19,6 +20,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 public class SettingUIActivity extends BaseActivity {
 
     private EditText uiScaleInput, uiPaddingH, uiPaddingV, density_input;
+    private String defaultDensityText;
+    private AlertDialog confirmationDialog;
 
     @SuppressLint({"MissingInflatedId", "SetTextI18n", "InflateParams"})
     @Override
@@ -39,7 +42,8 @@ public class SettingUIActivity extends BaseActivity {
             int density = SharedPreferencesUtil.getInt("density", -1);
             DisplayMetrics displayMetrics = new DisplayMetrics();
             getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
-            density_input.setText(String.valueOf((density == -1 ? displayMetrics.densityDpi + "(默认)" : density)));
+            defaultDensityText = displayMetrics.densityDpi + "(默认)";
+            density_input.setText(density == -1 ? defaultDensityText : String.valueOf(density));
 
             SwitchMaterial round = findViewById(R.id.switch_round);
             round.setChecked(SharedPreferencesUtil.getBoolean("player_ui_round", false));
@@ -57,7 +61,7 @@ public class SettingUIActivity extends BaseActivity {
             });
 
             findViewById(R.id.preview).setOnClickListener(view -> {
-                save();
+                if (!save(true)) return;
                 Intent intent = new Intent();
                 intent.setClass(SettingUIActivity.this, UIPreviewActivity.class);
                 startActivity(intent);
@@ -72,9 +76,20 @@ public class SettingUIActivity extends BaseActivity {
                 uiPaddingH.setText("0");
                 uiPaddingV.setText("0");
                 getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
-                density_input.setText(displayMetrics.densityDpi + "(默认)");
+                defaultDensityText = displayMetrics.densityDpi + "(默认)";
+                density_input.setText(defaultDensityText);
                 round.setChecked(false);
                 MsgUtil.showMsg("恢复完成");
+            });
+            findViewById(R.id.confirm_ui_settings).setOnClickListener(view -> {
+                if (confirmationDialog != null && confirmationDialog.isShowing()) return;
+                if (!save(true)) return;
+                confirmationDialog = new AlertDialog.Builder(this)
+                        .setTitle(R.string.ui_settings_saved_title)
+                        .setMessage(R.string.ui_settings_saved_message)
+                        .setPositiveButton(android.R.string.ok, null).create();
+                MsgUtil.prepareAlertDialog(confirmationDialog);
+                confirmationDialog.show();
             });
 
             View scrollView = findViewById(R.id.scrollView);
@@ -84,58 +99,52 @@ public class SettingUIActivity extends BaseActivity {
         });
     }
 
-    private void save() {
-        if (!uiScaleInput.getText().toString().isEmpty()) {
-            try {
-                float dpiScale = Float.parseFloat(uiScaleInput.getText().toString());
-                if (dpiScale >= UiConfigurationUtil.MIN_SCALE
-                        && dpiScale <= UiConfigurationUtil.MAX_SCALE) {
-                    SharedPreferencesUtil.putFloat("dpi", dpiScale);
-                    BiliTerminal.DPI_FORCE_CHANGE = true;
-                } else {
-                    uiScaleInput.setText(String.valueOf(UiConfigurationUtil.normalizeScale(dpiScale)));
-                }
-            } catch (NumberFormatException ignored) {
-                uiScaleInput.setText(String.valueOf(SharedPreferencesUtil.getFloat(
-                        "dpi", UiConfigurationUtil.DEFAULT_SCALE)));
+    private boolean save(boolean reportErrors) {
+        if (uiScaleInput == null || uiPaddingH == null || uiPaddingV == null || density_input == null) return false;
+        EditText parsing = uiScaleInput;
+        float scale;
+        int horizontal, vertical, density;
+        try {
+            String value = uiScaleInput.getText().toString().trim();
+            scale = UiConfigurationUtil.parseScaleInput(value,
+                    SharedPreferencesUtil.getFloat("dpi", UiConfigurationUtil.DEFAULT_SCALE));
+            parsing = uiPaddingH;
+            value = parsing.getText().toString().trim();
+            horizontal = UiConfigurationUtil.parsePaddingInput(value, SharedPreferencesUtil.getInt("paddingH_percent", 0));
+            parsing = uiPaddingV;
+            value = parsing.getText().toString().trim();
+            vertical = UiConfigurationUtil.parsePaddingInput(value, SharedPreferencesUtil.getInt("paddingV_percent", 0));
+            parsing = density_input;
+            value = parsing.getText().toString().trim();
+            density = value.isEmpty() || value.equals(defaultDensityText) ? -1
+                    : UiConfigurationUtil.normalizeDensityForContext(Integer.parseInt(value), old_context);
+        } catch (NumberFormatException error) {
+            if (reportErrors) {
+                parsing.setError(parsing == density_input ? getString(R.string.ui_settings_invalid_number) : error.getMessage());
+                parsing.requestFocus();
             }
-            Logu.i("dpi", uiScaleInput.getText().toString());
+            return false;
         }
-
-        if (!uiPaddingH.getText().toString().isEmpty()) {
-            try {
-                int paddingH = Integer.parseInt(uiPaddingH.getText().toString());
-                SharedPreferencesUtil.putInt("paddingH_percent",
-                        UiConfigurationUtil.normalizePadding(paddingH));
-            } catch (NumberFormatException ignored) {
-            }
-            Logu.i("paddingH", uiPaddingH.getText().toString());
-        }
-
-        if (!uiPaddingV.getText().toString().isEmpty()) {
-            try {
-                int paddingV = Integer.parseInt(uiPaddingV.getText().toString());
-                SharedPreferencesUtil.putInt("paddingV_percent",
-                        UiConfigurationUtil.normalizePadding(paddingV));
-            } catch (NumberFormatException ignored) {
-            }
-            Logu.i("paddingV", uiPaddingV.getText().toString());
-        }
-
-        if (!density_input.getText().toString().isEmpty()) {
-            try {
-                int density = Integer.parseInt(density_input.getText().toString());
-                SharedPreferencesUtil.putInt("density",
-                        UiConfigurationUtil.normalizeDensityForContext(density, old_context));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-
+        boolean densityChanged = scale != SharedPreferencesUtil.getFloat("dpi", UiConfigurationUtil.DEFAULT_SCALE)
+                || density != SharedPreferencesUtil.getInt("density", -1);
+        // Save all validated values together before showing the success message.
+        SharedPreferencesUtil.getSharedPreferences().edit().putFloat("dpi", scale)
+                .putInt("paddingH_percent", horizontal).putInt("paddingV_percent", vertical)
+                .putInt("density", density).apply();
+        if (densityChanged) BiliTerminal.DPI_FORCE_CHANGE = true;
+        for (EditText input : new EditText[]{uiScaleInput, uiPaddingH, uiPaddingV, density_input}) input.setError(null);
+        uiScaleInput.setText(String.valueOf(scale));
+        uiPaddingH.setText(String.valueOf(horizontal));
+        uiPaddingV.setText(String.valueOf(vertical));
+        density_input.setText(density == -1 ? defaultDensityText : String.valueOf(density));
+        Logu.i("ui-settings", "界面设置已保存");
+        return true;
     }
 
     @Override
     protected void onDestroy() {
-        if (uiScaleInput != null) save();
+        if (confirmationDialog != null) confirmationDialog.dismiss();
+        save(false);
         super.onDestroy();
     }
 }

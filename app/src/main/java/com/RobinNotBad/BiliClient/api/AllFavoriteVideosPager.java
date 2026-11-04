@@ -4,6 +4,7 @@ import com.RobinNotBad.BiliClient.model.ApiResult;
 import com.RobinNotBad.BiliClient.model.VideoCard;
 
 import org.json.JSONException;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
@@ -56,6 +57,44 @@ final class AllFavoriteVideosPager {
         Cursor(Cursor other) {
             for (Folder folder : other.folders) folders.add(new Folder(folder));
             emitted.addAll(other.emitted);
+        }
+
+        // Private playback snapshots need only IDs and merge timestamps, not card images or text.
+        JSONObject toJson() throws JSONException {
+            JSONArray streams = new JSONArray();
+            for (Folder folder : folders) {
+                JSONArray pending = new JSONArray();
+                for (int i = folder.index; i < folder.entries.size(); i++) {
+                    Entry entry = folder.entries.get(i);
+                    pending.put(new JSONArray().put(entry.video.aid).put(entry.time)
+                            .put(FavoritePlaybackSource.playableCard(entry.video)));
+                }
+                streams.put(new JSONObject().put("id", folder.id).put("page", folder.nextPage)
+                        .put("end", folder.exhausted).put("pending", pending));
+            }
+            return new JSONObject().put("folders", streams).put("seen", new JSONArray(emitted));
+        }
+
+        static Cursor fromJson(JSONObject json) throws JSONException {
+            Cursor cursor = new Cursor();
+            JSONArray streams = json.getJSONArray("folders"), seen = json.getJSONArray("seen");
+            for (int i = 0; i < streams.length(); i++) {
+                JSONObject stream = streams.getJSONObject(i);
+                Folder folder = new Folder(stream.getLong("id"));
+                folder.nextPage = stream.getInt("page");
+                folder.exhausted = stream.getBoolean("end");
+                JSONArray pending = stream.getJSONArray("pending");
+                for (int j = 0; j < pending.length(); j++) {
+                    JSONArray entry = pending.getJSONArray(j);
+                    VideoCard card = new VideoCard();
+                    card.aid = entry.getLong(0);
+                    if (!entry.optBoolean(2, true)) card.title = "已失效视频";
+                    folder.entries.add(new Entry(card, entry.getLong(1)));
+                }
+                cursor.folders.add(folder);
+            }
+            for (int i = 0; i < seen.length(); i++) cursor.emitted.add(seen.getLong(i));
+            return cursor;
         }
     }
 

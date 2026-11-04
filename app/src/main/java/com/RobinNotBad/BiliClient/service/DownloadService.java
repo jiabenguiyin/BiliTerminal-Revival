@@ -66,6 +66,7 @@ public class DownloadService extends Service {
     PowerManager.WakeLock wakeLock;
 
     private String exitMessage = null;
+    private String failureDetail;
 
     private Timer toastTimer, notifyTimer;
 
@@ -149,14 +150,17 @@ public class DownloadService extends Service {
         startNotifyProgress();
 
         CenterThreadPool.run(() -> {
-            resetInterruptedDownloads();
             boolean failed = false;
+            int completed = 0;
+            try {
+            resetInterruptedDownloads();
             while (!failed && started) {
                 DownloadSection section_tmp = getFirst();
                 if (section_tmp == null)
                     break;
 
                 section = section_tmp;
+                failureDetail = null;
 
                 // 获取视频链接
                 String url_video, url_danmaku, url_audio;
@@ -165,10 +169,10 @@ public class DownloadService extends Service {
 
                     // 如果是仅音频下载，使用DASH格式获取音频流
                     if (section.isAudioOnly()) {
-                        PlayerApi.getVideoDash(data);
-                        url_audio = section.audioUrl != null && !section.audioUrl.isEmpty()
-                                ? section.audioUrl
-                                : data.audioUrl;
+                        // Queued/retried downloads must use a fresh URL; the address
+                        // saved when the task was created may already have expired.
+                        PlayerApi.getAudioForDownload(data);
+                        url_audio = data.audioUrl;
                         url_video = null; // 仅音频模式不需要视频
                     } else {
                         PlayerApi.getVideo(data, true);
@@ -177,16 +181,24 @@ public class DownloadService extends Service {
                     }
                     url_danmaku = data.danmakuUrl;
                 } catch (JSONException e) {
-                    setState(section.id, "error");
-                    notifyCompletion("下载链接获取失败：\n" + section.name_short, (int) section.id);
-                    section = null;
+                    failed = true;
+                    exitCode = ERR_JSON;
+                    failureDetail = "下载链接获取失败，请稍后重试";
+                    setFailure(section.id, failureDetail);
                     refreshDownloadList();
                     continue;
                 } catch (IOException e) {
                     failed = true;
                     exitCode = ERR_NETWORK;
-                    setState(section.id, "none");
+                    failureDetail = "获取下载链接时网络连接失败";
+                    setFailure(section.id, failureDetail);
                     continue;
+                }
+
+                if (!started) {
+                    failed = true;
+                    exitCode = getStoppedExitCode();
+                    break;
                 }
 
                 try {
@@ -301,10 +313,12 @@ public class DownloadService extends Service {
                             break;
                     }
 
+                    com.RobinNotBad.BiliClient.player.CachedCollectionMetadata.writeCompleted(this, section, path);
                     notifyCompletion("下载成功：\n" + section.name_short, (int) section.id);
 
                     if (fileSign != null) fileSign.deleteRecursive();
                     deleteSection(section.id);
+                    completed++;
                     refreshLocalList();
                     section = null;
                 } catch (IOException e) {
@@ -323,22 +337,32 @@ public class DownloadService extends Service {
                             section = null;
                             deleteSection(deletedId);
                             if (deletedFolder != null) deletedFolder.deleteRecursive();
-                        } else if (exitCode == ERR_NETWORK || exitCode == ERR_UNKNOWN
-                                || exitCode == EXIT_PAUSED)
+                        } else if (exitCode == EXIT_PAUSED)
                             setState(section.id, "none");
                         else
-                            setState(section.id, "error");
+                            setFailure(section.id, failureText());
                         refreshDownloadList();
                     }
                 }
             }
-
-            section = null;
+            } catch (Exception error) {
+                failed = true;
+                exitCode = ERR_UNKNOWN;
+                failureDetail = "下载中断，已保留进度，请重试";
+                if (section != null) setFailure(section.id, failureDetail);
+                Logu.e("download", "worker failed: " + error.getClass().getSimpleName());
+            }
+            if (!failed && !started && section != null) {
+                failed = true;
+                exitCode = getStoppedExitCode();
+                if (exitCode == EXIT_PAUSED) setState(section.id, "none");
+                else setFailure(section.id, failureText());
+            }
             refreshDownloadList();
 
             if (!failed) {
                 exitCode = NORMAL;
-                exitMessage = "全部下载完成";
+                exitMessage = completed > 0 ? "全部下载完成" : "没有等待下载的任务，请在下载列表查看失败原因";
             } else
                 switch (exitCode) {
                     case ERR_NETWORK:
@@ -365,7 +389,11 @@ public class DownloadService extends Service {
                     default:
                         exitMessage = "下载失败，未知错误";
                 }
-
+            if (failed && exitCode < 0) exitMessage = failureText() + "，请在下载列表点击重试";
+            // Report while the worker still owns its result. onDestroy used to
+            // skip this after section had already been cleared, losing all feedback.
+            notifyExit(exitMessage);
+            section = null;
             workerRunning = false;
             stopSelf();
         });
@@ -388,9 +416,24 @@ public class DownloadService extends Service {
 
     private void toastState(String newState) {
         state = newState;
+        failureDetail = null;
         percent = 0;
         if (toastTimer != null)
             toastTimer.cancel();
+    }
+
+    private String failureText() {
+        if (failureDetail != null && !failureDetail.isEmpty()) return failureDetail;
+        if (exitCode == ERR_FILE) return (state == null ? "下载" : state) + "失败，无法写入文件，请检查存储空间和授权";
+        if (exitCode == ERR_JSON) return (state == null ? "下载" : state) + "失败，返回数据异常";
+        if (exitCode == ERR_NETWORK) return (state == null ? "下载" : state) + "失败，网络连接异常";
+        return "下载中断，已保留进度";
+    }
+
+    private int transferFailure(int code, String detail) {
+        failureDetail = (state == null ? "下载" : state) + "失败：" + detail;
+        Logu.e("download", failureDetail);
+        return code;
     }
 
     private void startNotifyProgress() {
@@ -487,7 +530,7 @@ public class DownloadService extends Service {
         try {
             response = NetWorkUtil.getDownload(url, headers);
         } catch (IOException e) {
-            return ERR_NETWORK;
+            return transferFailure(ERR_NETWORK, "网络连接中断");
         }
 
         try (Response closeableResponse = response) {
@@ -500,11 +543,12 @@ public class DownloadService extends Service {
                     } catch (NumberFormatException ignored) {
                     }
                 }
-                return ERR_NETWORK;
+                return transferFailure(ERR_NETWORK, "续传范围被拒绝（HTTP 416），已保留进度");
             }
-            if (!response.isSuccessful() || response.body() == null) return ERR_NETWORK;
+            if (!response.isSuccessful()) return transferFailure(ERR_NETWORK, "服务器返回 HTTP " + response.code());
+            if (response.body() == null) return transferFailure(ERR_NETWORK, "服务器未返回文件内容");
             String contentType = response.header("Content-Type", "").toLowerCase(Locale.ROOT);
-            if (contentType.contains("text/html")) return ERR_NETWORK;
+            if (contentType.contains("text/html")) return transferFailure(ERR_NETWORK, "服务器返回了网页，未获取到文件");
 
             boolean append = existingSize > 0L;
             if (append) {
@@ -512,12 +556,12 @@ public class DownloadService extends Service {
                 // Keeping the partial file lets the next manual retry try again.
                 if (response.code() != 206) {
                     Logu.d("下载续传", "服务器未返回206，保留已有进度：" + response.code());
-                    return ERR_NETWORK;
+                    return transferFailure(ERR_NETWORK, "服务器不支持本次续传（HTTP " + response.code() + "），已保留进度");
                 }
                 String contentRange = response.header("Content-Range", "");
                 if (!contentRange.startsWith("bytes " + existingSize + "-")) {
                     Logu.d("下载续传", "Content-Range不匹配，保留已有进度：" + contentRange);
-                    return ERR_NETWORK;
+                    return transferFailure(ERR_NETWORK, "续传范围不匹配，已保留进度");
                 }
             }
 
@@ -530,7 +574,7 @@ public class DownloadService extends Service {
                 outputStream = file.openOutput(append);
             } catch (IOException e) {
                 Logu.e("下载文件", e.toString());
-                return ERR_FILE;
+                return transferFailure(ERR_FILE, "无法写入文件，请检查存储空间和授权");
             }
 
             try (InputStream inputStream = response.body().byteStream();
@@ -547,10 +591,11 @@ public class DownloadService extends Service {
                 // A failed transfer must remain resumable. Do not fall back to a
                 // full request here, otherwise a weak network discards progress.
                 Logu.d("下载续传", "传输中断，保留已有文件：" + e);
-                return ERR_NETWORK;
+                return transferFailure(ERR_NETWORK, "传输中断，已保留进度");
             }
             if (!started) return getStoppedExitCode();
-            if (expectedSize >= 0L && completeSize != expectedSize) return ERR_NETWORK;
+            if (completeSize == 0 || expectedSize >= 0L && completeSize != expectedSize)
+                return transferFailure(ERR_NETWORK, "文件未下载完整，已保留进度");
             return NORMAL;
         }
     }
@@ -616,7 +661,8 @@ public class DownloadService extends Service {
             CenterThreadPool.run(() -> {
                 notifyExit(exitMessage);
                 if (exitCode != NORMAL) {
-                    setState(id, "none");
+                    if (exitCode == EXIT_PAUSED) setState(id, "none");
+                    else setFailure(id, "下载服务中断，已保留进度");
                     // Keep failed tasks and their partial files so the user can
                     // retry from the download list. Only an explicit delete
                     // is allowed to remove the task directory.
@@ -755,7 +801,7 @@ public class DownloadService extends Service {
         try {
             DownloadSqlHelper helper = new DownloadSqlHelper(BiliTerminal.context);
             database = helper.getWritableDatabase();
-            database.execSQL("update download set state=? where id=?", new Object[]{state, id});
+            database.execSQL("update download set state=?, last_error='' where id=?", new Object[]{state, id});
             database.close();
         } catch (Exception e) {
             MsgUtil.err(e);
@@ -763,6 +809,21 @@ public class DownloadService extends Service {
             if (database != null)
                 database.close();
         }
+    }
+
+    private static void setFailure(long id, String detail) {
+        DownloadSqlHelper helper = new DownloadSqlHelper(BiliTerminal.context);
+        try {
+            helper.getWritableDatabase().execSQL("update download set state='error', last_error=? where id=?",
+                    new Object[]{detail, id});
+            org.json.JSONObject event = new org.json.JSONObject();
+            event.put("task_id", id);
+            event.put("state", "error");
+            event.put("reason", detail);
+            com.RobinNotBad.BiliClient.util.DiagnosticLogManager.record("download_failed", event);
+            Logu.e("download", detail);
+        } catch (Exception error) { MsgUtil.err(error); }
+        finally { helper.close(); }
     }
 
     /**
@@ -777,7 +838,6 @@ public class DownloadService extends Service {
             try {
                 VideoStorageUtil.Node folder = retrySection.getStoragePath(BiliTerminal.context, false);
                 if (folder != null) {
-                    deleteChild(folder, ".DOWNLOADING");
                     deleteChild(folder, "cover.png");
                     deleteChild(folder, "danmaku.xml");
                     VideoStorageUtil.Node subtitles = folder.find("subtitles");
@@ -857,7 +917,7 @@ public class DownloadService extends Service {
                         BiliTerminal.context, storageMode, storageRef, title, null, true);
                 pathSingle.getOrCreateFile(".DOWNLOADING", "application/octet-stream");
 
-                String msg = "audio_only".equals(downloadType) ? "已添加音频下载" : "已添加下载";
+                String msg = "已加入" + ("audio_only".equals(downloadType) ? "音频" : "视频") + "下载队列，可在下载列表查看进度";
                 MsgUtil.showMsg(msg);
 
                 start(-1);
@@ -901,7 +961,7 @@ public class DownloadService extends Service {
                         BiliTerminal.context, storageMode, storageRef, parent, child, true);
                 pathPage.getOrCreateFile(".DOWNLOADING", "application/octet-stream");
 
-                String msg = "audio_only".equals(downloadType) ? "已添加音频下载" : "已添加下载";
+                String msg = "已加入" + ("audio_only".equals(downloadType) ? "音频" : "视频") + "下载队列，可在下载列表查看进度";
                 MsgUtil.showMsg(msg);
 
                 start(-1);

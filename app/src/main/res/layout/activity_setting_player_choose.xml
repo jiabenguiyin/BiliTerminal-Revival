@@ -174,28 +174,46 @@
                 android:id="@+id/qn_choose"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="35sp"
-                    android:text="清晰度"
-                    android:layout_marginHorizontal="8dp"
-                    android:gravity="center_vertical"
-                    android:textSize="13sp"
-                    android:visibility="visible" />
-
-                <TextView
-                    android:id="@+id/qn_tv"
-                    android:layout_width="match_parent"
-                    android:layout_height="35sp"
-                    android:layout_marginHorizontal="8dp"
-                    android:gravity="end|center_vertical"
-                    android:text="360P"
-                    android:textAlignment="textEnd"
-                    android:textSize="13sp"
-                    android:visibility="visible"
-                    app:drawableEndCompat="@drawable/arrow_forward" />
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="8dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/quality_default" android:textColor="#aaaaaa" android:textSize="12sp" />
+                    <TextView android:id="@+id/qn_tv" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:minHeight="26dp" android:gravity="center_vertical"
+                        android:textSize="13sp" app:drawableEndCompat="@drawable/arrow_forward" />
+                </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/qn_mobile_choose"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="8dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/quality_mobile" android:textColor="#aaaaaa" android:textSize="12sp" />
+                    <TextView android:id="@+id/qn_mobile_tv" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:minHeight="26dp" android:gravity="center_vertical"
+                        android:textSize="13sp" app:drawableEndCompat="@drawable/arrow_forward" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/qn_wifi_choose"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="8dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/quality_wifi" android:textColor="#aaaaaa" android:textSize="12sp" />
+                    <TextView android:id="@+id/qn_wifi_tv" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:minHeight="26dp" android:gravity="center_vertical"
+                        android:textSize="13sp" app:drawableEndCompat="@drawable/arrow_forward" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:padding="4dp" android:text="@string/quality_network_desc" android:textSize="12sp" />
 
             <TextView
                 android:id="@+id/desc"

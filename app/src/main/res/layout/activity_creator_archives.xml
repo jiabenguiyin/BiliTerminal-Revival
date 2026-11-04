@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <include layout="@layout/cell_topbar" />
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/creator_filter" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginLeft="6dp" android:layout_marginRight="6dp" android:text="全部稿件 ▾" />
+    <TextView android:id="@+id/creator_page_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:padding="6dp" android:text="正在加载本人稿件…" android:textSize="11sp" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout android:id="@+id/creator_swipe"
+            android:layout_width="match_parent" android:layout_height="match_parent">
+            <com.RobinNotBad.BiliClient.ui.widget.RotaryRecyclerView android:id="@+id/creator_list"
+                android:layout_width="match_parent" android:layout_height="match_parent" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+        <TextView android:id="@+id/creator_empty" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:padding="12dp" android:gravity="center" android:visibility="gone" android:textSize="12sp" />
+    </FrameLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+        <com.google.android.material.button.MaterialButton android:id="@+id/creator_previous"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="上一页" android:enabled="false" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/creator_next"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="下一页" android:enabled="false" />
+    </LinearLayout>
+</LinearLayout>

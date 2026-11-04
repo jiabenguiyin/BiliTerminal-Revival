@@ -112,6 +112,22 @@ public class ReplySyncInstrumentedTest {
     @Test public void videoListAndDetailShareLikesAndPullRefreshBypassesCache() throws Exception { roundTrip(1); }
     @Test public void dynamicListAndDetailShareLikesToo() throws Exception { roundTrip(17); }
 
+    @Test public void lateVideoConfirmationDoesNotDuplicateARefreshedReply() throws Exception { confirmedInsertDeduplicates(1); }
+    @Test public void lateDynamicConfirmationDoesNotDuplicateARefreshedReply() throws Exception { confirmedInsertDeduplicates(17); }
+
+    private void confirmedInsertDeduplicates(int replyType) throws Exception {
+        setupParent(replyType);
+        Reply existing=new Reply(true,fixture(2,0));
+        ui.runOnMainSync(()->fragment.notifyReplyInserted(new com.RobinNotBad.BiliClient.event.ReplyEvent(1,existing,oid)));
+        ui.waitForIdleSync();assertEquals(1,parentReplies.size());assertEquals(1,parentAdapter.count);
+        Reply fresh=new Reply(true,fixture(0,0).put("rpid",rpid+1));
+        ui.runOnMainSync(()->{
+            fragment.notifyReplyInserted(new com.RobinNotBad.BiliClient.event.ReplyEvent(1,fresh,oid));
+            fragment.notifyReplyInserted(new com.RobinNotBad.BiliClient.event.ReplyEvent(1,fresh,oid));
+        });
+        ui.waitForIdleSync();assertEquals(2,parentReplies.size());assertEquals(2,parentAdapter.count);
+    }
+
     private void roundTrip(int replyType) throws Exception {
         setupParent(replyType);
         // Seed the exact old detail cache, then mutate the independent list instance.

@@ -71,7 +71,7 @@ public class SearchLiveFragment extends SearchFragment {
                     });
                 } else setBottom(true);
             } catch (Exception e) {
-                report(e);
+                loadFail(e);
             }
             setRefreshing(false);
             if (bottom && roomList.isEmpty()) {
@@ -83,6 +83,9 @@ public class SearchLiveFragment extends SearchFragment {
     public void refreshInternal() {
         CenterThreadPool.runOnUiThread(() -> {
             page = 1;
+            bottom = false;
+            showEmptyView(false);
+            setRefreshing(true);
             if (this.liveCardAdapter == null)
                 this.liveCardAdapter = new LiveCardAdapter(this.requireContext(), this.roomList);
             int size_old = this.roomList.size();

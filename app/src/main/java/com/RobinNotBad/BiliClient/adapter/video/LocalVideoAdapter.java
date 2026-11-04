@@ -96,7 +96,8 @@ public class LocalVideoAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                             player.putExtra("local_subtitle_root", localVideo.subtitleFolderLocators.get(0));
                         }
                         player.putExtra("local_progress_folder", localVideo.pageFolderLocators.get(0));
-                        context.startActivity(player);
+                        com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot.start(
+                                context, player, localVideoList, localVideo, mediaPath);
                     } catch (ActivityNotFoundException e) {
                         MsgUtil.showMsg("跳转失败");
                         e.printStackTrace();
@@ -112,7 +113,8 @@ public class LocalVideoAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                     intent.putExtra("folderLocator", localVideo.folderLocator);
                     intent.putExtra("audioOnlyList", localVideo.audioOnlyList);
                     intent.putExtra("title", localVideo.title);
-                    context.startActivity(intent);
+                    com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot.start(context, intent,
+                            localVideoList, localVideo, localVideo.videoFileList.get(0));
                 }
             });
 

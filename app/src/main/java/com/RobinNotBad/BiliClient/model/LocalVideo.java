@@ -3,6 +3,7 @@ package com.RobinNotBad.BiliClient.model;
 import java.util.ArrayList;
 
 public class LocalVideo {
+    public ArrayList<com.RobinNotBad.BiliClient.player.CachedPlaybackItem> playbackItems = new ArrayList<>();
     public String cover;
     public String title;
     public String folderLocator;

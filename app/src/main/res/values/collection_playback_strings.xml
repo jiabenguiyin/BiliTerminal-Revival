@@ -1,0 +1,18 @@
+<resources>
+    <string name="collection_playback_show">显示播放合集</string>
+    <string name="collection_playback_desc">默认关闭。开启后左下角菜单显示“播放合集”，默认启用，可随时关闭。从收藏夹或“全部收藏”进入视频时，按当前收藏列表连播；搜索后仅播放该搜索结果，顺序播放按需翻页，随机播放先准备完整列表。用户主页“投稿”页的“投稿连播”可直接按旧→新或新→旧播放该UP主全部可见投稿，按需翻页，多P视频播完全部分P再切换；此入口仅对本次播放启用连播，不更改全局开关。其他视频按自身合集播放。缓存按下方范围播放，不联网补播。支持顺序、随机、单曲循环和倒序，点击播放顺序图标切换。耳机媒体键可切换上下首；顺序到末尾停止，倒序到首条停止。</string>
+    <string name="collection_playback">播放合集</string>
+    <string name="collection_playback_loading">播放合集（加载中）</string>
+    <string name="collection_playback_unavailable">播放合集（此视频无可播放合集）</string>
+    <string name="collection_playback_retry">播放合集（点击重试加载）</string>
+    <string name="collection_playback_quality">清晰度</string>
+    <string name="collection_playback_sequential">顺序播放</string>
+    <string name="collection_playback_shuffle">随机播放</string>
+    <string name="collection_playback_repeat">单曲循环</string>
+    <string name="collection_playback_reverse">倒序播放</string>
+    <string name="collection_playback_order">合集：%1$s，点击切换播放顺序</string>
+    <string name="collection_playback_on">已开启播放合集</string>
+    <string name="collection_playback_off">已关闭播放合集</string>
+    <string name="collection_playback_finished">当前合集已播放完毕</string>
+    <string name="collection_playback_failed">下一条加载失败，已停止合集连播，可重试或关闭合集播放</string>
+</resources>

@@ -70,7 +70,9 @@ public class MultiPageActivity extends BaseActivity {
                 adapter.setOnItemClickListener(position -> {
                     long cid_curr = videoInfo.cids.get(position);
                     if (cid_curr != playerData.cidHistory) {
+                        String favoritePlaybackToken = playerData.favoritePlaybackToken;
                         playerData = videoInfo.toPlayerData(position);
+                        playerData.favoritePlaybackToken = favoritePlaybackToken;
                         playerData.cidHistory = cid_curr;
                         playerData.timeStamp = 0;
                     }

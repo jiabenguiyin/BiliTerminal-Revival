@@ -12,7 +12,7 @@
 
     <string name="desc_setup_ui">第一次启动先把界面调顺手。\n如果是手表或小屏设备，建议先预览，再继续下一步。\n这些设置之后也能在设置里改回来。</string>
     <string name="desc_setup_ui_padding">第一个输入框为横向边距，第二个输入框为纵向边距，单位百分比。\n为保证小屏设备上的按键完整可用，数值会限制在0到20。</string>
-    <string name="desc_setting_ui">有效范围为0.25~2.00（倍），建议每次仅进行轻微调节，调节后请预览页面，确认显示正常后完成修改，打开新页面后将会生效。</string>
+    <string name="desc_setting_ui">有效范围为0.25~2.00倍：小于1缩小，大于1放大。修改后点击“确认设置”，打开新页面生效；播放器的播放选项菜单也会跟随调整，视频画面不受影响。建议先查看预览。</string>
     <string name="desc_setting_ui_density">最低72；最高按当前设备默认Density的1.5倍限制。建议每次仅进行轻微调节，打开新页面后将会生效，避免按键被放大到屏幕外。</string>
     <string name="desc_setting_ui_round">开启选项后，页面将会修改为圆屏布局。\n由于纯靠代码实现，有部分页面可能未适配，但这是目前最好且工作量最小的办法了。</string>
     <string name="desc_setting_player">*你也可以通过长按“播放”按钮快速进入此页面。\n*如果使用的是内置播放器，则此处的清晰度为开始播放时的默认清晰度。</string>
@@ -39,7 +39,7 @@
 
     <string name="text_update">下载的APK保存在: %s\n\n你可以使用pm install或其他方法自己安装，或在下方选择一个安装器进行安装\n若安装出现问题请删除安装包重试，仍然无法安装请反馈给开发者</string>
     <string name="text_update_success">终端的每个版本都可能会新增一些兼容性相关的设置项。\n如果你遇到了某些奇葩问题，请先在设置里找一找相关的兼容性选项，视频放不了、无法加载图片的问题都有可能解决哦~</string>
-    <string name="warning_debug">这个版本是测试版，仅在测试群中发布。测试版可能bug较多，禁止外传到各种其他平台以免造成大范围影响！</string>
+    <string name="warning_debug">这个版本是测试版，供新功能验证和问题反馈使用，可能仍有未发现的问题。建议日常使用正式版；请通过官网或应用内检查更新获取测试版。</string>
 
     <string name="reply_dont_ky">请不要在无关视频的评论区提及哔哩终端。如果你是以炫耀为目的发送这条评论，请不要这样做，谢谢喵。\n\n——另外，在任何视频的评论区发与内容无关的评论都不好哦。\n\n如果这是误判（例如在手表或旧手机相关视频的评论区以推荐为目的），等待15秒后可以再点击发送喵。\n\n如果不是误判，希望你自觉遵守评论区礼仪哦。</string>
 
@@ -113,7 +113,7 @@
     <string name="desc_cover_play">打开此选项，点击封面将播放视频，否则将查看大图。</string>
     <string name="desc_tags_enable">打开此选项，视频详情页会显示形如“原神UP主激励计划/原神/纳西妲/手机游戏”的视频标签</string>
     <string name="desc_related_enable">打开此选项，视频详情页的评论区右侧会有相关视频推荐</string>
-    <string name="desc_creative_enable">打开此选项，在“我的”页面会显示创作中心（可查看投稿视频的数据变化情况）</string>
+    <string name="desc_creative_enable">打开此选项，在“我的”页面显示创作中心，可查看投稿数据、管理及删除本人稿件</string>
     <string name="desc_ban_gallery">打开此选项，缓存的视频将不会出现在系统相册中</string>
     <string name="desc_copy_enable">打开此选项，长按一些文字（如视频描述或评论）可以打开复制界面以复制这些文本</string>
     <string name="tutorial_cover_play_enabled">从现版本开始，默认状态下，点击封面将会播放视频，长按封面查看大图。\n播放按钮仍可使用，长按播放按钮可切换播放器。\n\n如果不习惯，你可以在 设置-详情页设置 中关闭“点击封面播放”的开关，换回老版本里点击封面查看大图的操作逻辑。</string>
@@ -152,13 +152,15 @@
     <string name="desc_reply_marquee_name">开启此选项后，评论区的用户名称将会以跑马灯的形式展现，而不是换行</string>
     <string name="desc_live_by_guest">开启此选项后，进入直播间时将会使用游客身份\n\n注意：开启后的漏弹幕情况将会更加严重</string>
     <string name="desc_dynamic_update_check_enable">启动应用时检查是否有新动态并显示在菜单中</string>
-    <string name="desc_message_update_check_enable">启动应用时检查是否有新消息并显示在菜单中\n菜单中的未读消息数量只统计未读私信数和回复我的数、艾特我的数</string>
+    <string name="desc_message_update_check_enable">有未读消息时突出显示消息入口及数量，可在下方单独关闭菜单箭头红点。统计回复、@我、点赞、系统通知及普通私信；前台每分钟检查，返回菜单时刷新。打开消息总览不会直接清零未读。</string>
+    <string name="message_menu_arrow_dot">菜单箭头未读红点</string>
+    <string name="message_menu_arrow_dot_desc">默认开启。关闭后隐藏顶部菜单箭头上的未读红点，消息入口仍保留未读数量和醒目提示。</string>
     <string name="desc_private_msg_unread_badge_enable">在私信会话列表中为未读消息显示红色"未读"标记并置顶显示\n注意：开启后打开消息页面可能会加剧卡顿问题。</string>
     <string name="desc_private_msg_auto_read_enable">打开私信会话时自动将会话标记为已读</string>
     <string name="desc_follow_group_mode">以分组形式展示关注列表</string>
     <string name="desc_night_reminder">在23:00-03:00期间打开应用时显示休息提醒</string>
     <string name="section_ui_size">界面大小</string>
-    <string name="desc_setup_ui_size">有效范围：0.25倍-5.00倍，建议少量多次调节</string>
+    <string name="desc_setup_ui_size">有效范围：0.25～2.00倍，建议少量多次调节；超出范围时请修改后再预览或确认。</string>
     <string name="text_ui_padding_horizontal">横向</string>
     <string name="text_ui_padding_vertical">纵向</string>
 
@@ -254,14 +256,13 @@
     <string name="gt"><![CDATA[>]]></string>
     <string name="percent">%</string>
 
-    <string name="update_tip">收藏与历史搜索、评论同步、App 推荐及播放器优化</string>
+    <string name="update_tip">1.2.4 正式版新增多种连播、收藏视频排序、历史长按及多选删除、创作中心本人稿件管理与举报；支持番剧跳过片头片尾、独立网络画质及存储空间清理，优化播放器、弹窗与小屏操作体验。</string>
 
     #新增功能放到上面，修复问题放下面，方便用户看见
     <string-array name="update_log_items">
-        <item>新增“全部收藏”，支持收藏夹和历史记录内搜索、翻页；普通收藏夹支持长按编辑名称、简介、公开状态及删除。</item>
-        <item>动态新增评论入口和评论数，操作栏自适应不同屏幕；支持有管理权限时置顶视频、动态评论，评论点赞、点踩和删除状态跨页面同步。</item>
-        <item>实验室新增“App 个性化推荐”；新增大弹幕量保护（默认关闭），超过 5000 条时不自动加载，仍可手动开启弹幕。直播滚动弹幕默认两倍停留时长，并支持独立调节。</item>
-        <item>新增手势防误触开关，锁定后可轻点画面隐藏或显示锁图标；优化播放器顶部及控件布局，改善小屏、方屏设备的操作体验。</item>
+        <item>新增 UP 主投稿、视频合集、在线收藏夹与缓存歌单连播，支持顺序、倒序、随机、单曲循环、耳机切歌及进度续播；新增收藏视频排序、历史记录长按及多选删除。</item>
+        <item>新增番剧片头片尾跳过、同系列切季及续看；支持本人弹幕边框、精细音量、移动数据与 Wi-Fi 独立画质；长按倍速提示可调大小或关闭，支持手势切换视频，改善放大画面的拖动体验。</item>
+        <item>新增存储空间清理、评论及视频／动态举报、创作中心本人稿件管理与删除；支持消息红点开关、关注及黑名单管理，统一弹窗和搜索分类交互，优化大图查看；修复退出后重启、下载失败提示不明、搜索安全验证误报及界面输入异常。</item>
         <item>优化 Android 4.x、低内存设备和智能手表的运行稳定性</item>
     </string-array>
 

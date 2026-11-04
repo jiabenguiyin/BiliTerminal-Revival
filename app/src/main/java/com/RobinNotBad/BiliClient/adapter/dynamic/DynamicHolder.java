@@ -73,12 +73,21 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
     private ArticleCardHolder articleCardHolder;
     private String lastAvatarUrl;
     private String lastImageUrl;
+    private View reportButton;
+    private com.RobinNotBad.BiliClient.ui.DynamicReportController reportController;
+    private long reportTargetId,reportTargetAuthor;
+
+    public void closeReports(){
+        if(reportController!=null){reportController.close();reportController=null;}
+        if(childDynamicHolder!=null)childDynamicHolder.closeReports();
+    }
 
     public DynamicHolder(@NonNull View itemView, BaseActivity mActivity, boolean isChild) {
         super(itemView);
         this.itemView = itemView;
         this.isChild = isChild;
         this.mActivity = mActivity;
+        reportButton=itemView.findViewById(isChild?R.id.child_dynamic_report:R.id.item_dynamic_report);
         if (isChild) {
             username = itemView.findViewById(R.id.child_username);
             content = itemView.findViewById(R.id.child_content);
@@ -216,6 +225,15 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
 
     @SuppressLint({"SetTextI18n", "ClickableViewAccessibility"})
     public void showDynamic(Context context, Dynamic dynamic, boolean clickable) { // 公用的显示函数 这样修改和调用都方便
+        if(reportButton!=null){
+            long author=dynamic.userInfo==null?0:dynamic.userInfo.mid;
+            if(dynamic.dynamicId<=0||author<=0){if(reportController!=null)reportController.close();reportController=null;reportButton.setVisibility(View.GONE);}
+            else if(reportController==null||reportTargetId!=dynamic.dynamicId||reportTargetAuthor!=author){
+                if(reportTargetId!=dynamic.dynamicId&&childDynamicHolder!=null)childDynamicHolder.closeReports();
+                if(reportController!=null)reportController.close();reportTargetId=dynamic.dynamicId;reportTargetAuthor=author;
+                reportController=new com.RobinNotBad.BiliClient.ui.DynamicReportController(mActivity,reportButton,reportTargetId,reportTargetAuthor);
+            }
+        }
         if (!TextUtils.isEmpty(dynamic.title)) {
             title.setVisibility(View.VISIBLE);
             title.setText(dynamic.title);
@@ -361,7 +379,9 @@ public class DynamicHolder extends RecyclerView.ViewHolder {
         if (clickable) {
             content.setMaxLines(5);
             if (dynamic.dynamicId != 0) {
-                (isChild ? itemView.findViewById(R.id.dynamic_child) : itemView).setOnClickListener(view -> {
+                View detailTarget=isChild?itemView.findViewById(R.id.dynamic_child):itemView;
+                if(detailTarget==null)detailTarget=itemView;
+                detailTarget.setOnClickListener(view -> {
                     TerminalContext.getInstance().putContent(dynamic);
                     if (context instanceof Activity) {
                         TerminalContext.getInstance().enterDynamicDetailPageForResult((Activity) context,

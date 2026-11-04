@@ -268,7 +268,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="2dp"
-                        android:text="第一个输入框为横向边距，第二个输入框为纵向边距，单位百分比。此选项可以用于圆屏适配。\n出于保护，数值超过30不会保存。"
+                        android:text="第一个输入框为横向边距，第二个输入框为纵向边距，单位百分比。此选项可以用于圆屏适配。\n有效范围为0～20%，超出范围时请修改后再保存。"
                         android:textSize="11sp" />
 
                 </LinearLayout>
@@ -320,6 +320,19 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/confirm_ui_settings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:minHeight="48dp"
+                android:text="@string/btn_confirm_settings" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ui_settings_save_help"
+                android:textSize="11sp" />
         </LinearLayout>
     </com.RobinNotBad.BiliClient.ui.widget.RotaryScrollView>
 

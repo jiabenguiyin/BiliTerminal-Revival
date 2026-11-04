@@ -137,8 +137,19 @@ public class DashDataTest {
 
     @Test
     public void progressiveQualityRequestsKeepTheirLegacyValues() {
+        assertEquals(DashData.QN_240P, DashData.normalizeRequestedQuality(DashData.QN_240P));
         assertEquals(DashData.QN_360P, DashData.normalizeRequestedQuality(DashData.QN_360P));
         assertEquals(DashData.QN_720P, DashData.normalizeRequestedQuality(DashData.QN_720P));
+    }
+
+    @Test public void twoFortyPHasARealLabelAndIsTheLastSupportedTier() {
+        assertEquals("240P",DashData.getQualityLabel(DashData.QN_240P));
+        int[] order=DashData.getSupportedQualityOrder();assertEquals(6,order[order.length-1]);
+    }
+
+    @Test public void twoFortyPRemainsPlayableWhenNoHigherStreamExists() {
+        DashData data=new DashData();DashVideoStream low=video(6,426,240,"30");data.videoStreams.add(low);
+        assertEquals(low,data.getVideoStream(0));assertEquals(low,data.getVideoStream(80));assertEquals(low,data.getVideoStream(6));
     }
 
     @Test

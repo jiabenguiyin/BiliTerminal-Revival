@@ -55,9 +55,24 @@
             android:paddingVertical="2dp"
             android:orientation="vertical">
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/creator_manage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="管理我的稿件" />
+
+            <TextView
+                android:id="@+id/creator_statistics_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="6dp"
+                android:textSize="11sp"
+                android:text="正在加载投稿数据…" />
+
             <TextView
                 android:layout_height="wrap_content"
                 android:layout_width="wrap_content"
+                android:id="@+id/creator_statistics_heading"
                 android:text="投稿总数据" />
 
             <com.google.android.material.card.MaterialCardView
@@ -81,7 +96,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalFans_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -124,7 +139,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalClick_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -167,7 +182,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalLike_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -210,7 +225,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalCoin_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -253,7 +268,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalFavourite_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -296,7 +311,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalShare_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -339,7 +354,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalReply_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"
@@ -382,7 +397,7 @@
                         android:layout_marginTop="8dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         android:id="@+id/totalDm_number"
-                        android:text="114+51" />
+                        android:text="—" />
 
                     <TextView
                         android:layout_height="wrap_content"

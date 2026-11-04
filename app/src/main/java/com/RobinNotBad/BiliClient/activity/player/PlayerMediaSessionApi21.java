@@ -28,6 +28,8 @@ final class PlayerMediaSessionApi21 implements PlayerMediaSessionController {
                 callback.onPause();
             }
 
+            @Override public void onStop() { callback.onPause(); }
+
             @Override
             public void onSkipToNext() {
                 callback.onSkipToNext();

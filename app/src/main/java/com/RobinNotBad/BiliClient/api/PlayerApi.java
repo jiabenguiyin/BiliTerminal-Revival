@@ -58,6 +58,7 @@ public class PlayerApi {
     }
 
     public static void startDownloading(VideoInfo videoInfo, int page, int qn) {
+        com.RobinNotBad.BiliClient.player.CachedCollectionMetadata.remember(videoInfo);
         if (SharedPreferencesUtil.getBoolean("dev_download_old", false)) {
             Context context = BiliTerminal.context;
 
@@ -93,6 +94,7 @@ public class PlayerApi {
      * @param audioUrl  音频流URL
      */
     public static void startDownloadingAudioOnly(VideoInfo videoInfo, int page, int qn, String audioUrl) {
+        com.RobinNotBad.BiliClient.player.CachedCollectionMetadata.remember(videoInfo);
         if (videoInfo.cids.size() == 1)
             DownloadService.startDownload(videoInfo.title,
                     videoInfo.aid, videoInfo.cids.get(0),
@@ -103,6 +105,52 @@ public class PlayerApi {
                     videoInfo.aid, videoInfo.cids.get(page),
                     videoInfo.cover,
                     qn, "audio_only", audioUrl);
+    }
+
+    /** Audio downloads do not depend on a video quality list or a playable video representation. */
+    public static void getAudioForDownload(PlayerData playerData) throws JSONException, IOException {
+        clearAudioDownloadData(playerData);
+        playerData.danmakuUrl = "https://comment.bilibili.com/" + playerData.cid + ".xml";
+        String query = buildDashPlayQuery(playerData);
+        JSONObject data = requestPlayDataWithFallback(
+                "https://api.bilibili.com/x/player/wbi/playurl" + query,
+                "https://api.bilibili.com/x/player/playurl" + query, true);
+        applyAudioDownloadData(playerData, data);
+    }
+
+    static void applyAudioDownloadData(PlayerData playerData, JSONObject data) throws JSONException {
+        clearAudioDownloadData(playerData);
+        JSONObject dashJson = data.optJSONObject("dash");
+        if (dashJson == null) throw new JSONException("该视频暂未返回可单独缓存的音频流");
+        DashData dash = new DashData();
+        dash.duration = dashJson.optInt("duration", 0);
+        dash.audioStreams = DashAudioStream.fromJsonArray(dashJson.optJSONArray("audio"));
+        for (int i = dash.audioStreams.size() - 1; i >= 0; i--) {
+            DashAudioStream stream = dash.audioStreams.get(i);
+            boolean hasUrl = stream != null && stream.baseUrl != null && !stream.baseUrl.trim().isEmpty();
+            if (!hasUrl && stream != null && stream.backupUrl != null) {
+                for (String backup : stream.backupUrl) {
+                    if (backup != null && !backup.trim().isEmpty()) { hasUrl = true; break; }
+                }
+            }
+            if (!hasUrl) dash.audioStreams.remove(i);
+        }
+        DashAudioStream audio = dash.getBestCompatibleAudioStream();
+        if (audio == null) throw new JSONException("该视频没有可单独缓存的音频流");
+        playerData.audioUrl = firstStreamUrl(audio.baseUrl, audio.backupUrl);
+        setAudioBackupUrls(playerData, audio.backupUrl);
+        playerData.dashData = dash;
+        playerData.timeStamp = System.currentTimeMillis();
+    }
+
+    private static void clearAudioDownloadData(PlayerData data) {
+        data.qn = 0;
+        data.timeStamp = 0;
+        data.videoUrl = "";
+        data.videoBackupUrls.clear();
+        data.audioUrl = "";
+        data.audioBackupUrls.clear();
+        data.dashData = null;
     }
 
     /**
@@ -206,6 +254,7 @@ public class PlayerApi {
     }
 
     public static void getVideoForPlayback(PlayerData playerData) throws JSONException, IOException {
+        if(playerData.qn<0)playerData.qn=com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.defaultQuality(BiliTerminal.context);
         int requestedQn = playerData.qn;
         // 1.1.6: 兼容档直接走 durl 单播放器，不先请求 DASH 再回退。
         // Android 4.x/低内存设备不需要解析 DASH 元数据，这能减少一次网络请求、
@@ -488,8 +537,9 @@ public class PlayerApi {
         int bestRank = urlHostRank(primary);
         if (backups != null) {
             for (String backup : backups) {
+                if (backup == null || backup.isEmpty()) continue;
                 int rank = urlHostRank(backup);
-                if (rank < bestRank) {
+                if (best == null || best.isEmpty() || rank < bestRank) {
                     bestRank = rank;
                     best = backup;
                 }
@@ -519,6 +569,7 @@ public class PlayerApi {
     }
 
     private static void applyPlaybackMetadata(PlayerData playerData, JSONObject data) {
+        playerData.clipSegments = com.RobinNotBad.BiliClient.player.PlaybackSegments.normalize(data.optJSONArray("clip_info_list"));
         ArrayList<Integer> values = extractAdvertisedQualityValues(data);
 
         ArrayList<String> orderedLabels = new ArrayList<>();
@@ -535,6 +586,22 @@ public class PlayerApi {
                 if (!playerData.dashData.hasVideoStreamForQuality(supportedQuality)) continue;
                 orderedValues.add(supportedQuality);
                 orderedLabels.add(DashData.getQualityLabel(supportedQuality));
+            }
+        }
+        if (orderedValues.isEmpty() && (playerData.dashData == null || !playerData.dashData.hasVideo())) {
+            // Some valid durl responses omit both quality-description arrays.
+            // Offer only the quality actually returned, never an invented/default tier.
+            int actual = data.optInt("quality", 0);
+            JSONArray durl = data.optJSONArray("durl");
+            JSONObject stream = durl == null ? null : durl.optJSONObject(0);
+            boolean hasUrl = stream != null && !stream.optString("url", stream.optString("base_url", "")).isEmpty();
+            JSONArray backups = stream == null ? null : stream.optJSONArray("backup_url");
+            if (!hasUrl && backups != null) for (int i = 0; i < backups.length(); i++) {
+                if (!backups.optString(i, "").isEmpty()) { hasUrl = true; break; }
+            }
+            if (hasUrl && DashData.isSupportedQuality(actual)) {
+                orderedValues.add(actual);
+                orderedLabels.add(DashData.getQualityLabel(actual));
             }
         }
         playerData.qnStrList = orderedLabels.toArray(new String[0]);
@@ -617,24 +684,37 @@ public class PlayerApi {
                 .put("fnval", 1)
                 .put("fnvar", 0)
                 .put("qn", playerData.qn)
-                .put("season_type", 1)
+                .put("season_type", Math.max(1, playerData.seasonType))
                 .put("session",
                         ToolsUtil.md5(
                                 String.valueOf(System.currentTimeMillis() - SystemClock.currentThreadTimeMillis())))
                 .put("platform", "pc");
 
-        String url = "https://api.bilibili.com/pgc/player/web/playurl" + reqData.toString();
+        if (playerData.episodeId > 0) reqData.put("ep_id", playerData.episodeId);
+        JSONObject body = NetWorkUtil.getJson("https://api.bilibili.com/pgc/player/web/v2/playurl" + reqData);
+        int code = body.optInt("code", -1);
+        if (code != 0 && code != -404) throw new JSONException("番剧取流失败（" + code + "）");
+        JSONObject result = body.optJSONObject("result");
+        JSONObject data = result == null ? null : result.optJSONObject("video_info");
+        if (data == null || data.optJSONArray("durl") == null || data.optJSONArray("durl").length() == 0)
+            body = NetWorkUtil.getJson("https://api.bilibili.com/pgc/player/web/playurl" + reqData);
+        applyBangumiResponse(playerData, body);
+    }
 
-        JSONObject body = NetWorkUtil.getJson(url);
-        Logu.v(body.toString());
-
-        JSONObject data = body.getJSONObject("result");
+    static void applyBangumiResponse(PlayerData playerData, JSONObject body) throws JSONException {
+        if (body.optInt("code", -1) != 0) throw new JSONException("番剧取流失败（" + body.optInt("code", -1) + "）");
+        JSONObject result = body.getJSONObject("result");
+        JSONObject data = result.optJSONObject("video_info");
+        if (data == null) data = result;
         JSONArray durl = data.getJSONArray("durl");
         applyDurlUrls(playerData, durl);
 
         playerData.danmakuUrl = "https://comment.bilibili.com/" + playerData.cid + ".xml";
 
         applyPlaybackMetadata(playerData, data);
+        if (SharedPreferencesUtil.getBoolean("player_from_last", true))
+            playerData.progress = (int) com.RobinNotBad.BiliClient.util.BangumiProgressStore.position(
+                    playerData.seasonId, playerData.episodeId, playerData.cid);
     }
 
     /**
@@ -655,7 +735,7 @@ public class PlayerApi {
         Logu.v("准备跳转", "--------");
 
         Intent intent = new Intent();
-        switch (SharedPreferencesUtil.getString("player", "null")) {
+        switch (playerData.explicitOnlineQueue ? "terminalPlayer" : SharedPreferencesUtil.getString("player", "null")) {
             case "terminalPlayer":
                 intent.setClass(context, PlayerActivity.class);
                 intent.putExtra("url", playerData.videoUrl);
@@ -665,11 +745,19 @@ public class PlayerApi {
                 intent.putExtra("danmaku", playerData.danmakuUrl);
                 intent.putExtra("danmaku_count", playerData.danmakuCount);
                 intent.putExtra("title", playerData.title);
+                intent.putExtra("content_type", playerData.type);
+                intent.putExtra("clip_segments", playerData.clipSegments);
+                intent.putExtra("pgc_season", playerData.seasonId);
+                intent.putExtra("pgc_episode", playerData.episodeId);
+                intent.putExtra("pgc_type", playerData.seasonType);
                 intent.putExtra("aid", playerData.aid);
                 intent.putExtra("cid", playerData.cid);
                 intent.putExtra("mid", playerData.mid);
                 intent.putExtra("progress", playerData.progress);
                 intent.putExtra("live_mode", playerData.isLive());
+                intent.putExtra("collection_playback_allowed", playerData.isVideo());
+                if (playerData.isVideo()) intent.putExtra(FavoritePlaybackSource.TOKEN, playerData.favoritePlaybackToken);
+                intent.putExtra(FavoritePlaybackSource.EXPLICIT, playerData.explicitOnlineQueue);
                 if (playerData.qnStrList != null && playerData.qnValueList != null) {
                     intent.putExtra("qnStrList", playerData.qnStrList);
                     intent.putExtra("qnValueList", playerData.qnValueList);

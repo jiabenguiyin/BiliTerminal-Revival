@@ -5,6 +5,24 @@ import static org.junit.Assert.assertEquals;
 import org.junit.Test;
 
 public class UiConfigurationUtilTest {
+    @Test public void userInputRejectsOutOfRangeInsteadOfSilentlySavingDefaults() {
+        for(String value:new String[]{"950","9","0","0.24","2.01","NaN","Infinity","abc","-1"}) {
+            try { UiConfigurationUtil.parseScaleInput(value,1f); org.junit.Assert.fail(value); }
+            catch(NumberFormatException error) { org.junit.Assert.assertTrue(error.getMessage().contains("0.25")); }
+        }
+        assertEquals(0.25f,UiConfigurationUtil.parseScaleInput("0.25",1f),0.0001f);
+        assertEquals(2f,UiConfigurationUtil.parseScaleInput("2.00",1f),0.0001f);
+        assertEquals(1.25f,UiConfigurationUtil.parseScaleInput(" 1.25 ",1f),0.0001f);
+        assertEquals(0.8f,UiConfigurationUtil.parseScaleInput("",0.8f),0.0001f);
+    }
+    @Test public void paddingInputIsValidatedBeforeAnySettingIsWritten() {
+        for(String value:new String[]{"-1","21","99","1.5","invalid"}) {
+            try { UiConfigurationUtil.parsePaddingInput(value,0); org.junit.Assert.fail(value); }
+            catch(NumberFormatException expected) { }
+        }
+        assertEquals(0,UiConfigurationUtil.parsePaddingInput("0",5));
+        assertEquals(20,UiConfigurationUtil.parsePaddingInput("20",5));
+    }
     @Test
     public void scaleIsBounded() {
         assertEquals(1.0f, UiConfigurationUtil.normalizeScale(10.0f), 0.001f);

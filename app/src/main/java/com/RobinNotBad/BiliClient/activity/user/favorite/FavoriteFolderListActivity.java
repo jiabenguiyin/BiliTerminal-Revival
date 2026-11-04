@@ -77,11 +77,19 @@ public class FavoriteFolderListActivity extends RefreshListActivity {
     private boolean showFolderMenu(FavoriteFolder folder) {
         if (!available(accountMid) || accountMid == 0 || folder.ownerMid != accountMid
                 || changing || (activeDialog != null && activeDialog.isShowing())) return false;
+        final long selectedAccount=accountMid;
         AlertDialog menu = new AlertDialog.Builder(this).setTitle(folder.name)
-                .setItems(new String[]{"编辑", "删除"}, (dialog, which) -> {
+                .setItems(new String[]{"编辑", "删除", "排序"}, (dialog, which) -> {
                     if (which == 0) startActivityForResult(new Intent(this, FavoriteFolderEditActivity.class)
                             .putExtra("media_id", folder.id).putExtra("owner_mid", accountMid), EDIT_FOLDER);
-                    else prepareDelete(folder);
+                    else if(which==1) prepareDelete(folder);
+                    else showDialog(com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.dialog(this,
+                            com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.read(selectedAccount,folder.id),order->{
+                        if(!available(selectedAccount))return;
+                        com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.save(selectedAccount,folder.id,order);
+                        startActivity(new Intent(this,FavoriteVideoListActivity.class).putExtra("mid",selectedAccount)
+                                .putExtra("fid",folder.id).putExtra("name",folder.name));
+                    }));
                 }).create();
         showDialog(menu);
         return true;

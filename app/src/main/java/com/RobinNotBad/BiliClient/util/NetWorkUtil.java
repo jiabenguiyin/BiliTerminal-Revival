@@ -554,6 +554,14 @@ public class NetWorkUtil {
         return post(url, data, headers, "application/x-www-form-urlencoded");
     }
 
+    /** A destructive request must not be transparently retried or redirected. */
+    public static Response postOnce(String url, String data, List<String> headers) throws IOException {
+        OkHttpClient client = getOkHttpInstance().newBuilder()
+                .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build();
+        return executePost(url, data, headers, "application/x-www-form-urlencoded",
+                shouldRouteUrlForRelay(url), client);
+    }
+
     public static Response postJson(String url, String data, List<String> headers) throws IOException {
         return post(url, data, headers, "application/json");
     }

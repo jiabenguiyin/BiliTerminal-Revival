@@ -1,0 +1,16 @@
+<resources>
+    <string name="search_show_category_tabs">显示搜索分类栏</string>
+    <string name="search_show_category_tabs_desc">默认关闭，点击搜索页顶部的当前分类可展开选择。开启后额外显示整排分类，两处选择同步；浏览结果时上滑收起、下滑显示。</string>
+    <string name="search_category_picker_desc">搜索分类：%1$s，点击选择</string>
+    <string name="user_video_series">视频系列</string>
+    <string name="user_video_sort_newest">最新发布</string>
+    <string name="user_video_sort_played">最多播放</string>
+    <string name="user_video_sort_favorited">最多收藏</string>
+    <string name="user_video_sort_oldest">最早发布</string>
+    <string name="user_video_sort_description">投稿排序：%1$s，点击选择</string>
+    <string name="player_longpress_switch">切换上下视频</string>
+    <string name="player_longpress_switch_desc">默认开启。长按倍速生效后，快速大幅下滑切下一个、上滑切上一个。仅切换当前连播队列或分P，需开启长按倍速。放大后长按拖动优先移动画面并保持倍速；未放大时可切换上下视频。长按倍速期间不调节亮度/音量，松手后恢复普通手势。</string>
+    <string name="player_gesture_next">下一个视频</string>
+    <string name="player_gesture_previous">上一个视频</string>
+    <string name="player_gesture_no_queue">当前没有可切换的视频</string>
+</resources>

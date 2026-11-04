@@ -71,6 +71,9 @@ public class SearchVideoFragment extends SearchFragment {
     public void refreshInternal() {
         CenterThreadPool.runOnUiThread(() -> {
             page = 1;
+            bottom = false;
+            showEmptyView(false);
+            setRefreshing(true);
             if (this.videoCardAdapter == null)
                 this.videoCardAdapter = new VideoCardAdapter(this.requireContext(), this.videoCardList);
             int size_old = this.videoCardList.size();

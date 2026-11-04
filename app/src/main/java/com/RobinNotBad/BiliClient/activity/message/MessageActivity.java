@@ -1,14 +1,11 @@
 package com.RobinNotBad.BiliClient.activity.message;
 
-import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.TextView;
-
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
-
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.InstanceActivity;
 import com.RobinNotBad.BiliClient.adapter.message.PrivateMsgSessionsAdapter;
@@ -19,123 +16,85 @@ import com.RobinNotBad.BiliClient.model.PrivateMsgSession;
 import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
+import com.RobinNotBad.BiliClient.util.MessageUnreadCounter;
+import com.RobinNotBad.BiliClient.util.MessageUnreadState;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
-import com.google.android.material.card.MaterialCardView;
-
 import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 
 public class MessageActivity extends InstanceActivity {
     private RecyclerView sessionsView;
+    private SwipeRefreshLayout refresh;
+    private int requestSequence;
 
-    @SuppressLint({"SetTextI18n", "InflateParams"})
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        asyncInflate(R.layout.activity_message, (layoutView, resId) -> {
-            SwipeRefreshLayout swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
-            swipeRefreshLayout.setEnabled(false);
-            swipeRefreshLayout.setRefreshing(true);
-
-            MaterialCardView settingBtn = findViewById(R.id.setting_btn);
-            settingBtn.setOnClickListener(view -> {
-                Intent intent = new Intent(this, MessageSettingsActivity.class);
-                startActivity(intent);
-            });
-
-            MaterialCardView reply = findViewById(R.id.reply);
-            reply.setOnClickListener(view -> {
-                Intent intent = new Intent();
-                intent.setClass(this, NoticeActivity.class);
-                intent.putExtra("type", "reply");
-                startActivity(intent);
-                ((TextView) findViewById(R.id.reply_text)).setText("回复我的");
-            });
-
-            MaterialCardView like = findViewById(R.id.like);
-            like.setOnClickListener(view -> {
-                Intent intent = new Intent();
-                intent.setClass(this, NoticeActivity.class);
-                intent.putExtra("type", "like");
-                startActivity(intent);
-                ((TextView) findViewById(R.id.like_text)).setText("收到的赞");
-            });
-
-            MaterialCardView at = findViewById(R.id.at);
-            at.setOnClickListener(view -> {
-                Intent intent = new Intent();
-                intent.setClass(this, NoticeActivity.class);
-                intent.putExtra("type", "at");
-                startActivity(intent);
-                ((TextView) findViewById(R.id.at_text)).setText("@我");
-            });
-
-            MaterialCardView system = findViewById(R.id.system);
-            system.setOnClickListener(view -> {
-                Intent intent = new Intent();
-                intent.setClass(this, NoticeActivity.class);
-                intent.putExtra("type", "system");
-                startActivity(intent);
-            });
-
-            sessionsView = findViewById(R.id.sessions_list);
-            sessionsView.setNestedScrollingEnabled(false);
-            sessionsView.setItemAnimator(null);
-
-            CenterThreadPool.run(() -> {
-                try {
-                    JSONObject stats = MessageApi.getUnread();
-                    ArrayList<PrivateMsgSession> sessionsList = PrivateMsgApi.getSessionsList(20);
-                    Collections.sort(sessionsList, (o1, o2) -> {
-                        boolean o1Unread = o1.unread > 0;
-                        boolean o2Unread = o2.unread > 0;
-                        if (o1Unread && !o2Unread) {
-                            return -1;
-                        } else if (!o1Unread && o2Unread) {
-                            return 1;
-                        }
-                        return 0;
-                    });
-                    ArrayList<Long> uidList = new ArrayList<>();
-                    for (PrivateMsgSession item : sessionsList) {
-                        if (!item.hasAccountInfo()) uidList.add(item.talkerUid);
-                    }
-                    HashMap<Long, UserInfo> userMap = uidList.isEmpty()
-                            ? new HashMap<>()
-                            : PrivateMsgApi.getUsersInfo(uidList);
-                    PrivateMsgSessionsAdapter adapter = new PrivateMsgSessionsAdapter(this, sessionsList, userMap);
-                    runOnUiThread(() -> {
-                        swipeRefreshLayout.setRefreshing(false);
-                        try {
-                            ((TextView) findViewById(R.id.reply_text)).setText("回复我的"
-                                    + ((stats.getInt("reply") > 0) ? ("(" + stats.getInt("reply") + "未读)") : ""));
-                            ((TextView) findViewById(R.id.like_text)).setText(
-                                    "收到的赞" + ((stats.getInt("like") > 0) ? ("(" + stats.getInt("like") + "未读)") : ""));
-                            ((TextView) findViewById(R.id.at_text)).setText(
-                                    "@我" + ((stats.getInt("at") > 0) ? ("(" + stats.getInt("at") + "未读)") : ""));
-                            sessionsView.setLayoutManager(new CustomLinearManager(this));
-                            sessionsView.setAdapter(adapter);
-                            SharedPreferencesUtil.putInt(SharedPreferencesUtil.MESSAGE_UPDATE_NUM, 0);
-                        } catch (Exception e) {
-                            MsgUtil.err(e);
-                        }
-
-                        View scrollView = findViewById(R.id.scrollView);
-                        scrollView.setFocusable(true);
-                        scrollView.setFocusableInTouchMode(true);
-                        scrollView.requestFocus();
-                    });
-                } catch (Exception e) {
-                    runOnUiThread(() -> MsgUtil.err(e));
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        asyncInflate(R.layout.activity_message,(view,resId)->{
+            refresh=findViewById(R.id.swipeRefreshLayout);
+            refresh.setEnabled(true);refresh.setOnRefreshListener(this::loadMessages);
+            findViewById(R.id.setting_btn).setOnClickListener(v->startActivity(new Intent(this,MessageSettingsActivity.class)));
+            openNotice(R.id.reply,"reply");openNotice(R.id.like,"like");
+            openNotice(R.id.at,"at");openNotice(R.id.system,"system");
+            sessionsView=findViewById(R.id.sessions_list);
+            sessionsView.setNestedScrollingEnabled(false);sessionsView.setItemAnimator(null);
+            sessionsView.setLayoutManager(new CustomLinearManager(this));
+            loadMessages();
+            TutorialHelper.showTutorialList(this,R.array.tutorial_message,5);
+        });
+    }
+    private void openNotice(int id,String type) {
+        findViewById(id).setOnClickListener(v->startActivity(new Intent(this,NoticeActivity.class).putExtra("type",type)));
+    }
+    @Override protected void onResume() {
+        super.onResume();if(sessionsView!=null)loadMessages();
+    }
+    private void unreadLabel(int id,String title,int count) {
+        TextView text=findViewById(id);
+        text.setText(count>0?title+" ("+count+"未读)":title);
+        text.setTextColor(count>0?0xffff8eaa:0xffffffff);
+    }
+    private void loadMessages() {
+        final int sequence=++requestSequence;
+        final long requestedAccount=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0);
+        final MessageUnreadState.Check check=MessageUnreadCounter.beginCheck();
+        refresh.setRefreshing(true);
+        CenterThreadPool.run(()->{
+            JSONObject stats=null;Integer privateCount=null;
+            ArrayList<PrivateMsgSession> sessions=null;HashMap<Long,UserInfo> users=new HashMap<>();
+            Exception error=null;
+            try{stats=MessageApi.getUnread();}catch(Exception e){error=e;}
+            try{privateCount=MessageApi.checkPrivateMsgUnread();}catch(Exception e){if(error==null)error=e;}
+            try {
+                sessions=PrivateMsgApi.getSessionsList(20);
+                Collections.sort(sessions,(a,b)->(b.unread>0?1:0)-(a.unread>0?1:0));
+                ArrayList<Long> ids=new ArrayList<>();
+                for(PrivateMsgSession session:sessions)if(!session.hasAccountInfo())ids.add(session.talkerUid);
+                if(!ids.isEmpty())try{users=PrivateMsgApi.getUsersInfo(ids);}catch(Exception ignored){}
+            }catch(Exception e){error=e;}
+            final JSONObject result=stats;final Integer privateResult=privateCount;
+            final ArrayList<PrivateMsgSession> rows=sessions;final HashMap<Long,UserInfo> names=users;
+            final Exception failure=error;
+            runOnUiThread(()->{
+                if(isDestroyed()||sequence!=requestSequence||requestedAccount!=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0))return;
+                refresh.setRefreshing(false);
+                if(result!=null) {
+                    unreadLabel(R.id.reply_text,"回复我的",result.optInt("reply"));
+                    unreadLabel(R.id.like_text,"收到的赞",result.optInt("like"));
+                    unreadLabel(R.id.at_text,"@我",result.optInt("at"));
+                    unreadLabel(R.id.system_text,"系统通知",result.optInt("system"));
                 }
+                if(result==null&&privateResult==null)MessageUnreadCounter.fail(check);
+                else MessageUnreadCounter.complete(check,result==null?null:Integer.valueOf(MessageApi.countInteractionUnread(result)),privateResult);
+                // Listing conversations is not a read acknowledgement. Unread survives
+                // until the relevant notice/chat is actually read and the server confirms it.
+                if(rows!=null)sessionsView.setAdapter(new PrivateMsgSessionsAdapter(this,rows,names));
+                else if(failure!=null)MsgUtil.err(failure);
+                View scroll=findViewById(R.id.scrollView);
+                scroll.setFocusable(true);scroll.setFocusableInTouchMode(true);scroll.requestFocus();
             });
-
-            TutorialHelper.showTutorialList(this, R.array.tutorial_message, 5);
         });
     }
 }

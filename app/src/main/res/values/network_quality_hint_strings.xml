@@ -1,0 +1,11 @@
+<resources>
+    <string name="longpress_hint_enabled">显示长按倍速提示</string>
+    <string name="longpress_hint_enabled_desc">仅控制提示文字，关闭后长按倍速和切换上下视频仍正常使用。</string>
+    <string name="longpress_hint_scale">长按倍速提示大小</string>
+    <string name="longpress_hint_scale_desc">范围0.5～1.25，默认0.75。数值越小提示越紧凑，重新长按时生效。</string>
+    <string name="quality_default">默认画质</string>
+    <string name="quality_mobile">移动数据画质</string>
+    <string name="quality_wifi">Wi-Fi画质</string>
+    <string name="quality_inherit">跟随默认画质</string>
+    <string name="quality_network_desc">移动数据、Wi-Fi可分别设置，默认跟随原画质设置。新打开的视频及后续连播条目按当前网络选择；切网不重载正在播放的视频，手动选画质优先。Wi-Fi热点仍按Wi-Fi设置。</string>
+</resources>

@@ -78,6 +78,10 @@ import com.RobinNotBad.BiliClient.model.SubtitleLink;
 import com.RobinNotBad.BiliClient.model.ViewPoint;
 import com.RobinNotBad.BiliClient.player.DanmakuWindowLoader;
 import com.RobinNotBad.BiliClient.player.DanmakuLoadPolicy;
+import com.RobinNotBad.BiliClient.player.CollectionPlaybackQueue;
+import com.RobinNotBad.BiliClient.player.CollectionPlaybackSource;
+import com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot;
+import com.RobinNotBad.BiliClient.player.CachedPlaybackItem;
 import com.RobinNotBad.BiliClient.util.DanmakuXmlCounter;
 import com.RobinNotBad.BiliClient.util.RequestCancellation;
 import com.RobinNotBad.BiliClient.service.PlaybackKeepAliveService;
@@ -303,6 +307,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     private int video_all, video_now, video_now_last;
     private long progress_history;
+    private final com.RobinNotBad.BiliClient.player.PlaybackResumePoints playlistResumePoints =
+            new com.RobinNotBad.BiliClient.player.PlaybackResumePoints();
     private String localProgressFolderLocator = "";
     private VideoStorageUtil.Node localProgressFile;
     private float swipeDownX, swipeDownY;
@@ -345,15 +351,25 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private ViewScaleGestureListener scaleGestureListener;
     private float previousX, previousY;
     private boolean gesture_moved, gesture_scaled, gesture_click_disabled;
+    private float surfaceDownX, surfaceDownY, surfaceTapSlopSquared;
+    private int surfacePointerId;
+    private boolean surfaceTapCandidate, surfaceClickCancelled;
     /** Optional single-finger seek mode while the zoomed video's controls are shown. */
     private boolean zoomedSingleFingerSeekMode;
     /** Once a second pointer appears, this gesture stays in two-finger mode until it ends. */
     private boolean multiTouchGesture;
     private float video_origX, video_origY;
+    private int videoLayoutGeneration,videoPanGeneration;
     private long timestamp_click;
     private boolean controlsVisibleBeforeTap;
     private boolean singleTapChangedControls;
-    private boolean onLongClick = false;
+    private volatile boolean onLongClick = false;
+    private long longPressStartedAt, lastLongPressSampleAt, lastLongPressSamplePosition;
+    private int longPressMemoryClass;
+    private final com.RobinNotBad.BiliClient.player.LongPressSwitchGesture longPressSwitch = new com.RobinNotBad.BiliClient.player.LongPressSwitchGesture();
+    private boolean longPressSwitchSequence;
+    private boolean longPressPanSequence;
+    private float lastSurfaceX, lastSurfaceY;
     private boolean danmakuPausedByBuffering = false;
     private int localRuntimeRetryCount = 0;
     private Runnable playbackStallWatchdog;
@@ -368,6 +384,38 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private boolean finishWatching = false;
     private boolean loop_enabled;
     private boolean auto_next_enabled = false;
+    private ImageButton btn_collection_order;
+    private CollectionPlaybackQueue collectionQueue;
+    private String favoritePlaybackToken;
+    private boolean explicitOnlineQueue, explicitOnlineEnabled = true;
+    private com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.Session favoriteSession;
+    private com.RobinNotBad.BiliClient.api.FavoritePlaybackSource favoritePlaybackSource =
+            new com.RobinNotBad.BiliClient.api.FavoritePlaybackSource();
+    private volatile int favoriteGeneration;
+    private boolean favoritePaging, favoritePageFailed, favoritePendingCompletion;
+    private int favoriteRetryAction;
+    private CachedPlaybackSnapshot cachedPlaybackSnapshot;
+    private String cachedPlaybackToken;
+    private int currentCachedIndex = -1;
+    private boolean cachedUserAudioOnlyMode;
+    private Boolean pendingMediaPlaybackRequest;
+    private CollectionPlaybackSource collectionPlaybackSource = new CollectionPlaybackSource();
+    private boolean showCollectionPlayback, collectionPlaybackEnabled = true;
+    private boolean collectionQueueLoading, collectionQueueFailed;
+    private long collectionQueueLoadedForAid = -1;
+    private int collectionPlaybackOrder = CollectionPlaybackQueue.SEQUENTIAL;
+    private int playbackSwitchGeneration;
+    private boolean playbackSwitchInFlight, collectionSwitchInFlight;
+    private com.RobinNotBad.BiliClient.player.PlayerOptionsMenu playbackOptionsMenu;
+    private TextView longPressSpeedHint;
+    private int manualPlaybackQuality = -1;
+    private boolean bangumiPlayback;
+    private long pgcSeason, pgcEpisode, pgcAccount, lastPgcSave = -1;
+    private int pgcType = 1;
+    private com.RobinNotBad.BiliClient.player.PlaybackSegments segmentPolicy;
+    private TextView segmentSkipButton;
+    private String lastPlayerGeometry = "";
+    private int playerCornerLeft, playerCornerRight;
 
     private BatteryView batteryView;
     private BatteryManager batteryManager;
@@ -497,11 +545,59 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         float speed = PlayerCompatibilityUtil.longPressSpeed(Build.VERSION.SDK_INT, getPlayerMemoryClass());
         setPlaybackSpeed(speed);
         text_speed.setText(String.format(Locale.CHINA, "x %.1f", speed));
+        longPressStartedAt = lastLongPressSampleAt = SystemClock.elapsedRealtime();
+        lastLongPressSamplePosition = video_now;
+        longPressMemoryClass = getPlayerMemoryClass();
         onLongClick = true;
+        recordLongPressPerformance("start", video_now, longPressStartedAt);
+        longPressPanSequence=isVideoZoomed()&&!multiTouchGesture
+                &&SharedPreferencesUtil.getBoolean("player_doublemove",true)
+                &&SharedPreferencesUtil.getBoolean("player_singlemove",true);
+        if(longPressPanSequence){previousX=lastSurfaceX;previousY=lastSurfaceY;longPressSwitch.cancel();}
+        longPressSwitchSequence = !longPressPanSequence&&SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_LONGPRESS_SWITCH, true)
+                && !multiTouchGesture;
+        if (longPressSwitchSequence) longPressSwitch.arm(lastSurfaceX, lastSurfaceY,
+                layout_control.getHeight(), getResources().getDisplayMetrics().density,
+                ViewConfiguration.get(this).getScaledTouchSlop());
+        if (longPressSpeedHint != null) {
+            longPressSpeedHint.setText(getString(R.string.player_longpress_speed_hint, speed));
+            updateLongPressSpeedHint();
+        }
+    }
+
+    private void updateLongPressSpeedHint() {
+        if(!com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getBoolean(
+                com.RobinNotBad.BiliClient.util.PlayerSettingsUtil.LONGPRESS_HINT_ENABLED,true)) {
+            longPressSpeedHint.setVisibility(View.GONE);return;
+        }
+        float scale=com.RobinNotBad.BiliClient.util.PlayerSettingsUtil.getLongPressHintScale();
+        int width=layout_control.getWidth()>0?layout_control.getWidth():getResources().getDisplayMetrics().widthPixels;
+        int height=layout_control.getHeight()>0?layout_control.getHeight():getResources().getDisplayMetrics().heightPixels;
+        float density=Math.min(getResources().getDisplayMetrics().density,Math.min(width,height)/200f);
+        int padding=Math.max(1,Math.round(4*density*scale));
+        longPressSpeedHint.setPadding(padding,padding,padding,padding);
+        int maxWidth=Math.max(1,Math.round((width-playerSafeLeft-playerSafeRight)*.72f));
+        android.graphics.Paint measure=new android.graphics.Paint(longPressSpeedHint.getPaint());
+        measure.setTextSize(100f);
+        float units=measure.measureText(longPressSpeedHint.getText().toString())/100f;
+        // Reserve room at the largest supported scale, so increasing the setting
+        // never makes the glyphs smaller when a very narrow watch reaches the cap.
+        int maxPadding=Math.max(1,Math.round(4*density*1.25f));
+        float base=Math.min(13*density*getResources().getConfiguration().fontScale,
+                Math.max(1,maxWidth-2*maxPadding-4)/Math.max(1,units)/1.25f);
+        longPressSpeedHint.setTextSize(TypedValue.COMPLEX_UNIT_PX,Math.max(1,base*scale));
+        longPressSpeedHint.setEllipsize(null);
+        longPressSpeedHint.setMaxWidth(maxWidth);
+        android.widget.RelativeLayout.LayoutParams params=(android.widget.RelativeLayout.LayoutParams)longPressSpeedHint.getLayoutParams();
+        params.topMargin=playerSafeTop+Math.round(4*density);longPressSpeedHint.setLayoutParams(params);
+        longPressSpeedHint.setVisibility(View.VISIBLE);
     }
 
     private void stopLongPressSpeed() {
+        longPressSwitch.cancel();
+        if (longPressSpeedHint != null) longPressSpeedHint.setVisibility(View.GONE);
         if (!onLongClick) return;
+        recordLongPressPerformance("end", video_now, SystemClock.elapsedRealtime());
         onLongClick = false;
         int speedPosition = seekbar_speed.getProgress();
         float normalSpeed = speed_values[speedPosition];
@@ -509,10 +605,34 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         text_speed.setText(speed_strs[speedPosition]);
     }
 
+    private void recordLongPressPerformance(String phase, long position, long now) {
+        try {
+            JSONObject details = new JSONObject().put("phase", phase).put("sdk", Build.VERSION.SDK_INT)
+                    .put("memory_class_mb", longPressMemoryClass).put("requested_speed", currentPlaybackSpeed)
+                    .put("held_ms", Math.max(0L, now - longPressStartedAt)).put("position_ms", position)
+                    .put("quality", currentQuality).put("video_buffering", videoTrackBuffering)
+                    .put("audio_buffering", audioTrackBuffering).put("danmaku", isDanmakuVisible)
+                    .put("player", ijkPlayer == null ? "none" : ijkPlayer.getClass().getSimpleName());
+            long elapsed = now - lastLongPressSampleAt;
+            if (elapsed > 0 && position >= lastLongPressSamplePosition) {
+                details.put("sample_ms", elapsed).put("advance_ms", position - lastLongPressSamplePosition)
+                        .put("observed_speed", (position - lastLongPressSamplePosition) / (double) elapsed);
+            }
+            DiagnosticLogManager.record("player_longpress", details);
+        } catch (Exception ignored) { }
+        lastLongPressSampleAt = now;
+        lastLongPressSamplePosition = position;
+    }
+
     private boolean getExtras() {
         Intent intent = getIntent();
         if (intent == null)
             return false;
+        bangumiPlayback = intent.getIntExtra("content_type", 0) == PlayerData.TYPE_BANGUMI;
+        pgcSeason = intent.getLongExtra("pgc_season", 0); pgcEpisode = intent.getLongExtra("pgc_episode", 0);
+        pgcType = intent.getIntExtra("pgc_type", 1);
+        pgcAccount = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        segmentPolicy = new com.RobinNotBad.BiliClient.player.PlaybackSegments(intent.getStringExtra("clip_segments"));
 
         video_url = intent.getStringExtra("url");
         ArrayList<String> backupUrls = intent.getStringArrayListExtra("backup_urls");
@@ -532,6 +652,10 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         ArrayList<String> audioBackupUrls = intent.getStringArrayListExtra("audio_backup_urls");
         setDashAudioUrls(audio_url, audioBackupUrls);
         danmaku_url = intent.getStringExtra("danmaku");
+        cachedPlaybackToken = intent.getStringExtra(CachedPlaybackSnapshot.TOKEN);
+        favoritePlaybackToken = intent.getStringExtra(com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.TOKEN);
+        explicitOnlineQueue = favoritePlaybackToken != null && intent.getBooleanExtra(
+                com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.EXPLICIT, false);
         localSubtitleRoot = intent.getStringExtra("local_subtitle_root");
         if (localSubtitleRoot == null) localSubtitleRoot = "";
         localProgressFolderLocator = intent.getStringExtra("local_progress_folder");
@@ -583,7 +707,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (intent.hasExtra("qnStrList") && intent.hasExtra("qnValueList")) {
             qnStrList = intent.getStringArrayExtra("qnStrList");
             qnValueList = intent.getIntArrayExtra("qnValueList");
-            currentQuality = intent.getIntExtra("currentQuality", SharedPreferencesUtil.getInt("play_qn", 0));
+            currentQuality = intent.getIntExtra("currentQuality", com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.defaultQuality(this));
         }
 
         return true;
@@ -614,7 +738,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         initUI();
         if (screen_landscape && useSoftwarePlayerRotation()) softwareRotate();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_MEDIA_SESSION_ENABLE, false)) {
+        if (SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_MEDIA_SESSION_ENABLE, false)) {
             initMediaSession();
         }
 
@@ -625,8 +749,26 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             batteryView.setVisibility(View.GONE);
 
         loop_enabled = SharedPreferencesUtil.getBoolean("player_loop", false);
+        if (savedInstanceState != null) {
+            int savedManual=savedInstanceState.getInt("manual_playback_quality",-1);
+            if(com.RobinNotBad.BiliClient.util.PlaybackQualityPolicy.valid(savedManual))manualPlaybackQuality=savedManual;
+            if (savedInstanceState.getLong("playlist_resume_account", -1) ==
+                    SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) {
+                playlistResumePoints.restore(savedInstanceState.getStringArray("playlist_resume_keys"),
+                        savedInstanceState.getLongArray("playlist_resume_values"));
+                if (isOnlineVideo && !isLiveMode && !bangumiPlayback)
+                    progress_history = playlistResumePoints.position(aid, cid, cid, progress_history);
+            }
+            explicitOnlineEnabled = savedInstanceState.getBoolean("explicit_online_enabled", true);
+            collectionPlaybackOrder = Math.max(0, Math.min(3, savedInstanceState.getInt("collection_order", 0)));
+            long[] savedQueue = savedInstanceState.getLongArray("collection_aids");
+            if (savedQueue != null && favoritePlaybackToken == null) collectionQueue = new CollectionPlaybackQueue(
+                    savedInstanceState.getLong("collection_id"), savedQueue);
+        }
         // 从设置读取听视频模式的默认值
         isAudioOnlyMode = SharedPreferencesUtil.getBoolean("player_audio_only", false);
+        cachedUserAudioOnlyMode = savedInstanceState == null ? isAudioOnlyMode
+                : savedInstanceState.getBoolean("cached_user_audio_only", isAudioOnlyMode);
         // 从Intent读取是否为仅音频模式（用于播放本地音频文件）
         isLocalAudioFile = getIntent().getBooleanExtra("audio_only", false);
         if (isLocalAudioFile) {
@@ -743,6 +885,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         btn_page_selector = findViewById(R.id.button_page_selector);
         btn_auto_next = findViewById(R.id.auto_next_btn);
         btn_quality = findViewById(R.id.button_quality);
+        btn_collection_order = findViewById(R.id.collection_order_btn);
         btn_viewpoint = findViewById(R.id.viewpoint_btn);
         btn_lock = findViewById(R.id.screen_lock_btn);
         seekbar_progress = findViewById(R.id.videoprogress);
@@ -755,6 +898,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         batteryView = findViewById(R.id.battery);
 
         text_speed = findViewById(R.id.text_speed);
+        longPressSpeedHint = findViewById(R.id.long_press_speed_hint);
+        layout_control.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                updateExpandedMenuBounds());
         layout_speed = findViewById(R.id.layout_speed);
         seekbar_speed = findViewById(R.id.seekbar_speed);
         text_newspeed = findViewById(R.id.text_newspeed);
@@ -779,8 +925,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
             layout_control.setOnTouchListener((v, event) -> {
                 int action = event.getActionMasked();
-                if (action == MotionEvent.ACTION_DOWN) gesture_click_disabled = false;
+                if (action == MotionEvent.ACTION_DOWN) {gesture_click_disabled = false;longPressPanSequence=false;}
                 if (screenLocked) return handleLockedPlayerTouch(event);
+                if (handleLongPressPan(event)) return true;
+                if (handleLongPressSwitch(event)) return true;
+                boolean consumeSurfaceTouch = trackSurfaceTap(v, event);
                 int pointerCount = event.getPointerCount();
                 boolean singleTouch = pointerCount == 1;
                 boolean doubleTouch = pointerCount == 2;
@@ -955,7 +1104,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 }
                 if (action == MotionEvent.ACTION_CANCEL) cancelPendingSingleTap();
 
-                return false;
+                return finishSurfaceTouch(event, consumeSurfaceTouch);
             });
         } else {
             boolean antiMistouchEnabled = SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_ANTI_MISTOUCH, true);
@@ -968,6 +1117,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     multiTouchGesture = false;
                 }
                 if (screenLocked) return handleLockedPlayerTouch(motionEvent);
+                if (handleLongPressSwitch(motionEvent)) return true;
+                boolean consumeSurfaceTouch = trackSurfaceTap(view, motionEvent);
                 if (motionEvent.getPointerCount() > 1) {
                     multiTouchGesture = true;
                     cancelPendingSingleTap();
@@ -1022,7 +1173,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     multiTouchGesture = false;
                 }
                 if (action == MotionEvent.ACTION_CANCEL) cancelPendingSingleTap();
-                return false;
+                return finishSurfaceTouch(motionEvent, consumeSurfaceTouch);
             });
         }
 
@@ -1054,6 +1205,127 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             return false;
         });
 
+    }
+
+    /** On a zoomed picture, dragging while holding speed belongs to pan, not queue switching. */
+    private boolean handleLongPressPan(MotionEvent event){
+        if(!longPressPanSequence)return false;
+        int action=event.getActionMasked();cancelPendingSingleTap();surfaceTapCandidate=false;gesture_click_disabled=true;
+        if(!surfaceClickCancelled){
+            MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
+            layout_control.onTouchEvent(cancel);cancel.recycle();surfaceClickCancelled=true;
+        }
+        if(event.getPointerCount()!=1||action==MotionEvent.ACTION_POINTER_DOWN||action==MotionEvent.ACTION_POINTER_UP){
+            multiTouchGesture=true;stopLongPressSpeed();
+        }else if(action==MotionEvent.ACTION_MOVE&&onLongClick&&!multiTouchGesture){
+            float x=event.getX(0),y=event.getY(0),dx=x-previousX,dy=y-previousY;
+            float threshold=ToolsUtil.dp2px(SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_ANTI_MISTOUCH,true)?8:3);
+            if(Math.abs(dx)>threshold||Math.abs(dy)>threshold){videoMoveBy(dx,dy);previousX=x;previousY=y;gesture_moved=true;}
+        }
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
+            stopLongPressSpeed();longPressPanSequence=false;longPressSwitchSequence=false;
+            swipeSeeking=false;gesture_moved=false;gesture_scaled=false;multiTouchGesture=false;gesture_click_disabled=false;
+        }
+        return true;
+    }
+
+    private boolean handleLongPressSwitch(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            longPressSwitchSequence = false; longPressSwitch.cancel();
+        }
+        if (!longPressSwitchSequence) {
+            lastSurfaceX = event.getX(0); lastSurfaceY = event.getY(0);
+            return false;
+        }
+        cancelPendingSingleTap();
+        surfaceTapCandidate = false;
+        gesture_click_disabled = true;
+        if (!surfaceClickCancelled) {
+            MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL);
+            layout_control.onTouchEvent(cancel); cancel.recycle(); surfaceClickCancelled = true;
+        }
+        int direction = 0;
+        if (event.getPointerCount() != 1 || action == MotionEvent.ACTION_POINTER_DOWN
+                || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL
+                || !SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.PLAYER_LONGPRESS_SWITCH, true)) {
+            stopLongPressSpeed();
+        } else if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
+            for (int i = 0; i < event.getHistorySize() && direction == 0; i++)
+                direction = longPressSwitch.update(event.getHistoricalX(0, i), event.getHistoricalY(0, i), event.getHistoricalEventTime(i));
+            if (direction == 0) direction = longPressSwitch.update(event.getX(0), event.getY(0), event.getEventTime());
+        }
+        if (direction != 0) {
+            // Restore the user's speed before the queue loads another item. The rest
+            // of this physical touch still belongs to this gesture, not the new video.
+            stopLongPressSpeed();
+            boolean moved = skipPlaybackItem(direction > 0);
+            MsgUtil.showMsg(getString(moved ? direction > 0 ? R.string.player_gesture_next
+                    : R.string.player_gesture_previous : R.string.player_gesture_no_queue));
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            stopLongPressSpeed(); longPressSwitchSequence = false;
+            swipeSeeking = false; gesture_moved = false; gesture_scaled = false;
+            multiTouchGesture = false; gesture_click_disabled = false;
+        }
+        return true;
+    }
+
+    /** Tap eligibility follows the whole touch stream, independently of pan/seek recognition.
+     * Fast input may deliver its first substantial displacement on UP, or batch an out-and-back
+     * movement into one event. Neither may become View's click on release. */
+    private boolean trackSurfaceTap(View view, MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            surfaceTapCandidate = event.getPointerCount() == 1;
+            surfaceClickCancelled = false;
+            surfacePointerId = event.getPointerId(0);
+            surfaceDownX = event.getX(0);
+            surfaceDownY = event.getY(0);
+            float slop = ViewConfiguration.get(this).getScaledTouchSlop();
+            surfaceTapSlopSquared = slop * slop;
+        } else if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN
+                || action == MotionEvent.ACTION_POINTER_UP || event.getPointerCount() != 1) {
+            surfaceTapCandidate = false;
+        } else if (surfaceTapCandidate && (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP)) {
+            int pointer = event.findPointerIndex(surfacePointerId);
+            if (pointer < 0) surfaceTapCandidate = false;
+            else {
+                for (int i = 0; i < event.getHistorySize() && surfaceTapCandidate; i++)
+                    if (surfaceMovedBeyondTap(event.getHistoricalX(pointer, i), event.getHistoricalY(pointer, i)))
+                        surfaceTapCandidate = false;
+                if (surfaceMovedBeyondTap(event.getX(pointer), event.getY(pointer))) surfaceTapCandidate = false;
+            }
+        }
+        if (!surfaceTapCandidate) {
+            cancelPendingSingleTap();
+            gesture_click_disabled = true;
+            if (!surfaceClickCancelled) {
+                // Cancel only this surface View's pressed/long-click/click state. Gesture handlers
+                // still receive every real event, and child playback buttons keep their own taps.
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                view.onTouchEvent(cancel);
+                cancel.recycle();
+                surfaceClickCancelled = true;
+            }
+        }
+        return !surfaceTapCandidate;
+    }
+
+    private boolean surfaceMovedBeyondTap(float x, float y) {
+        float dx = x - surfaceDownX, dy = y - surfaceDownY;
+        return dx * dx + dy * dy > surfaceTapSlopSquared;
+    }
+
+    private boolean finishSurfaceTouch(MotionEvent event, boolean consumed) {
+        if (consumed && (event.getActionMasked() == MotionEvent.ACTION_UP
+                || event.getActionMasked() == MotionEvent.ACTION_CANCEL)) {
+            // View already received CANCEL, so this UP cannot click. Keep future accessibility
+            // performClick actions available even when no subsequent physical DOWN is delivered.
+            gesture_click_disabled = false;
+        }
+        return consumed;
     }
 
     private boolean handleLockedPlayerTouch(MotionEvent event) {
@@ -1094,7 +1366,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void autohideReset() {
-        if (screenLocked) return;
+        if (screenLocked || destroyed) return;
         layout_control.removeCallbacks(hidecon);
         layout_control.postDelayed(hidecon, 4000);
     }
@@ -1131,6 +1403,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             lockedDebugVisibility = btn_debug.getVisibility();
 
             screenLocked = true;
+            if (segmentSkipButton != null) segmentSkipButton.setVisibility(View.GONE);
             layout_control.removeCallbacks(hidecon);
             layout_card_bg.setVisibility(View.GONE);
             card_subtitle.setVisibility(View.GONE);
@@ -1138,6 +1411,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             card_page_selector.setVisibility(View.GONE);
             card_quality_selector.setVisibility(View.GONE);
             card_viewpoint_selector.setVisibility(View.GONE);
+            if (playbackOptionsMenu != null) playbackOptionsMenu.dismiss();
+            btn_collection_order.setVisibility(View.GONE);
             right_second.setVisibility(View.GONE);
             layout_top.setVisibility(View.GONE);
             bottom_buttons.setVisibility(View.GONE);
@@ -1176,6 +1451,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             btn_lock.setImageResource(R.drawable.icon_unlock);
             btn_lock.setContentDescription("未锁定，点击锁定播放器");
             lockUiStateSaved = false;
+            updateCollectionPlaybackControls();
             showcon();
         }
     }
@@ -1235,6 +1511,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             return false;
 
         scaleGestureListener.can_reset = false;
+        videoPanGeneration++;
         zoomedSingleFingerSeekMode = false;
         layout_video.setX(video_origX);
         layout_video.setY(video_origY);
@@ -1292,6 +1569,10 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             return false;
         }
         if (action == MotionEvent.ACTION_MOVE) {
+            if (onLongClick) {
+                verticalAdjusting = false; brightnessAdjusting = false;
+                return true;
+            }
             if (event.getPointerCount() != 1 || multiTouchGesture || gestureScaling) {
                 return verticalAdjusting || brightnessAdjusting;
             }
@@ -1625,6 +1906,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
 
         autohideReset();
+        refreshSegmentSkipPosition();
     }
 
     private final Runnable progressbarEnable = () -> seekbar_progress.setEnabled(true);
@@ -1653,6 +1935,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     private void setDisplay() {
         if (destroyed || ijkPlayer == null) return;
+        if (surfaceTimer != null) { surfaceTimer.cancel(); surfaceTimer = null; }
         Logu.v("创建播放器");
         Logu.v("url", video_url);
 
@@ -1671,7 +1954,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     && SharedPreferencesUtil.getBoolean("player_codec",
                     !PlayerCompatibilityUtil.prefersSoftwareCodec());
             hardwareCodecInUse = hardwareCodecEnabled;
-            if (isAudioOnlyMode) {
+            if (isAudioOnlyMode && !hasDashAudio()) {
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "vn", 1); // 禁用视频
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_frame", 48); // 跳过所有视频帧
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48);
@@ -1723,6 +2006,16 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 nativePlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent", USER_AGENT_WEB);
                 Logu.v("设置ua");
             }
+        }
+
+        if (isAudioOnlyMode || !isActivityVisible && backgroundPlaybackActive) {
+            IMediaPlayer audioTarget = ijkPlayer;
+            String audioSource = video_url;
+            videoOutputDetached = true;
+            releaseTextureSurface();
+            audioTarget.setDisplay(null);
+            CenterThreadPool.run(() -> MPPrepare(audioTarget, audioSource));
+            return;
         }
 
         Logu.v("准备设置显示");
@@ -1878,7 +2171,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         if (destroyed || currentPlayer == null || currentPlayer != player) return;
                         try {
                             if (!isPlaying) currentPlayer.pause();
-                            currentPlayer.setVolume(1f, 1f);
+                            applyPlaybackGain();
                         } catch (RuntimeException error) {
                             Logu.e("player-surface", "恢复暂停状态失败: " + error);
                         }
@@ -2172,8 +2465,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void MPPrepare(String nowurl) {
-        IMediaPlayer player = ijkPlayer;
-        if (destroyed || player == null) return;
+        MPPrepare(ijkPlayer, nowurl);
+    }
+
+    private void MPPrepare(IMediaPlayer player, String nowurl) {
+        if (destroyed || player == null || player != ijkPlayer) return;
         playbackCompleted = false;
         // Video, API, image and danmaku traffic all follow the same manual relay mode.
         videoTrackPrepared = false;
@@ -2211,7 +2507,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             return;
         }
 
-        player.setOnCompletionListener(iMediaPlayer -> {
+        player.setOnCompletionListener(iMediaPlayer -> runOnUiThread(() -> {
+            if (destroyed || iMediaPlayer != ijkPlayer || playbackCompleted || playbackSwitchInFlight) return;
             finishWatching = true;
             
             if (interactionData != null && interactionData.edges != null && 
@@ -2230,12 +2527,48 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 }
             }
             
-            if (loop_enabled) {
+            boolean collectionEnded = false;
+            if (favoritePlaybackToken != null && showCollectionPlayback && collectionPlaybackEnabled) {
+                if (favoriteSession == null && collectionQueueLoading) {
+                    favoritePendingCompletion = true;
+                    return;
+                }
+                if (!collectionPlaybackActive()) {
+                    stopFavoritePlayback();
+                    MsgUtil.showMsg(onlineQueueLabel() + "连播不可用，请从列表重新播放或重试加载");
+                    return;
+                }
+            }
+            if (collectionPlaybackActive()) {
+                if (isOnlineVideo && hasMultiplePages() && currentPageIndex + 1 < cids.size()) {
+                    switchPlaybackItem(aid, currentPageIndex + 1, true);
+                    return;
+                }
+                if (favoriteSession != null) {
+                    requestFavoriteAdvance(1);
+                    return;
+                }
+                long nextAid = collectionQueue.next(currentQueueKey(), collectionPlaybackOrder, new java.util.Random());
+                if (nextAid == currentQueueKey() && (cachedPlaybackSnapshot != null || currentPageIndex == 0 && !hasMultiplePages())) {
+                    playbackCompleted = false;
+                    resetPlaybackTimelineToStart("collection_repeat");
+                    isPlaying = true;
+                    startPlaybackPlayers();
+                    return;
+                }
+                if (nextAid > 0) {
+                    switchPlaybackItem(nextAid, 0, true);
+                    return;
+                }
+                collectionEnded = true;
+                MsgUtil.showMsg(getString(R.string.collection_playback_finished));
+            }
+            if (!collectionEnded && loop_enabled) {
                 playbackCompleted = false;
                 resetPlaybackTimelineToStart("loop_replay");
                 isPlaying = true;
                 startPlaybackPlayers();
-            } else if (auto_next_enabled && hasMultiplePages() && currentPageIndex < pagenames.size() - 1) {
+            } else if (!collectionEnded && auto_next_enabled && hasMultiplePages() && currentPageIndex < pagenames.size() - 1) {
                 playbackCompleted = false;
                 switchToPage(currentPageIndex + 1);
             } else {
@@ -2247,11 +2580,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     mDanmakuView.pause();
                 }
                 btn_control.setImageResource(R.drawable.btn_player_play);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
+                if (mediaSession != null) {
                     updateMediaSessionPlaybackState();
                 }
             }
-        });
+        }));
 
         player.setOnErrorListener((iMediaPlayer, what, extra) -> {
             if (destroyed || iMediaPlayer != ijkPlayer) {
@@ -2366,6 +2699,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
 
         isPrepared = true;
+        applyPlaybackGain();
         playbackStallRecoveryInFlight = false;
         recordPlayerAction("prepared", null, currentQuality);
         video_all = (int) ijkPlayer.getDuration();
@@ -2453,6 +2787,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             btn_quality.setVisibility(View.GONE);
         }
 
+        updateCollectionPlaybackControls();
+
         seekbar_progress.setMax(video_all);
         if (highEnergyEnabled) {
             highEnergyDataBuilder.reset(video_all);
@@ -2465,6 +2801,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             updateAudioOnlyUI();
         }
 
+        if (!isOnlineVideo && video_all > 0 && progress_history >= video_all - 250L)
+            progress_history = 0; // Keep the completion checkpoint on disk, but replay completed cache from zero.
         if (SharedPreferencesUtil.getBoolean("player_from_last", true) && !isLiveMode) {
             if (progress_history > 5) {
                 progressGuard.recordSeek(progress_history, video_all, SystemClock.elapsedRealtime());
@@ -2532,7 +2870,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             startBackgroundPlaybackService();
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
+        if (mediaSession != null) {
             updateMediaSessionMetadata();
             updateMediaSessionPlaybackState();
         }
@@ -2682,7 +3020,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private void scheduleFirstFrameTimeout(IMediaPlayer player, int sourceIndex) {
         mainHandler.postDelayed(() -> {
             if (destroyed || player != ijkPlayer || sourceIndex != playbackUrlIndex
-                    || !isPrepared || !isPlaying || isAudioOnlyMode || videoRenderingStarted) return;
+                    || !isPrepared || !isPlaying || isAudioOnlyMode || videoRenderingStarted
+                    || !isActivityVisible && backgroundPlaybackActive) return;
             // Listening mode intentionally disables video rendering. It must never be
             // treated as a missing first video frame after a background transition.
             recordPlayerAction("first_frame_timeout", null, currentQuality);
@@ -2727,14 +3066,24 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
 
         runOnUiThread(() -> {
+            final int layoutRequest=++videoLayoutGeneration;
+            final int panBeforeLayout=videoPanGeneration;
+            final float offsetX=layout_video.getX()-video_origX,offsetY=layout_video.getY()-video_origY;
             layout_video.setLayoutParams(new RelativeLayout.LayoutParams(video_width, video_height));
             Logu.v("改变视频区域大小", video_width + "x" + video_height);
             video_origX = (screen_width - video_width) / 2f;
             video_origY = (screen_height - video_height) / 2f;
 
             layout_video.postDelayed(() -> {
-                layout_video.setX(video_origX);
-                layout_video.setY(video_origY);
+                if(destroyed||isFinishing()||layoutRequest!=videoLayoutGeneration)return;
+                if(isVideoZoomed()){
+                    if(panBeforeLayout==videoPanGeneration){layout_video.setX(video_origX+offsetX);layout_video.setY(video_origY+offsetY);}
+                    boolean touchHadMoved=gesture_moved;
+                    videoMoveBy(0,0);
+                    gesture_moved=touchHadMoved;
+                }else if(panBeforeLayout==videoPanGeneration){
+                    layout_video.setX(video_origX);layout_video.setY(video_origY);
+                }
                 Logu.v("改变视频位置", ((screen_width - video_width) / 2) + "," + ((screen_height - video_height) / 2));
             }, 60); // 别问为什么，问就是必须这么写，要等上面的绘制完成
         });
@@ -2762,6 +3111,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         return;
                     }
                     long now = SystemClock.elapsedRealtime();
+                    if (onLongClick && now - lastLongPressSampleAt >= 5000L)
+                        recordLongPressPerformance("sample", currentPosition, now);
                     long acceptedPosition = progressGuard.accept(currentPosition, video_all, now);
                     if (acceptedPosition < 0L) {
                         Logu.e("player-progress", "忽略异常播放进度：" + currentPosition);
@@ -2783,6 +3134,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     if (windowLoader != null) windowLoader.update(acceptedPosition, video_all);
                     correctDashAudioDrift(acceptedPosition);
                     video_now = (int) acceptedPosition;
+                    final long tickCid = cid;
+                    runOnUiThread(() -> {
+                        if (destroyed || tickCid != cid) return;
+                        updateSegmentSkip(acceptedPosition);
+                        if (lastPgcSave < 0 || now - lastPgcSave >= 5000) {
+                            savePgcProgress(acceptedPosition); lastPgcSave = now;
+                        }
+                    });
                     if (video_now_last != video_now) { // 检测进度是否在变动
                         video_now_last = video_now;
                         saveInteractionProgress(false);
@@ -2805,7 +3164,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                             viewPointAdapter.updateCurrentPosition((int) curr_sec);
                         }
 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
+                        if (mediaSession != null) {
                             updateMediaSessionPlaybackState();
                         }
                     }
@@ -2816,7 +3175,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void onlineChange() {
-        if (!SharedPreferencesUtil.getBoolean("player_show_online", false) || isLiveMode || aid == 0 || cid == 0)
+        if (onlineTimer != null) {
+            onlineTimer.cancel();
+            onlineTimer = null;
+        }
+        if (!SharedPreferencesUtil.getBoolean("player_show_online", false) || !isOnlineVideo || isLiveMode || aid == 0 || cid == 0)
             return;
 
         onlineTimer = new Timer();
@@ -3247,6 +3610,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         if (protobufSegments != null) {
             BiliProtobufDanmakuParser parser = new BiliProtobufDanmakuParser();
             parser.sharedPreferences = SharedPreferencesUtil.getSharedPreferences();
+            parser.setOwnUserHash(master.flame.danmaku.danmaku.util.SelfDanmakuStyle.senderHash(
+                    SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)));
             parser.setDanmakuSegments(protobufSegments);
             return parser;
         }
@@ -3267,6 +3632,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         loader.load(stream);
         BaseDanmakuParser parser = new BiliDanmukuParser();
         parser.sharedPreferences = SharedPreferencesUtil.getSharedPreferences();
+        parser.setOwnUserHash(master.flame.danmaku.danmaku.util.SelfDanmakuStyle.senderHash(
+                SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)));
         IDataSource<?> dataSource = loader.getDataSource();
         parser.load(dataSource);
         return parser;
@@ -3352,8 +3719,23 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     public void addDanmaku(String text, int color, int textSize, int type, int backgroundColor) {
+        addDanmaku(text, color, textSize, type, backgroundColor, false);
+    }
+
+    public void addOwnDanmaku(String text, int color) {
+        addDanmaku(text, color, 25, 1, 0, true);
+    }
+
+    public void addLiveChatDanmaku(String nickname, String content, long senderMid) {
+        long ownMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        String text = SharedPreferencesUtil.getBoolean("player_danmaku_showsender", true)
+                && nickname != null && !nickname.isEmpty() ? nickname + "：" + content : content;
+        addDanmaku(text, Color.WHITE, 25, 1, 0, ownMid > 0 && ownMid == senderMid);
+    }
+
+    private void addDanmaku(String text, int color, int textSize, int type, int backgroundColor, boolean own) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            runOnUiThread(() -> addDanmaku(text, color, textSize, type, backgroundColor));
+            runOnUiThread(() -> addDanmaku(text, color, textSize, type, backgroundColor, own));
             return;
         }
         if ((!isLiveMode && !isDanmakuVisible) || mContext == null || mDanmakuView == null) return;
@@ -3365,6 +3747,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         danmaku.priority = 1;
         danmaku.textColor = color;
         danmaku.backgroundColor = backgroundColor;
+        if (own) master.flame.danmaku.danmaku.util.SelfDanmakuStyle.apply(danmaku);
         danmaku.textSize = textSize * (mContext.getDisplayer().getDensity() - 0.6f);
         danmaku.time = mDanmakuView.getCurrentTime() + 100;
         mDanmakuView.addDanmaku(danmaku);
@@ -3414,6 +3797,15 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @SuppressLint("SetTextI18n")
     public void changeVolume(Boolean add_or_cut) {
         if (audioManager == null) return;
+        if (SharedPreferencesUtil.getBoolean(com.RobinNotBad.BiliClient.player.PlaybackVolume.ENABLED, false)) {
+            int value = com.RobinNotBad.BiliClient.player.PlaybackVolume.adjust(
+                    SharedPreferencesUtil.getInt(com.RobinNotBad.BiliClient.player.PlaybackVolume.GAIN, 100),
+                    PlayerSettingsUtil.getVolumeStep(), add_or_cut);
+            SharedPreferencesUtil.putInt(com.RobinNotBad.BiliClient.player.PlaybackVolume.GAIN, value);
+            applyPlaybackGain();
+            showPlaybackAdjustment("播放器音量：" + value + "%（系统" + getVolumePercent() + "%）");
+            autohideReset(); return;
+        }
         int volumeNow = audioManager.getStreamVolume(STREAM_MUSIC);
         int volumeMax = audioManager.getStreamMaxVolume(STREAM_MUSIC);
         int stepPercent = PlayerSettingsUtil.getVolumeStep();
@@ -3426,6 +3818,64 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         int show = (int) ((float) volumeNow / (float) volumeMax * 100);
         showPlaybackAdjustment("音量：" + show + "%");
         autohideReset();
+    }
+
+    private void applyPlaybackGain() {
+        float gain = com.RobinNotBad.BiliClient.player.PlaybackVolume.gain(
+                SharedPreferencesUtil.getBoolean(com.RobinNotBad.BiliClient.player.PlaybackVolume.ENABLED, false),
+                SharedPreferencesUtil.getInt(com.RobinNotBad.BiliClient.player.PlaybackVolume.GAIN, 100));
+        try { if (ijkPlayer != null) ijkPlayer.setVolume(gain, gain); } catch (RuntimeException ignored) { }
+        try { if (dashAudioPlayer != null) dashAudioPlayer.setVolume(gain, gain); } catch (RuntimeException ignored) { }
+    }
+
+    private void updateSeekButtons() {
+        if (findViewById(R.id.seek_back_btn) == null) return;
+        boolean show = !isLiveMode && SharedPreferencesUtil.getBoolean(
+                com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_BUTTONS, false);
+        int seconds = com.RobinNotBad.BiliClient.player.PlaybackVolume.seekSeconds(SharedPreferencesUtil.getInt(
+                com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_SECONDS, 10));
+        int[] ids = {R.id.seek_back_btn, R.id.seek_forward_btn};
+        for (int i = 0; i < ids.length; i++) {
+            final boolean forward = i == 1;
+            TextView button = findViewById(ids[i]); button.setVisibility(show ? View.VISIBLE : View.GONE);
+            button.setText((forward ? "+" : "−") + seconds + "s");
+            button.setContentDescription((forward ? "快进" : "快退") + seconds + "秒");
+            button.setOnClickListener(view -> {
+                if (!screenLocked && !isLiveMode && isPrepared && ijkPlayer != null)
+                    seekToPosition(ijkPlayer.getCurrentPosition() + (forward ? 1 : -1) * seconds * 1000L);
+            });
+        }
+        if (menu_opened) updateExpandedMenuBounds();
+    }
+
+    private void savePgcProgress(long position) {
+        if (bangumiPlayback) com.RobinNotBad.BiliClient.util.BangumiProgressStore.save(
+                pgcAccount, pgcSeason, pgcEpisode, cid, position);
+    }
+
+    private void refreshSegmentSkipPosition() {
+        if (!bangumiPlayback || !isPrepared || ijkPlayer == null) return;
+        try { updateSegmentSkip(Math.max(0, ijkPlayer.getCurrentPosition())); }
+        catch (RuntimeException ignored) { if (segmentSkipButton != null) segmentSkipButton.setVisibility(View.GONE); }
+    }
+
+    private void updateSegmentSkip(long position) {
+        if (segmentSkipButton == null || segmentPolicy == null) return;
+        int mode = com.RobinNotBad.BiliClient.player.PlaybackSegments.normalizeMode(SharedPreferencesUtil.getInt(
+                com.RobinNotBad.BiliClient.player.PlaybackSegments.MODE, 1));
+        com.RobinNotBad.BiliClient.player.PlaybackSegments.Segment segment =
+                bangumiPlayback && isPrepared && !isLiveMode ? segmentPolicy.at(position, video_all) : null;
+        segmentSkipButton.setVisibility(segment != null && mode == 1 && !screenLocked ? View.VISIBLE : View.GONE);
+        if (segment != null) {
+            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) segmentSkipButton.getLayoutParams();
+            int available = layout_control.getWidth() - params.leftMargin - params.rightMargin;
+            String label = available < playerDp(76) ? "跳过" : "跳过" + segment.label();
+            if (!label.contentEquals(segmentSkipButton.getText())) segmentSkipButton.setText(label);
+            segmentSkipButton.setContentDescription("跳过" + segment.label());
+        }
+        if (segment == null || !isPlaying || isSeeking || videoSeekPending || audioSeekPending) return;
+        long target = segmentPolicy.automaticTarget(position, video_all, SystemClock.elapsedRealtime(), mode);
+        if (target >= 0) { seekToPosition(target); MsgUtil.showMsg("已跳过" + segment.label()); }
     }
 
     private final Runnable hideVolume = () -> text_volume.setVisibility(View.GONE);
@@ -3486,6 +3936,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             y = video_y_max;
 
         if (layout_video.getX() != x || layout_video.getY() != y) {
+            videoPanGeneration++;
             // Logu.v("gesture","moveto:" + x + "," + y);
             layout_video.setX(x);
             layout_video.setY(y);
@@ -3508,7 +3959,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
         if (btn_control != null)
             btn_control.setImageResource(R.drawable.btn_player_play);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
+        if (mediaSession != null) {
             updateMediaSessionPlaybackState();
         }
     }
@@ -3531,7 +3982,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
         if (btn_control != null)
             btn_control.setImageResource(R.drawable.btn_player_pause);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
+        if (mediaSession != null) {
             updateMediaSessionPlaybackState();
         }
         if (!isActivityVisible && backgroundPlaybackActive) {
@@ -3571,6 +4022,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
     private void startPlaybackPlayers() {
         try {
+            applyPlaybackGain();
             if (hasDashAudio() && dashAudioPlayer != null && ijkPlayer != null) {
                 if (videoSeekPending || audioSeekPending) return;
                 if (dashPlaybackStartedOnce && (videoTrackBuffering || audioTrackBuffering)) return;
@@ -3903,6 +4355,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             details.put("quality", quality);
             details.put("prepared", isPrepared);
             details.put("playing", isPlaying);
+            details.put("playback_speed", currentPlaybackSpeed);
+            details.put("longpress", onLongClick);
+            if (onLongClick) details.put("held_ms", Math.max(0L, SystemClock.elapsedRealtime() - longPressStartedAt));
             details.put("live", isLiveMode);
             details.put("online", isOnlineVideo);
             details.put("relay", NetWorkUtil.isRelayActive());
@@ -3954,6 +4409,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @Override
     protected void onPause() {
         super.onPause();
+        try { if (isPrepared && ijkPlayer != null) savePgcProgress(Math.max(0, ijkPlayer.getCurrentPosition())); }
+        catch (RuntimeException ignored) { }
+        stopLongPressSpeed();
         cancelPendingSingleTap();
         Logu.v("onPause");
         stopHardwareVolumeRepeat();
@@ -3988,7 +4446,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @Override
     protected void onResume() {
         super.onResume();
+        applyPlaybackGain();
+        updateSeekButtons();
+        refreshSegmentSkipPosition();
         Logu.v("onResume");
+        refreshCollectionPlaybackSettings();
         boolean returningFromBackgroundPlayback = backgroundPlaybackActive;
         isActivityVisible = true;
         backgroundLeaveRequested = false;
@@ -4040,6 +4502,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             eventBusInit = false;
         }
         destroyed = true;
+        favoriteGeneration++;
+        playbackSwitchGeneration++;
+        if (playbackOptionsMenu != null) playbackOptionsMenu.dismiss();
         stopDanmakuLoading();
         onLongClick = false;
         danmakuPausedByBuffering = false;
@@ -4068,7 +4533,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             liveRelayProxy = null;
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
+        if (mediaSession != null) {
             mediaSession.release();
             mediaSession = null;
         }
@@ -4208,56 +4673,85 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void initMediaSession() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            return;
+        if (mediaSession != null) return;
+        PlayerMediaSessionController.Callback callback = new PlayerMediaButtonReceiver.ToggleCallback() {
+            @Override public void onPlay() { runOnUiThread(() -> setMediaPlaying(true)); }
+            @Override public void onPause() { runOnUiThread(() -> setMediaPlaying(false)); }
+            @Override public void onToggle() { runOnUiThread(() -> setMediaPlaying(!desiredMediaPlaying())); }
+            @Override public void onSkipToNext() { runOnUiThread(() -> skipPlaybackItem(true)); }
+            @Override public void onSkipToPrevious() { runOnUiThread(() -> skipPlaybackItem(false)); }
+            @Override public void onSeekTo(long pos) {
+                runOnUiThread(() -> { if (isPrepared) seekToPosition(pos); updateMediaSessionPlaybackState(); });
+            }
+        };
+        try {
+            mediaSession = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+                    ? new PlayerMediaSessionApi21(this, callback) : new PlayerMediaSessionLegacy(this, callback);
+        } catch (RuntimeException error) {
+            Logu.w("media-buttons", "系统媒体控制不可用：" + error.getClass().getSimpleName());
         }
-        mediaSession = new PlayerMediaSessionApi21(this, new PlayerMediaSessionController.Callback() {
-            @Override
-            public void onPlay() {
-                runOnUiThread(() -> {
-                    if (!isPlaying) {
-                        playerResume();
-                        updateMediaSessionPlaybackState();
-                    }
-                });
-            }
+    }
 
-            @Override
-            public void onPause() {
-                runOnUiThread(() -> {
-                    if (isPlaying) {
-                        playerPause();
-                        updateMediaSessionPlaybackState();
-                    }
-                });
-            }
+    private void setMediaPlaying(boolean playing) {
+        if (destroyed) return;
+        if (!isPrepared || playbackSwitchInFlight) {
+            if (playbackSwitchInFlight) pendingMediaPlaybackRequest = playing;
+            resumeAfterPrepare = playing; return;
+        }
+        if (playing && !isPlaying) playerResume();
+        else if (!playing && isPlaying) playerPause();
+        updateMediaSessionPlaybackState();
+    }
 
-            @Override
-            public void onSkipToNext() {
-                runOnUiThread(() -> {
-                    if (hasMultiplePages() && currentPageIndex < pagenames.size() - 1) {
-                        switchToPage(currentPageIndex + 1);
-                    }
-                });
-            }
+    private boolean desiredMediaPlaying() {
+        return !isPrepared || playbackSwitchInFlight ? resumeAfterPrepare : isPlaying;
+    }
 
-            @Override
-            public void onSkipToPrevious() {
-                runOnUiThread(() -> {
-                    if (hasMultiplePages() && currentPageIndex > 0) {
-                        switchToPage(currentPageIndex - 1);
-                    }
-                });
-            }
+    private boolean handleMediaKey(int key) {
+        switch (key) {
+            case KeyEvent.KEYCODE_MEDIA_NEXT: skipPlaybackItem(true); return true;
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS: skipPlaybackItem(false); return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY: setMediaPlaying(true); return true;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_STOP: setMediaPlaying(false); return true;
+            case KeyEvent.KEYCODE_HEADSETHOOK:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: setMediaPlaying(!desiredMediaPlaying()); return true;
+            default: return false;
+        }
+    }
 
-            @Override
-            public void onSeekTo(long pos) {
-                runOnUiThread(() -> {
-                    seekToPosition(pos);
-                    updateMediaSessionPlaybackState();
-                });
-            }
-        });
+    private boolean isMediaKey(int key) {
+        return key == KeyEvent.KEYCODE_MEDIA_NEXT || key == KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                || key == KeyEvent.KEYCODE_MEDIA_PLAY || key == KeyEvent.KEYCODE_MEDIA_PAUSE
+                || key == KeyEvent.KEYCODE_MEDIA_STOP || key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                || key == KeyEvent.KEYCODE_HEADSETHOOK;
+    }
+
+    private boolean skipPlaybackItem(boolean next) {
+        if (destroyed || !isPrepared || playbackSwitchInFlight || favoritePaging || isLiveMode) return false;
+        if (hasMultiplePages() && (next ? currentPageIndex + 1 < cids.size() : currentPageIndex > 0)) {
+            switchToPage(currentPageIndex + (next ? 1 : -1));
+            return true;
+        }
+        if (!collectionPlaybackActive()) return false;
+        if (favoriteSession != null) {
+            requestFavoriteAdvance(next ? 2 : 3);
+            return true;
+        }
+        long current = currentQueueKey();
+        long target = next ? collectionQueue.nextForUser(current, collectionPlaybackOrder, new java.util.Random())
+                : collectionQueue.previousForUser(current, collectionPlaybackOrder);
+        if (target > 0 && target != current) { switchPlaybackItem(target, 0, true, !next); return true; }
+        return false;
+    }
+
+    private void refreshMediaControls() {
+        boolean wanted = collectionPlaybackActive() || SharedPreferencesUtil.getBoolean(
+                SharedPreferencesUtil.PLAYER_MEDIA_SESSION_ENABLE, false);
+        if (wanted && mediaSession == null) initMediaSession();
+        if (!wanted && mediaSession != null) { mediaSession.release(); mediaSession = null; }
+        updateMediaSessionMetadata();
+        updateMediaSessionPlaybackState();
     }
 
     private void updateMediaSessionMetadata() {
@@ -4274,6 +4768,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         long position = isPrepared && ijkPlayer != null ? ijkPlayer.getCurrentPosition() : 0;
         boolean hasNext = hasMultiplePages() && currentPageIndex < pagenames.size() - 1;
         boolean hasPrevious = hasMultiplePages() && currentPageIndex > 0;
+        if (collectionPlaybackActive()) {
+            hasNext |= collectionQueue.canSkipNext(currentQueueKey(), collectionPlaybackOrder);
+            hasNext |= favoriteSession != null && !favoriteSession.bottom
+                    && collectionPlaybackOrder != CollectionPlaybackQueue.REVERSE;
+            hasPrevious |= collectionQueue.previousForUser(currentQueueKey(), collectionPlaybackOrder) > 0;
+            hasPrevious |= favoriteSession != null && !favoriteSession.bottom
+                    && collectionPlaybackOrder == CollectionPlaybackQueue.REVERSE;
+        }
         mediaSession.updatePlaybackState(isPlaying, position, hasNext, hasPrevious);
     }
 
@@ -4327,23 +4829,35 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 ? Math.max(0, display.widthPixels - location[0] - root.getWidth()) : 0));
         int bottom = Math.max(0, safe.bottom - (unrotated
                 ? Math.max(0, display.heightPixels - location[1] - root.getHeight()) : 0));
+        int radiusLeft=0, radiusRight=0;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && insets != null
                 && insets.toWindowInsets() != null) {
             android.view.WindowInsets platform = insets.toWindowInsets();
             for (int position : new int[]{android.view.RoundedCorner.POSITION_TOP_LEFT,
                     android.view.RoundedCorner.POSITION_BOTTOM_LEFT}) {
                 android.view.RoundedCorner corner = platform.getRoundedCorner(position);
-                if (corner != null) left = Math.max(left, corner.getRadius());
+                if (corner != null) radiusLeft = Math.max(radiusLeft, corner.getRadius());
             }
             for (int position : new int[]{android.view.RoundedCorner.POSITION_TOP_RIGHT,
                     android.view.RoundedCorner.POSITION_BOTTOM_RIGHT}) {
                 android.view.RoundedCorner corner = platform.getRoundedCorner(position);
-                if (corner != null) right = Math.max(right, corner.getRadius());
+                if (corner != null) radiusRight = Math.max(radiusRight, corner.getRadius());
             }
             // Rounded corners need horizontal clearance for the header controls.
             // Treating their radius as a top inset moved the whole header down.
         }
-        applyPlayerSafeArea(left, top, right, bottom);
+        applyPlayerSafeArea(left, top, right, bottom, radiusLeft, radiusRight,
+                screen_round || Build.VERSION.SDK_INT>=23 && getResources().getConfiguration().isScreenRound());
+    }
+
+    private void applyPlayerSafeArea(int left,int top,int right,int bottom,int radiusLeft,int radiusRight,boolean round) {
+        View root=findViewById(R.id.root_layout);if(root==null)return;
+        playerCornerLeft=radiusLeft;playerCornerRight=radiusRight;
+        int limit=Math.round(16 * getResources().getDisplayMetrics().density);
+        left=Math.max(left,com.RobinNotBad.BiliClient.player.PlayerSafeAreaPolicy.cornerInset(radiusLeft,root.getWidth(),root.getHeight(),round,limit));
+        right=Math.max(right,com.RobinNotBad.BiliClient.player.PlayerSafeAreaPolicy.cornerInset(radiusRight,root.getWidth(),root.getHeight(),round,limit));
+        applyPlayerSafeArea(left,top,right,bottom);
+        ViewCompat.postOnAnimation(root, this::recordPlayerGeometry);
     }
 
     private void applyPlayerSafeArea(int insetLeft, int insetTop, int insetRight, int insetBottom) {
@@ -4361,8 +4875,37 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         applyPlayerMargins(findViewById(R.id.sv_danmaku), playerSafeLeft, playerSafeTop, playerSafeRight, playerSafeBottom);
         applyPlayerPadding(text_progress, playerSafeLeft, 0, 0, 0);
         applyPlayerPadding(text_online, 0, 0, playerSafeRight, 0);
-        applyPlayerPadding(bottom_buttons, playerSafeLeft, 0, playerSafeRight, playerSafeBottom);
+        // bottom_control already carries the safe margins; applying them again
+        // inside the row squeezes and shifts every playback/volume hit target.
+        applyPlayerPadding(bottom_buttons, 0, 0, 0, 0);
         applyPlayerPadding(layout_card_bg, playerSafeLeft, playerSafeTop, playerSafeRight, playerSafeBottom);
+        updateExpandedMenuBounds();
+    }
+
+    private void recordPlayerGeometry() {
+        if (destroyed) return;
+        View root=findViewById(R.id.root_layout),bottom=findViewById(R.id.bottom_control);
+        if(root==null||bottom==null||root.getWidth()<=0)return;
+        try {
+            JSONObject d=new JSONObject();
+            d.put("viewport",root.getWidth()+"x"+root.getHeight());d.put("rotation",root.getRotation());
+            d.put("density",getResources().getDisplayMetrics().density);d.put("font_scale",getResources().getConfiguration().fontScale);
+            d.put("round_setting",screen_round);d.put("round_display",Build.VERSION.SDK_INT>=23&&getResources().getConfiguration().isScreenRound());
+            d.put("corner_left",playerCornerLeft);d.put("corner_right",playerCornerRight);
+            d.put("safe",playerSafeLeft+","+playerSafeTop+","+playerSafeRight+","+playerSafeBottom);
+            d.put("bottom_size",bottom.getWidth()+"x"+bottom.getHeight());
+            d.put("row_padding",bottom_buttons.getPaddingLeft()+","+bottom_buttons.getPaddingRight()+","+bottom_buttons.getPaddingBottom());
+            if(Build.VERSION.SDK_INT>=31&&playerWindowInsets!=null&&playerWindowInsets.toWindowInsets()!=null){
+                StringBuilder radii=new StringBuilder();
+                for(int pos=0;pos<4;pos++){
+                    android.view.RoundedCorner corner=playerWindowInsets.toWindowInsets().getRoundedCorner(pos);
+                    if(pos>0)radii.append(',');radii.append(corner==null?0:corner.getRadius());
+                }
+                d.put("corner_radii",radii.toString());
+            }
+            String signature=d.toString();if(signature.equals(lastPlayerGeometry))return;
+            lastPlayerGeometry=signature;DiagnosticLogManager.record("player_layout",d);
+        }catch(Exception ignored){ }
     }
 
     private void applyPlayerMargins(View view, int left, int top, int right, int bottom) {
@@ -4405,6 +4948,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void initUI() {
+        segmentSkipButton = findViewById(R.id.segment_skip_btn);
+        segmentSkipButton.setOnClickListener(view -> {
+            if (screenLocked || !bangumiPlayback || !isPrepared || ijkPlayer == null || segmentPolicy == null) return;
+            if (com.RobinNotBad.BiliClient.player.PlaybackSegments.normalizeMode(SharedPreferencesUtil.getInt(
+                    com.RobinNotBad.BiliClient.player.PlaybackSegments.MODE, 1)) != 1) return;
+            com.RobinNotBad.BiliClient.player.PlaybackSegments.Segment segment = segmentPolicy.at(ijkPlayer.getCurrentPosition(), video_all);
+            if (segment != null) { seekToPosition(segment.endMs); segmentSkipButton.setVisibility(View.GONE); }
+        });
         DisplayMetrics displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
         screen_width = displayMetrics.widthPixels;// 获取屏宽
@@ -4528,10 +5079,15 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 right_second.setVisibility(View.GONE);
                 btn_menu.setImageResource(R.mipmap.morehide);
             } else {
+                if (expandedMenuAvailableWidth() < playerDp(32)) {
+                    showCompactPlayerTools();
+                    return;
+                }
                 right_second.setVisibility(View.VISIBLE);
                 btn_menu.setImageResource(R.mipmap.moreshow);
             }
             menu_opened = !menu_opened;
+            updateExpandedMenuBounds();
         });
 
         btn_lock.setVisibility(SharedPreferencesUtil.getBoolean(
@@ -4563,17 +5119,24 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 layout_card_bg.setVisibility(View.GONE);
                 card_danmaku_send.setVisibility(View.GONE);
                 view1.setEnabled(false);
+                final long sendAid = aid, sendCid = cid, sendPosition = video_now;
+                final long sendMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+                final boolean sendLive = isLiveMode;
 
                 CenterThreadPool.run(() -> {
                     try {
                         MsgUtil.showMsg("正在发送~");
 
-                        if (isLiveMode) {
+                        if (sendLive) {
                             JSONObject result = DanmakuApi.sendLiveDanmaku(
-                                    aid, danmakuText, ToolsUtil.getRgb888(Color.WHITE));
+                                    sendAid, danmakuText, ToolsUtil.getRgb888(Color.WHITE));
                             if (result.optInt("code", -1) == 0) {
                                 MsgUtil.showMsg("发送成功喵~");
-                                runOnUiThread(() -> editText.setText(""));
+                                runOnUiThread(() -> {
+                                    if (!destroyed && isLiveMode && aid == sendAid
+                                            && sendMid == SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)
+                                            && editText.getText().toString().trim().equals(danmakuText)) editText.setText("");
+                                });
                             } else {
                                 String message = result.optString(
                                         "message", result.optString("msg", "未知错误"));
@@ -4581,14 +5144,16 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                             }
                         } else {
                             int result = DanmakuApi.sendVideoDanmakuByAid(
-                                    cid, danmakuText, aid, video_now,
+                                    sendCid, danmakuText, sendAid, sendPosition,
                                     ToolsUtil.getRgb888(Color.WHITE), 1);
 
                             if (result == 0) {
                                 MsgUtil.showMsg("发送成功喵~");
                                 runOnUiThread(() -> {
-                                    addDanmaku(danmakuText, Color.WHITE);
-                                    editText.setText("");
+                                    if (destroyed || isLiveMode || aid != sendAid || cid != sendCid
+                                            || sendMid != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) return;
+                                    addOwnDanmaku(danmakuText, Color.WHITE);
+                                    if (editText.getText().toString().trim().equals(danmakuText)) editText.setText("");
                                 });
                             } else {
                                 MsgUtil.showMsg("发送失败：" + result);
@@ -4629,6 +5194,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     video_now = seekPos;
                     video_now_last = seekPos;
                     seekPlaybackPlayers(seekPos);
+                    updateSegmentSkip(seekPos);
                     if (isDanmakuRenderingEnabled()) {
                         mDanmakuView.seekTo((long) seekPos);
                     }
@@ -4672,6 +5238,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         DiagnosticLogManager.recordKey(this, keyCode);
+        if (isMediaKey(keyCode)) { if (event.getRepeatCount() == 0) handleMediaKey(keyCode); return true; }
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             if (!isPrepared) return super.onKeyDown(keyCode, event);
             if (heldVolumeKeyCode != keyCode) {
@@ -4707,6 +5274,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         DiagnosticLogManager.recordKey(this, keyCode);
+        if (isMediaKey(keyCode)) return true;
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             if (heldVolumeKeyCode == keyCode) stopHardwareVolumeRepeat();
             return isPrepared;
@@ -4774,6 +5342,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 mDanmakuView.seekTo(boundedPosition);
             }
             saveLocalPlaybackProgress(boundedPosition);
+            savePgcProgress(boundedPosition);
+            updateSegmentSkip(boundedPosition);
         }
     }
 
@@ -4811,6 +5381,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private void toggleAudioOnlyMode() {
         boolean oldMode = isAudioOnlyMode;
         isAudioOnlyMode = !isAudioOnlyMode;
+        if (!isLocalAudioFile) cachedUserAudioOnlyMode = isAudioOnlyMode;
         // 不保存状态，仅在当前播放会话中切换
 
         if (hasDashAudio()) {
@@ -4989,7 +5560,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private boolean hasMultiplePages() {
-        return pagenames != null && pagenames.size() > 1;
+        return pagenames != null && cids != null && pagenames.size() > 1
+                && pagenames.size() == cids.size();
     }
 
     private void showPageSelectorCard() {
@@ -5015,54 +5587,122 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void switchToPage(int pageIndex) {
-        if (!hasMultiplePages() || pageIndex < 0 || pageIndex >= pagenames.size())
-            return;
-        if (pageIndex == currentPageIndex)
-            return;
+        if (!hasMultiplePages() || cids == null || pageIndex < 0 || pageIndex >= cids.size()
+                || pageIndex == currentPageIndex) return;
+        switchPlaybackItem(aid, pageIndex, false);
+    }
 
-        currentPageIndex = pageIndex;
-        long newCid = cids.get(pageIndex);
-        String newTitle = pagenames.get(pageIndex);
+    private void switchPlaybackItem(long targetAid, int pageIndex, boolean collectionAdvance) {
+        switchPlaybackItem(targetAid, pageIndex, collectionAdvance, false);
+    }
 
-        MsgUtil.showMsg("切换到 P" + (pageIndex + 1));
-
+    private void switchPlaybackItem(long targetAid, int pageIndex, boolean collectionAdvance, boolean backwards) {
+        if (destroyed || playbackSwitchInFlight) return;
+        final boolean cached = !isOnlineVideo && cachedPlaybackSnapshot != null;
+        if (!isOnlineVideo && !cached) return;
+        if (cached && (targetAid < 1 || targetAid > cachedPlaybackSnapshot.items.size())) return;
+        final CachedPlaybackItem cachedItem = cached ? cachedPlaybackSnapshot.items.get((int) targetAid - 1) : null;
+        final int generation = ++playbackSwitchGeneration;
+        final long sourceAid = aid;
+        final boolean wasPlaying = isPlaying;
+        final ArrayList<String> sourceNames = pagenames;
+        final boolean sourceFinished = finishWatching;
+        final ArrayList<Long> sourceCids = cids;
+        final long sourceMid = mid;
+        final String sourceTitle = videoTitle;
+        playbackSwitchInFlight = true;
+        collectionSwitchInFlight = collectionAdvance;
+        pendingMediaPlaybackRequest = null;
+        resumeAfterPrepare = wasPlaying;
+        if (collectionAdvance) {
+            playbackCompleted = true;
+            isPlaying = false;
+            pausePlaybackPlayers();
+            if (isDanmakuRenderingEnabled()) mDanmakuView.pause();
+            btn_control.setImageResource(R.drawable.btn_player_play);
+        }
         CenterThreadPool.run(() -> {
             try {
-                PlayerData playerData = new PlayerData();
-                playerData.aid = aid;
-                playerData.cid = newCid;
-                playerData.title = newTitle;
-                playerData.mid = mid;
-                playerData.qn = SharedPreferencesUtil.getInt("play_qn", 0);
-                playerData.pagenames = pagenames;
-                playerData.cids = cids;
-                playerData.currentPageIndex = currentPageIndex;
-
-                if (isOnlineVideo) {
-                    PlayerApi.getVideoForPlayback(playerData);
-                } else {
-                    runOnUiThread(() -> MsgUtil.showMsg("本地视频暂不支持切换分P"));
-                    return;
-                }
-
+                PlayerData current = new PlayerData();
+                current.aid = sourceAid;
+                current.mid = sourceMid;
+                current.title = sourceTitle;
+                current.pagenames = sourceNames;
+                current.cids = sourceCids;
+                current.danmakuCount = knownDanmakuCount;
+                current.qn = com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.requestedQuality(this,manualPlaybackQuality);
+                PlayerData playerData = cached ? cachedItem.load(this)
+                        : collectionPlaybackSource.loadItem(targetAid, pageIndex, current);
                 runOnUiThread(() -> {
-                    if (destroyed)
+                    if (destroyed || generation != playbackSwitchGeneration || sourceAid != aid) return;
+                    if (collectionAdvance && !collectionPlaybackActive()) {
+                        playbackSwitchInFlight = collectionSwitchInFlight = false;
+                        if (favoritePlaybackToken != null) stopFavoritePlayback();
                         return;
-
-                    final boolean wasPlaying = isPlaying;
+                    }
+                    if (collectionAdvance && !cached) reportFinishedCollectionItem(aid, cid,
+                            Math.max(0L, ijkPlayer == null ? 0 : ijkPlayer.getCurrentPosition()) / 1000);
+                    long sourcePosition = Math.max(0L, ijkPlayer == null ? progress_history : ijkPlayer.getCurrentPosition());
+                    if (cached) saveLocalPlaybackProgress(sourcePosition);
+                    else playlistResumePoints.remember(aid, cid, sourcePosition, video_all, sourceFinished);
+                    final int restoreProgress = cached ? 0 : (int) playlistResumePoints.position(
+                            playerData.aid, playerData.cid, playerData.cidHistory, playerData.progress);
+                    saveInteractionProgress(true);
+                    isPrepared = false;
+                    stopDanmakuLoading();
                     releasePlaybackPlayers();
                     if (mDanmakuView != null) {
                         mDanmakuView.release();
                         mDanmakuView = null;
                     }
 
-                    cid = newCid;
+                    if (cached) {
+                        currentCachedIndex = (int) targetAid - 1;
+                        localProgressFolderLocator = cachedItem.folder;
+                        localProgressFile = null;
+                        localSubtitleRoot = cachedItem.subtitles;
+                        if (!isActivityVisible && backgroundPlaybackActive && isAudioOnlyMode)
+                            cachedUserAudioOnlyMode = true;
+                        isLocalAudioFile = cachedItem.audioOnly;
+                        isAudioOnlyMode = isLocalAudioFile || cachedUserAudioOnlyMode;
+                        getIntent().putExtra(CachedPlaybackSnapshot.INDEX, currentCachedIndex)
+                                .putExtra("local_progress_folder", localProgressFolderLocator)
+                                .putExtra("local_subtitle_root", localSubtitleRoot)
+                                .putExtra("audio_only", isLocalAudioFile);
+                    }
+                    danmakuFile = null;
+                    localRuntimeRetryCount = 0;
+                    aid = playerData.aid;
+                    cid = playerData.cid;
+                    mid = playerData.mid;
+                    pagenames = playerData.pagenames;
+                    cids = playerData.cids;
+                    currentPageIndex = playerData.currentPageIndex;
+                    playbackSwitchInFlight = collectionSwitchInFlight = false;
+                    foregroundRestorePosition = -1L;
+                    initialEdgeId = 0;
+                    interactionRestoreSnapshot = InteractionProgressStore.load(aid);
+                    playbackCompleted = false;
+                    video_now = video_now_last = 0;
+                    getIntent().putExtra("aid", aid).putExtra("cid", cid).putExtra("mid", mid)
+                            .putExtra("url", playerData.videoUrl).putExtra("title", playerData.title)
+                            .putExtra("audio_url", playerData.audioUrl).putExtra("danmaku", playerData.danmakuUrl)
+                            .putExtra("danmaku_count", playerData.danmakuCount).putExtra("progress", restoreProgress)
+                            .putExtra("currentPageIndex", currentPageIndex);
+                    getIntent().putStringArrayListExtra("backup_urls", playerData.videoBackupUrls);
+                    getIntent().putStringArrayListExtra("audio_backup_urls", playerData.audioBackupUrls);
+                    getIntent().putStringArrayListExtra("pagenames", pagenames);
+                    long[] newCids = new long[cids == null ? 0 : cids.size()];
+                    for (int i = 0; i < newCids.length; i++) newCids[i] = cids.get(i);
+                    getIntent().putExtra("cids", newCids);
                     setPlaybackUrls(playerData.videoUrl, playerData.videoBackupUrls);
                     setDashAudioUrls(playerData.audioUrl, playerData.audioBackupUrls);
                     danmaku_url = playerData.danmakuUrl;
-                    resetDanmakuSource(knownDanmakuCount);
-                    text_title.setText(newTitle);
-                    videoTitle = newTitle;
+                    hasDanmaku = danmaku_url != null && !danmaku_url.isEmpty();
+                    resetDanmakuSource(playerData.danmakuCount);
+                    if (collectionQueue != null) collectionQueue.recordPlayed(currentQueueKey(), backwards);
+                    text_title.setText(playerData.title);
+                    videoTitle = playerData.title;
 
                     if (playerData.qnStrList != null && playerData.qnValueList != null) {
                         qnStrList = playerData.qnStrList;
@@ -5072,12 +5712,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
                     loading_info.setVisibility(View.VISIBLE);
                     anim_loading.start();
-                    loading_text0.setText("加载P" + (pageIndex + 1));
+                    loading_text0.setText(collectionAdvance ? "加载合集视频" : "加载P" + (pageIndex + 1));
                     isPrepared = false;
                     isPlaying = false;
-                    resumeAfterPrepare = wasPlaying;
+                    resumeAfterPrepare = pendingMediaPlaybackRequest == null ? wasPlaying : pendingMediaPlaybackRequest;
+                    pendingMediaPlaybackRequest = null;
                     finishWatching = false;
-                    progress_history = 0;
+                    progress_history = restoreProgress;
+                    if (cached) loadLocalPlaybackProgress();
                     subtitles = null;
                     subtitleLinks = null;
                     subtitle_selected = -1;
@@ -5099,6 +5741,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     ijkPlayer = createMediaPlayer();
                     mDanmakuView = findViewById(R.id.sv_danmaku);
 
+                    updateCollectionPlaybackControls();
                     setDisplay();
 
                     layout_control.postDelayed(() -> CenterThreadPool.run(() -> {
@@ -5137,10 +5780,468 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    MsgUtil.err(e);
-                    MsgUtil.showMsg("切换失败");
+                    if (destroyed || generation != playbackSwitchGeneration) return;
+                    playbackSwitchInFlight = collectionSwitchInFlight = false;
+                    recordPlayerAction("collection_item_failed", e.getClass().getSimpleName(), currentQuality);
+                    MsgUtil.showMsg(collectionAdvance ? getString(R.string.collection_playback_failed) : "切换分P失败");
+                    if (collectionAdvance && favoriteSession != null) {
+                        favoritePageFailed = true;
+                        favoriteRetryAction = backwards ? 3 : 2;
+                        updateCollectionPlaybackControls();
+                    }
+                    stopBackgroundPlaybackService();
                 });
             }
+        });
+    }
+
+
+    private void loadFavoriteQueue() {
+        final int generation = ++favoriteGeneration;
+        final String token = favoritePlaybackToken;
+        final long account = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        final long sourceAid = aid;
+        collectionQueueLoading = true;
+        collectionQueueFailed = false;
+        CenterThreadPool.run(() -> {
+            try {
+                com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.Session session =
+                        com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.read(this, token, account);
+                if (explicitOnlineQueue != session.isUploads()) throw new IOException("播放列表类型不匹配");
+                CollectionPlaybackQueue queue = session.queue();
+                if (!queue.contains(sourceAid)) throw new IOException("当前视频不在播放列表中");
+                runOnUiThread(() -> {
+                    if (destroyed || generation != favoriteGeneration || aid != sourceAid) return;
+                    collectionQueueLoading = false;
+                    if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) {
+                        collectionQueueFailed = true;
+                        favoritePendingCompletion = false;
+                        stopFavoritePlayback();
+                        updateCollectionPlaybackControls();
+                        return;
+                    }
+                    favoriteSession = session;
+                    collectionQueue = queue;
+                    collectionQueue.recordPlayed(aid, false);
+                    collectionQueueLoadedForAid = aid;
+                    updateCollectionPlaybackControls();
+                    if (favoritePendingCompletion && collectionPlaybackActive()) {
+                        favoritePendingCompletion = false;
+                        requestFavoriteAdvance(1);
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (destroyed || generation != favoriteGeneration) return;
+                    collectionQueueLoading = false;
+                    collectionQueueFailed = true;
+                    collectionQueueLoadedForAid = sourceAid;
+                    if (favoritePendingCompletion) stopFavoritePlayback();
+                    favoritePendingCompletion = false;
+                    updateCollectionPlaybackControls();
+                    MsgUtil.showMsg(onlineQueueLabel() + "列表加载失败，请重试或从列表重新播放");
+                });
+            }
+        });
+    }
+
+    private void cancelFavoriteLoading() {
+        if (favoritePlaybackToken == null) return;
+        boolean completedWaiting = favoritePendingCompletion || favoritePaging && favoriteRetryAction == 1;
+        if (favoritePaging || collectionQueueLoading) favoriteGeneration++;
+        favoritePaging = false;
+        collectionQueueLoading = false;
+        if (completedWaiting) stopFavoritePlayback();
+        favoritePendingCompletion = false;
+    }
+
+    /** 1 = completion, 2/3 = explicit next/previous, 4 = prepare a full shuffle. */
+    private void requestFavoriteAdvance(int action) {
+        if (!collectionPlaybackActive()) return;
+        if (favoritePaging) {
+            if (action == 1) favoritePendingCompletion = true;
+            return;
+        }
+        if (action == 1 && hasMultiplePages() && currentPageIndex + 1 < cids.size()) {
+            switchPlaybackItem(aid, currentPageIndex + 1, true);
+            return;
+        }
+        long next = action == 3 ? collectionQueue.previousForUser(aid, collectionPlaybackOrder)
+                : action == 2 ? collectionQueue.nextForUser(aid, collectionPlaybackOrder, new java.util.Random())
+                : collectionQueue.next(aid, collectionPlaybackOrder, new java.util.Random());
+        boolean needPages = !favoriteSession.bottom && (action == 4
+                || action != 3 && collectionPlaybackOrder == CollectionPlaybackQueue.SHUFFLE
+                || next < 0 && (action == 3 ? collectionPlaybackOrder == CollectionPlaybackQueue.REVERSE
+                : collectionPlaybackOrder != CollectionPlaybackQueue.REVERSE));
+        if (!needPages) {
+            finishFavoriteAdvance(action);
+            return;
+        }
+        final int generation = ++favoriteGeneration;
+        final long sourceAid = aid;
+        final com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.Session accepted = favoriteSession;
+        favoritePaging = true;
+        favoritePageFailed = false;
+        favoriteRetryAction = action;
+        CenterThreadPool.run(() -> {
+            com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.Session progress = accepted;
+            Exception failure = null;
+            try {
+                int pages = 0;
+                do {
+                    if (generation != favoriteGeneration) return;
+                    if (accepted.account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                        throw new IOException("账号已切换");
+                    progress = favoritePlaybackSource.nextPage(progress, () -> {
+                        if (generation != favoriteGeneration) throw new java.util.concurrent.CancellationException();
+                        if (accepted.account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                            throw new IOException("账号已切换");
+                    });
+                    if (generation != favoriteGeneration) return;
+                    if (accepted.account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                        throw new IOException("账号已切换");
+                    com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.save(this, favoritePlaybackToken, progress);
+                    pages++;
+                    // Empty/duplicate pages may be legitimate after edits. Keep progress but bound one retry.
+                    if (action != 4 && pages >= 5 && !progress.bottom
+                            && progress.queue().next(sourceAid, CollectionPlaybackQueue.SEQUENTIAL,
+                            new java.util.Random()) < 0) throw new IOException(accepted.label() + "分页暂无新视频，请重试继续加载");
+                } while (!progress.bottom && (action == 4 || collectionPlaybackOrder == CollectionPlaybackQueue.SHUFFLE
+                        || progress.queue().next(sourceAid, CollectionPlaybackQueue.SEQUENTIAL, new java.util.Random()) < 0));
+            } catch (Exception error) { failure = error; }
+            final com.RobinNotBad.BiliClient.api.FavoritePlaybackSource.Session result = progress;
+            final Exception error = failure;
+            runOnUiThread(() -> {
+                if (destroyed || generation != favoriteGeneration || sourceAid != aid) return;
+                favoritePaging = false;
+                if (accepted.account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) {
+                    stopFavoritePlayback();
+                    updateCollectionPlaybackControls();
+                    return;
+                }
+                favoriteSession = result;
+                collectionQueue.append(result.queue().toArray());
+                if (!collectionPlaybackActive()) return;
+                if (error != null) {
+                    favoritePageFailed = true;
+                    if (action == 1 || favoritePendingCompletion) stopFavoritePlayback();
+                    favoritePendingCompletion = false;
+                    MsgUtil.showMsg(onlineQueueLabel() + "列表加载失败，可在左下角菜单重试；账号与网络错误不会自动跳过");
+                    updateCollectionPlaybackControls();
+                    return;
+                }
+                finishFavoriteAdvance(action);
+                if (playbackSwitchInFlight) favoritePendingCompletion = false;
+                if (favoritePendingCompletion && !playbackSwitchInFlight) {
+                    favoritePendingCompletion = false;
+                    requestFavoriteAdvance(1);
+                }
+            });
+        });
+    }
+
+    private void finishFavoriteAdvance(int action) {
+        if (!collectionPlaybackActive()) return;
+        favoritePageFailed = false;
+        if (action == 4) {
+            collectionPlaybackOrder = CollectionPlaybackQueue.SHUFFLE;
+            collectionQueue.clearForwardHistory();
+            MsgUtil.showMsg(getString(R.string.collection_playback_shuffle));
+            updateCollectionPlaybackControls();
+            return;
+        }
+        long target = action == 3 ? collectionQueue.previousForUser(aid, collectionPlaybackOrder)
+                : action == 2 ? collectionQueue.nextForUser(aid, collectionPlaybackOrder, new java.util.Random())
+                : collectionQueue.next(aid, collectionPlaybackOrder, new java.util.Random());
+        if (target == aid && action == 1 && currentPageIndex == 0 && !hasMultiplePages()) {
+            playbackCompleted = false;
+            resetPlaybackTimelineToStart("favorite_repeat");
+            isPlaying = true;
+            startPlaybackPlayers();
+        } else if (target > 0 && (target != aid || action == 1)) {
+            switchPlaybackItem(target, 0, true, action == 3);
+        } else if (action == 1 || action == 2) {
+            stopFavoritePlayback();
+            MsgUtil.showMsg("当前" + onlineQueueLabel() + "列表已播放完毕");
+        }
+        updateCollectionPlaybackControls();
+    }
+
+    private void stopFavoritePlayback() {
+        playbackCompleted = true;
+        isPlaying = false;
+        pausePlaybackPlayers();
+        stopBackgroundPlaybackService();
+        if (isDanmakuRenderingEnabled()) mDanmakuView.pause();
+        btn_control.setImageResource(R.drawable.btn_player_play);
+        updateMediaSessionPlaybackState();
+    }
+
+    private long currentQueueKey() {
+        return cachedPlaybackSnapshot == null ? aid : currentCachedIndex + 1L;
+    }
+
+    private String onlineQueueLabel() {
+        return favoriteSession != null ? favoriteSession.label() : explicitOnlineQueue ? "投稿" : "收藏";
+    }
+
+    private boolean collectionPlaybackAllowed() {
+        return !isLiveMode && (cachedPlaybackSnapshot != null && currentCachedIndex >= 0
+                || isOnlineVideo && aid > 0 && getIntent().getBooleanExtra("collection_playback_allowed", true));
+    }
+
+    private boolean collectionPlaybackActive() {
+        return showCollectionPlayback && collectionPlaybackEnabled && collectionPlaybackAllowed()
+                && (favoritePlaybackToken == null || favoriteSession != null
+                && favoriteSession.account == SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0))
+                && collectionQueue != null && collectionQueue.contains(currentQueueKey());
+    }
+
+    private void refreshCollectionPlaybackSettings() {
+        if (btn_quality == null || getIntent() == null) return;
+        showCollectionPlayback = explicitOnlineQueue || SharedPreferencesUtil.getBoolean(
+                SharedPreferencesUtil.PLAYER_SHOW_COLLECTION_PLAYBACK, false);
+        collectionPlaybackEnabled = explicitOnlineQueue ? explicitOnlineEnabled : SharedPreferencesUtil.getBoolean(
+                SharedPreferencesUtil.PLAYER_COLLECTION_PLAYBACK_ENABLED, true);
+        if (!showCollectionPlayback || !collectionPlaybackEnabled) cancelFavoriteLoading();
+        if (!showCollectionPlayback && collectionSwitchInFlight) {
+            playbackSwitchGeneration++;
+            playbackSwitchInFlight = collectionSwitchInFlight = false;
+        }
+        updateCollectionPlaybackControls();
+        if (showCollectionPlayback && !isOnlineVideo && cachedPlaybackToken != null
+                && cachedPlaybackSnapshot == null && !collectionQueueLoading && !collectionQueueFailed) {
+            loadCachedQueue();
+            return;
+        }
+        if (showCollectionPlayback && isOnlineVideo && collectionPlaybackAllowed()
+                && (collectionQueue == null || !collectionQueue.contains(aid))
+                && !collectionQueueLoading && collectionQueueLoadedForAid != aid) loadCollectionQueue();
+    }
+
+    private void loadCachedQueue() {
+        final String token = cachedPlaybackToken;
+        final String source = video_url;
+        collectionQueueLoading = true;
+        CenterThreadPool.run(() -> {
+            try {
+                CachedPlaybackSnapshot snapshot = CachedPlaybackSnapshot.read(this, token);
+                int index = snapshot.indexOf(source);
+                if (index < 0) throw new IOException("当前缓存不在歌单中");
+                runOnUiThread(() -> {
+                    if (destroyed || isOnlineVideo || !token.equals(cachedPlaybackToken) || !source.equals(video_url)) return;
+                    cachedPlaybackSnapshot = snapshot;
+                    currentCachedIndex = index;
+                    collectionQueue = snapshot.queue();
+                    collectionQueue.recordPlayed(currentQueueKey(), false);
+                    collectionQueueLoading = false;
+                    collectionQueueFailed = false;
+                    updateCollectionPlaybackControls();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (destroyed) return;
+                    collectionQueueLoading = false;
+                    collectionQueueFailed = true;
+                    recordPlayerAction("cached_queue_failed", error.getClass().getSimpleName(), currentQuality);
+                    updateCollectionPlaybackControls();
+                });
+            }
+        });
+    }
+
+    private void loadCollectionQueue() {
+        if (collectionQueueLoading || !collectionPlaybackAllowed()) return;
+        if (favoritePlaybackToken != null) {
+            loadFavoriteQueue();
+            return;
+        }
+        final long sourceAid = aid;
+        collectionQueueLoading = true;
+        collectionQueueFailed = false;
+        CenterThreadPool.run(() -> {
+            try {
+                final CollectionPlaybackQueue queue = collectionPlaybackSource.loadQueue(sourceAid);
+                runOnUiThread(() -> {
+                    if (destroyed || aid != sourceAid) return;
+                    collectionQueueLoading = false;
+                    collectionQueueLoadedForAid = sourceAid;
+                    collectionQueue = queue != null && queue.contains(sourceAid) ? queue : null;
+                    if (collectionQueue != null) collectionQueue.recordPlayed(sourceAid, false);
+                    updateCollectionPlaybackControls();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    if (destroyed || aid != sourceAid) return;
+                    collectionQueueLoading = false;
+                    collectionQueueFailed = true;
+                    collectionQueueLoadedForAid = sourceAid;
+                    recordPlayerAction("collection_queue_failed", e.getClass().getSimpleName(), currentQuality);
+                    updateCollectionPlaybackControls();
+                });
+            }
+        });
+    }
+
+    private void updateCollectionPlaybackControls() {
+        if (btn_collection_order == null) return;
+        boolean active = collectionPlaybackActive();
+        btn_collection_order.setVisibility(active && !screenLocked ? View.VISIBLE : View.GONE);
+        int[] icons = {R.drawable.icon_collection_sequence, R.drawable.icon_collection_shuffle,
+                R.drawable.icon_collection_repeat, R.drawable.icon_collection_reverse};
+        int[] names = {R.string.collection_playback_sequential, R.string.collection_playback_shuffle,
+                R.string.collection_playback_repeat, R.string.collection_playback_reverse};
+        if (favoriteSession != null && favoriteSession.isUploads()) {
+            boolean oldest = favoriteSession.uploadOldest;
+            names[0] = oldest ? R.string.uploader_playback_order_oldest : R.string.uploader_playback_order_newest;
+            names[3] = oldest ? R.string.uploader_playback_order_newest : R.string.uploader_playback_order_oldest;
+            if (!oldest) {
+                icons[0] = R.drawable.icon_collection_reverse;
+                icons[3] = R.drawable.icon_collection_sequence;
+            }
+        }
+        btn_collection_order.setImageResource(icons[collectionPlaybackOrder]);
+        btn_collection_order.setContentDescription(getString(R.string.collection_playback_order,
+                getString(names[collectionPlaybackOrder])));
+        btn_collection_order.setOnClickListener(v -> {
+            if (screenLocked || playbackSwitchInFlight || favoritePaging) return;
+            if (favoriteSession != null && collectionPlaybackOrder == CollectionPlaybackQueue.SEQUENTIAL
+                    && !favoriteSession.bottom) {
+                MsgUtil.showMsg("正在准备完整" + onlineQueueLabel() + "列表，完成后开启随机播放；可关闭连播取消");
+                requestFavoriteAdvance(4);
+                return;
+            }
+            collectionPlaybackOrder = CollectionPlaybackQueue.nextMode(collectionPlaybackOrder);
+            collectionQueue.clearForwardHistory();
+            updateCollectionPlaybackControls();
+            autohideReset();
+            MsgUtil.showMsg(getString(names[collectionPlaybackOrder]));
+        });
+        btn_loop.setVisibility(!isLiveMode && !active ? View.VISIBLE : View.GONE);
+        btn_auto_next.setVisibility(!isLiveMode && !active && hasMultiplePages() ? View.VISIBLE : View.GONE);
+        boolean quality = !isLiveMode && isOnlineVideo
+                && SharedPreferencesUtil.getBoolean("player_ui_showQualityBtn", true);
+        boolean collectionMenu = showCollectionPlayback && collectionPlaybackAllowed();
+        btn_quality.setVisibility(quality || collectionMenu ? View.VISIBLE : View.GONE);
+        btn_quality.setOnClickListener(v -> {
+            if (screenLocked) return;
+            if (showCollectionPlayback && collectionPlaybackAllowed()) showPlaybackOptions();
+            else showQualitySelectorCard();
+        });
+        refreshMediaControls();
+    }
+
+    private int expandedMenuAvailableWidth() {
+        View toolbar = findViewById(R.id.right_toolbar_scroll);
+        int toolbarWidth = toolbar == null ? playerDp(36) : Math.max(playerDp(28), toolbar.getMeasuredWidth());
+        int reservedLeft = Math.max(playerDp(4), playerSafeLeft) + playerDp(48 + 4);
+        return Math.max(0, layout_control.getWidth() - reservedLeft - toolbarWidth
+                - Math.max(playerDp(4), playerSafeRight));
+    }
+
+    private void updateExpandedMenuBounds() {
+        if (right_second == null || !menu_opened || screenLocked || layout_control.getWidth() <= 0) return;
+        int available = expandedMenuAvailableWidth();
+        if (available < playerDp(32)) {
+            right_second.setVisibility(View.GONE);
+            menu_opened = false;
+            btn_menu.setImageResource(R.mipmap.morehide);
+            layout_control.post(() -> { if (!destroyed && !screenLocked) showCompactPlayerTools(); });
+            return;
+        }
+        View content = findViewById(R.id.right_second_container);
+        content.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        ViewGroup.LayoutParams params = right_second.getLayoutParams();
+        int width = Math.min(available, content.getMeasuredWidth());
+        if (params.width != width) { params.width = width; right_second.setLayoutParams(params); }
+    }
+
+    private void showCompactPlayerTools() {
+        if (screenLocked || destroyed) return;
+        if (playbackOptionsMenu != null) playbackOptionsMenu.dismiss();
+        layout_control.removeCallbacks(hidecon);
+        playbackOptionsMenu = new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this, btn_menu);
+        playbackOptionsMenu.setOnDismissListener(this::autohideReset);
+        int[] ids = {R.id.danmaku_send_btn, R.id.subtitle_btn, R.id.loop_btn, R.id.audio_only_btn,
+                R.id.auto_next_btn, R.id.viewpoint_btn, R.id.seek_back_btn, R.id.seek_forward_btn};
+        int seconds = com.RobinNotBad.BiliClient.player.PlaybackVolume.seekSeconds(SharedPreferencesUtil.getInt(
+                com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_SECONDS, 10));
+        String[] labels = {"发送弹幕", "字幕", "循环播放", "听视频模式", "分P自动连播", "视频看点", "快退"+seconds+"秒", "快进"+seconds+"秒"};
+        for (int i = 0; i < ids.length; i++) if (findViewById(ids[i]).getVisibility() == View.VISIBLE)
+            playbackOptionsMenu.getMenu().add(0, 100 + i, i, labels[i]);
+        playbackOptionsMenu.setOnMenuItemClickListener(item -> {
+            int index = item.getItemId() - 100;
+            if (!screenLocked && index >= 0 && index < ids.length) findViewById(ids[index]).performClick();
+            return true;
+        });
+        playbackOptionsMenu.show();
+    }
+
+    private void showPlaybackOptions() {
+        if (playbackOptionsMenu != null && playbackOptionsMenu.isShowing()) return;
+        layout_control.removeCallbacks(hidecon);
+        playbackOptionsMenu = new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this, btn_quality);
+        playbackOptionsMenu.setOnDismissListener(this::autohideReset);
+        if (isOnlineVideo && SharedPreferencesUtil.getBoolean("player_ui_showQualityBtn", true)) {
+            playbackOptionsMenu.getMenu().add(0, 1, 0, R.string.collection_playback_quality)
+                    .setEnabled(!playbackSwitchInFlight);
+        }
+        int label = collectionQueueLoading ? R.string.collection_playback_loading
+                : collectionQueue != null ? explicitOnlineQueue ? R.string.uploader_playback_menu : R.string.collection_playback
+                : collectionQueueFailed ? R.string.collection_playback_retry : R.string.collection_playback_unavailable;
+        playbackOptionsMenu.getMenu().add(0, 2, 1, label)
+                .setCheckable(collectionQueue != null).setChecked(collectionPlaybackActive())
+                .setEnabled(!collectionQueueLoading && (collectionQueue != null || collectionQueueFailed));
+        if (favoritePageFailed && collectionPlaybackActive())
+            playbackOptionsMenu.getMenu().add(0, 3, 2, "重试加载" + onlineQueueLabel() + "列表").setEnabled(!favoritePaging);
+        playbackOptionsMenu.setOnMenuItemClickListener(item -> {
+            if (screenLocked) return true;
+            if (item.getItemId() == 1) showQualitySelectorCard();
+            else if (item.getItemId() == 3) requestFavoriteAdvance(favoriteRetryAction);
+            else if (collectionQueue == null) loadCollectionQueue();
+            else {
+                collectionPlaybackEnabled = !collectionPlaybackEnabled;
+                if (explicitOnlineQueue) explicitOnlineEnabled = collectionPlaybackEnabled;
+                else SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.PLAYER_COLLECTION_PLAYBACK_ENABLED,
+                            collectionPlaybackEnabled);
+                if (!collectionPlaybackEnabled) cancelFavoriteLoading();
+                if (!collectionPlaybackEnabled && collectionSwitchInFlight) {
+                    playbackSwitchGeneration++;
+                    playbackSwitchInFlight = collectionSwitchInFlight = false;
+                }
+                updateCollectionPlaybackControls();
+                MsgUtil.showMsg(getString(collectionPlaybackEnabled
+                        ? explicitOnlineQueue ? R.string.uploader_playback_on : R.string.collection_playback_on
+                        : explicitOnlineQueue ? R.string.uploader_playback_off : R.string.collection_playback_off));
+            }
+            return true;
+        });
+        playbackOptionsMenu.show();
+    }
+
+    @Override protected void onSaveInstanceState(@NonNull Bundle state) {
+        super.onSaveInstanceState(state);
+        if (isOnlineVideo && !isLiveMode && !bangumiPlayback && isPrepared && ijkPlayer != null)
+            playlistResumePoints.remember(aid, cid, Math.max(0L, ijkPlayer.getCurrentPosition()), video_all, finishWatching);
+        state.putLong("playlist_resume_account", SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0));
+        state.putStringArray("playlist_resume_keys", playlistResumePoints.keys());
+        state.putLongArray("playlist_resume_values", playlistResumePoints.values());
+        state.putInt("collection_order", collectionPlaybackOrder);
+        state.putInt("manual_playback_quality",manualPlaybackQuality);
+        state.putBoolean("explicit_online_enabled", explicitOnlineEnabled);
+        state.putBoolean("cached_user_audio_only", cachedUserAudioOnlyMode);
+        if (collectionQueue != null && favoritePlaybackToken == null) {
+            state.putLong("collection_id", collectionQueue.collectionId);
+            state.putLongArray("collection_aids", collectionQueue.toArray());
+        }
+    }
+
+    private void reportFinishedCollectionItem(long oldAid, long oldCid, long positionSeconds) {
+        if (oldAid <= 0 || oldCid <= 0) return;
+        CenterThreadPool.run(() -> {
+            try { collectionPlaybackSource.reportHistory(oldAid, oldCid, positionSeconds); }
+            catch (Exception error) { Logu.w("collection-history", "进度上报失败：" + error.getClass().getSimpleName()); }
         });
     }
 
@@ -5173,8 +6274,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             adapter.setOnItemClickListener(index -> {
                 layout_card_bg.setVisibility(View.GONE);
                 card_quality_selector.setVisibility(View.GONE);
-                if (index >= 0 && index < qnValueList.length && qnValueList[index] != currentQuality) {
-                    switchQuality(qnValueList[index]);
+                if (index >= 0 && index < qnValueList.length) {
+                    if(qnValueList[index]==currentQuality)manualPlaybackQuality=currentQuality;
+                    else switchQuality(qnValueList[index]);
                 }
             });
             qualitySelectorRecycler
@@ -5186,6 +6288,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void switchQuality(int newQuality) {
+        if (playbackSwitchInFlight) return;
         if (!isOnlineVideo || newQuality == currentQuality) {
             return;
         }
@@ -5204,8 +6307,10 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 playerData.pagenames = pagenames;
                 playerData.cids = cids;
                 playerData.currentPageIndex = currentPageIndex;
-
-                PlayerApi.getVideoForPlayback(playerData);
+                playerData.type = bangumiPlayback ? PlayerData.TYPE_BANGUMI : PlayerData.TYPE_VIDEO;
+                playerData.seasonId = pgcSeason; playerData.episodeId = pgcEpisode; playerData.seasonType = pgcType;
+                if (bangumiPlayback) PlayerApi.getBangumi(playerData);
+                else PlayerApi.getVideoForPlayback(playerData);
 
                 runOnUiThread(() -> {
                     if (destroyed)
@@ -5219,6 +6324,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     setPlaybackUrls(playerData.videoUrl, playerData.videoBackupUrls);
                     setDashAudioUrls(playerData.audioUrl, playerData.audioBackupUrls);
                     currentQuality = playerData.qn;
+                    manualPlaybackQuality=newQuality;
+                    if (bangumiPlayback && segmentPolicy != null) {
+                        segmentPolicy.update(playerData.clipSegments);
+                        getIntent().putExtra("clip_segments", playerData.clipSegments);
+                    }
                     recordPlayerAction("quality_source_ready", null, currentQuality);
 
                     if (playerData.qnStrList != null && playerData.qnValueList != null) {
@@ -5752,7 +6862,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private int getTargetQuality() {
-        int defaultQn = SharedPreferencesUtil.getInt("play_qn", 0);
+        int defaultQn = com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.requestedQuality(this,manualPlaybackQuality);
         if (qnValueList == null || qnValueList.length == 0) {
             return currentQuality > 0 ? currentQuality : defaultQn;
         }
@@ -5857,6 +6967,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             saveLocalPlaybackProgress(Math.max(0L, ijkPlayer.getCurrentPosition()));
             Intent result = new Intent();
             result.putExtra("progress", (int) ijkPlayer.getCurrentPosition());
+            result.putExtra("aid", aid);
+            result.putExtra("cid", cid);
+            result.putExtra("online_video", isOnlineVideo && !isLiveMode && !bangumiPlayback);
             Logu.d("进度回传", String.valueOf(ijkPlayer.getCurrentPosition()));
             setResult(RESULT_OK, result);
         } else

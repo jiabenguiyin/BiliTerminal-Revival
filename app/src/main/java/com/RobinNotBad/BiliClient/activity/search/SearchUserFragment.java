@@ -98,6 +98,9 @@ public class SearchUserFragment extends SearchFragment {
     public void refreshInternal() {
         CenterThreadPool.runOnUiThread(() -> {
             page = 1;
+            bottom = false;
+            showEmptyView(false);
+            setRefreshing(true);
             if (this.userInfoAdapter == null)
                 this.userInfoAdapter = new UserListAdapter(this.requireContext(), this.userInfoList);
             int size_old = this.userInfoList.size();

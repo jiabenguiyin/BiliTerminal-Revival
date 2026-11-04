@@ -162,6 +162,8 @@
             android:exported="false"
             android:label="文章详情"
             android:screenOrientation="locked" />
+        <activity android:name=".activity.settings.SettingStorageActivity" android:exported="false"
+            android:label="存储空间" android:screenOrientation="locked" />
         <activity
             android:name=".activity.settings.SettingPrefActivity"
             android:exported="false"
@@ -416,6 +418,11 @@
             android:label="设置"
             android:screenOrientation="locked" />
         <activity
+            android:name=".activity.user.CreatorArchiveActivity"
+            android:exported="false"
+            android:label="稿件管理"
+            android:screenOrientation="locked" />
+        <activity
             android:name=".activity.user.CreativeCenterActivity"
             android:exported="false"
             android:label="创作中心"
@@ -478,6 +485,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver android:name=".activity.player.PlayerMediaButtonReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
         <meta-data
             android:name="com.xtc.unbind.clearUserData.white_list"
             android:value="true" />

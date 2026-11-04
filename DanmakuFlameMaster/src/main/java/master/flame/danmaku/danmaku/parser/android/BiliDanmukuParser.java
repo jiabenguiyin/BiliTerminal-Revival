@@ -129,6 +129,8 @@ public class BiliDanmukuParser extends BaseDanmakuParser {
                         item.textSize = textSize * (mDispDensity - 0.6f);
                         item.textColor = color;
                         item.textShadowColor = color <= Color.BLACK ? Color.WHITE : Color.BLACK;
+                        master.flame.danmaku.danmaku.util.SelfDanmakuStyle.identify(item,
+                                ownUserHash, values.length > 6 ? values[6] : null);
                     }
                 }
             }

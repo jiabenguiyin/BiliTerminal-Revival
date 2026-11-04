@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.DownloadActivity;
 import com.RobinNotBad.BiliClient.activity.base.BaseActivity;
+import com.RobinNotBad.BiliClient.activity.video.info.VideoInfoActivity;
 import com.RobinNotBad.BiliClient.api.HistoryApi;
 import com.RobinNotBad.BiliClient.api.PlayerApi;
 import com.RobinNotBad.BiliClient.model.PlayerData;
@@ -42,26 +43,40 @@ public class JumpToPlayerActivity extends BaseActivity {
             Intent result = o.getData();
             Logu.d("进度回调", "onActivityResult");
             if (code == RESULT_OK && result != null) {
+                setResult(code, result);
                 int progress = result.getIntExtra("progress", 0);
                 Logu.d("进度回调", String.valueOf(progress));
+
+                long currentAid = result.getLongExtra("aid", 0);
+                if (download == 0 && playerData.isVideo()
+                        && result.getBooleanExtra("online_video", false)
+                        && currentAid > 0 && currentAid != playerData.aid) {
+                    // Queue switches update the player, not the detail beneath it.
+                    // Replace that stale detail (and any old part chooser) once;
+                    // changing only cid within the same video keeps the return path.
+                    startActivity(new Intent(JumpToPlayerActivity.this, VideoInfoActivity.class)
+                            .putExtra("aid", currentAid)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                }
 
                 // History reporting is auxiliary. Do not keep the transition
                 // page open or show an error when a weak network drops it.
                 finish();
                 CenterThreadPool.run(() -> {
-                    reportHistoryBestEffort(progress / 1000);
+                    reportHistoryBestEffort(result.getLongExtra("aid", playerData.aid),
+                            result.getLongExtra("cid", playerData.cid), progress / 1000);
                 });
             }
         }
     });
 
-    private void reportHistoryBestEffort(long progressSeconds) {
-        if (playerData == null || playerData.mid == 0 || playerData.aid == 0) return;
+    private void reportHistoryBestEffort(long aid, long cid, long progressSeconds) {
+        if (aid <= 0 || cid <= 0) return;
 
         Exception lastError = null;
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                HistoryApi.reportHistory(playerData.aid, playerData.cid, progressSeconds);
+                HistoryApi.reportHistory(aid, cid, progressSeconds);
                 Logu.d("进度上报", "成功");
                 return;
             } catch (Exception e) {
@@ -91,7 +106,8 @@ public class JumpToPlayerActivity extends BaseActivity {
 
         download = intent.getIntExtra("download", 0);
 
-        playerData.qn = playerData.qn != -1 ? playerData.qn : SharedPreferencesUtil.getInt("play_qn", 0);
+        playerData.qn = playerData.qn != -1 ? playerData.qn : download==0
+                ? com.RobinNotBad.BiliClient.util.NetworkPlaybackQuality.defaultQuality(this) : SharedPreferencesUtil.getInt("play_qn",0);
 
         requestVideo();
     }

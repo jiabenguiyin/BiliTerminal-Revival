@@ -9,6 +9,10 @@ public final class FollowRelationUtil {
     private FollowRelationUtil() {
     }
 
+    public static boolean isBlockedAttribute(int attribute) {
+        return attribute>=0&&(attribute&128)!=0;
+    }
+
     public static boolean isFollowingAttribute(int attribute) {
         return attribute == 1 || attribute == 2 || attribute == 6;
     }
@@ -38,6 +42,7 @@ public final class FollowRelationUtil {
     }
 
     public static String getButtonText(int relationAttribute, int beRelationAttribute) {
+        if(isBlockedAttribute(relationAttribute))return "已拉黑";
         return getButtonText(
                 isFollowingAttribute(relationAttribute),
                 isFollowingAttribute(beRelationAttribute));

@@ -159,10 +159,18 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 desc.setVisibility(View.VISIBLE);
             }
             switchMaterial.setText(settingSection.name);
-            switchMaterial.setOnCheckedChangeListener(
-                    (buttonView, isChecked) -> SharedPreferencesUtil.putBoolean(settingSection.id, isChecked));
+            switchMaterial.setOnCheckedChangeListener(null);
             switchMaterial.setChecked(SharedPreferencesUtil.getBoolean(settingSection.id,
                     Boolean.parseBoolean(settingSection.defaultValue)));
+            switchMaterial.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                SharedPreferencesUtil.putBoolean(settingSection.id, isChecked);
+                if (isChecked && SharedPreferencesUtil.PLAYER_SHOW_COLLECTION_PLAYBACK.equals(settingSection.id)) {
+                    SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.PLAYER_COLLECTION_PLAYBACK_ENABLED, true);
+                }
+                com.RobinNotBad.BiliClient.util.MsgUtil.showMsg(buttonView.getContext().getString(
+                        isChecked ? R.string.setting_enabled_feedback : R.string.setting_disabled_feedback,
+                        settingSection.name));
+            });
         }
     }
 
@@ -232,11 +240,12 @@ public class SettingsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             String[] strings = (String[]) settingSection.extra;
             first.setText(strings[0]);
             second.setText(strings[1]);
-            third.setText(strings[2]);
+            third.setText(strings.length > 2 ? strings[2] : "");
+            third.setVisibility(strings.length > 2 ? View.VISIBLE : View.GONE);
 
             int selected = SharedPreferencesUtil.getInt(settingSection.id,
                     Integer.parseInt(settingSection.defaultValue));
-            if (selected < 0 || selected > 2) selected = 0;
+            if (selected < 0 || selected >= strings.length) selected = 0;
             group.setOnCheckedChangeListener(null);
             first.setChecked(selected == 0);
             second.setChecked(selected == 1);

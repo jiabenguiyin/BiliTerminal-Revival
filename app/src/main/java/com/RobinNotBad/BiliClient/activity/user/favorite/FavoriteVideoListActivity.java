@@ -7,6 +7,8 @@ import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.base.SearchableVideoListActivity;
 import com.RobinNotBad.BiliClient.activity.video.info.AddFavoriteActivity;
 import com.RobinNotBad.BiliClient.api.FavoriteApi;
+import com.RobinNotBad.BiliClient.api.FavoritePlaybackSource;
+import com.RobinNotBad.BiliClient.activity.video.info.VideoInfoActivity;
 import com.RobinNotBad.BiliClient.model.ApiResult;
 import com.RobinNotBad.BiliClient.model.FavoriteFolder;
 import com.RobinNotBad.BiliClient.model.VideoCard;
@@ -27,15 +29,34 @@ public class FavoriteVideoListActivity extends SearchableVideoListActivity {
     private long pendingDeleteAid = -1;
     private long lastDeleteTap;
     private final Set<Long> deleting = new HashSet<>();
+    private boolean openingPlayback;
+    private volatile String videoOrder="mtime";
+    private androidx.appcompat.app.AlertDialog sortDialog;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         mid = getIntent().getLongExtra("mid", 0);
         fid = getIntent().getLongExtra("fid", 0);
         allFolders = getIntent().getBooleanExtra("all_folders", false);
+        videoOrder=com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.read(SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0),fid);
         setPageName(allFolders ? "全部收藏" : getIntent().getStringExtra("name"));
         startVideoList(savedInstanceState, allFolders ? R.string.library_search_all_favorites
                 : R.string.library_search_favorites);
+        if(!allFolders){
+            android.view.View sort=findViewById(R.id.library_sort);sort.setVisibility(android.view.View.VISIBLE);
+            updateSortDescription();sort.setOnClickListener(v->showSort());
+        }
+    }
+
+    private void updateSortDescription(){findViewById(R.id.library_sort).setContentDescription("排序："+com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.label(videoOrder));}
+    private void showSort(){
+        if(sortDialog!=null&&sortDialog.isShowing())return;
+        long account=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0);
+        sortDialog=com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.dialog(this,videoOrder,order->{
+            if(account!=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0)||isDestroyed())return;
+            videoOrder=order;com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.save(account,fid,order);
+            pendingDeleteAid=-1;updateSortDescription();reloadVideos();
+        });MsgUtil.prepareAlertDialog(sortDialog);sortDialog.show();
     }
 
     @Override protected ApiResult loadVideos(int page, String keyword, ApiResult previous, List<VideoCard> output)
@@ -51,7 +72,7 @@ public class FavoriteVideoListActivity extends SearchableVideoListActivity {
                 targetFid = folders.get(0).id;
             } else targetFid = Long.parseLong(previous.business);
         }
-        ApiResult result = FavoriteApi.getFavoriteVideos(targetFid, page, keyword, allFolders, output);
+        ApiResult result = FavoriteApi.getFavoriteVideos(targetFid, page, keyword, allFolders, output,allFolders?"mtime":videoOrder);
         result.business = String.valueOf(targetFid);
         return result;
     }
@@ -59,6 +80,38 @@ public class FavoriteVideoListActivity extends SearchableVideoListActivity {
     @Override protected boolean deduplicateVideos() { return true; }
 
     @Override protected void configureVideoAdapter() {
+        videoCardAdapter.setOnItemClickListener(position -> {
+            if (openingPlayback || position < 0 || position >= videoList.size()) return;
+            VideoCard selected = videoList.get(position);
+            if (!FavoritePlaybackSource.playableCard(selected)) {
+                MsgUtil.showMsg("该收藏视频已失效");
+                return;
+            }
+            long account = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+            try {
+                FavoritePlaybackSource.Session snapshot = FavoritePlaybackSource.Session.capture(account, mid, fid,
+                        allFolders, playbackQuery(), playbackPage(), playbackCursor(), playbackBottom(), videoList);
+                snapshot.favoriteOrder=allFolders?"mtime":videoOrder;
+                openingPlayback = true;
+                CenterThreadPool.run(() -> {
+                    String token = null;
+                    try { token = FavoritePlaybackSource.create(getApplicationContext(), snapshot); }
+                    catch (Exception error) {
+                        com.RobinNotBad.BiliClient.util.Logu.w("favorite-playlist", error.getClass().getSimpleName());
+                    }
+                    final String playbackToken = token;
+                    runOnUiThread(() -> {
+                        openingPlayback = false;
+                        if (isFinishing() || getLifecycle().getCurrentState() == androidx.lifecycle.Lifecycle.State.DESTROYED
+                                || account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) return;
+                        if (playbackToken == null) MsgUtil.showMsg("收藏连播列表保存失败，本次仅播放该视频");
+                        startActivity(new Intent(this, VideoInfoActivity.class).putExtra("aid", selected.aid)
+                                .putExtra("bvid", selected.bvid).putExtra("type", "video")
+                                .putExtra(FavoritePlaybackSource.TOKEN, playbackToken));
+                    });
+                });
+            } catch (Exception error) { MsgUtil.showMsg("收藏列表已变化，请刷新后重试"); }
+        });
         videoCardAdapter.setOnLongClickListener(position -> {
             if (position < 0 || position >= videoList.size()
                     || mid != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)) return;
@@ -111,4 +164,6 @@ public class FavoriteVideoListActivity extends SearchableVideoListActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == MANAGE_FAVORITES) reloadVideos();
     }
+
+    @Override protected void onDestroy(){if(sortDialog!=null)sortDialog.dismiss();super.onDestroy();}
 }

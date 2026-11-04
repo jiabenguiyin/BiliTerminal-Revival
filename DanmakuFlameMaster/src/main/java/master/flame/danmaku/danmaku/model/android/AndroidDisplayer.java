@@ -420,7 +420,9 @@ public class AndroidDisplayer extends AbsDisplayer<Canvas, Typeface> {
         //draw border
         if (danmaku.borderColor != 0) {
             Paint borderPaint = getBorderPaint(danmaku);
-            canvas.drawRect(_left, _top, _left + danmaku.paintWidth, _top + danmaku.paintHeight,
+            float inset = borderPaint.getStrokeWidth() / 2f;
+            canvas.drawRect(_left + inset, _top + inset,
+                    _left + danmaku.paintWidth - inset, _top + danmaku.paintHeight - inset,
                     borderPaint);
         }
         
@@ -432,6 +434,7 @@ public class AndroidDisplayer extends AbsDisplayer<Canvas, Typeface> {
 
     public Paint getBorderPaint(BaseDanmaku danmaku) {
         BORDER_PAINT.setColor(danmaku.borderColor);
+        BORDER_PAINT.setStrokeWidth(Math.max(1f, Math.min(2f, danmaku.textSize / 10f)));
         return BORDER_PAINT;
     }
 

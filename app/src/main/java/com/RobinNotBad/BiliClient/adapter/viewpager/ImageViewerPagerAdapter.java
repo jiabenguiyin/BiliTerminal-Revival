@@ -6,12 +6,7 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.viewpager.widget.PagerAdapter;
 
-import com.RobinNotBad.BiliClient.util.GlideUtil;
-import com.bumptech.glide.Glide;
-import com.bumptech.glide.load.engine.DiskCacheStrategy;
-import com.github.chrisbanes.photoview.PhotoView;
-import com.bumptech.glide.request.RequestOptions;
-import com.bumptech.glide.request.target.Target;
+import com.RobinNotBad.BiliClient.ui.widget.ImageViewerPage;
 
 import java.util.List;
 
@@ -41,28 +36,15 @@ public final class ImageViewerPagerAdapter extends PagerAdapter {
     @NonNull
     @Override
     public Object instantiateItem(@NonNull ViewGroup container, int position) {
-        PhotoView photoView = new PhotoView(container.getContext());
-        photoView.setMaximumScale(6.25f);
-        container.addView(photoView);
-        RequestOptions requestOptions = new RequestOptions()
-                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC);
-        if (loadOriginal) {
-            requestOptions = requestOptions.override(Target.SIZE_ORIGINAL, Target.SIZE_ORIGINAL);
-        }
-        Glide.with(photoView)
-                .asDrawable()
-                .load(loadOriginal
-                        ? GlideUtil.url_original(imageUrls.get(position))
-                        : GlideUtil.url_hq(imageUrls.get(position)))
-                .apply(requestOptions)
-                .into(photoView);
-        return photoView;
+        ImageViewerPage page = new ImageViewerPage(container.getContext(), imageUrls.get(position), loadOriginal);
+        container.addView(page, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        return page;
     }
 
     @Override
     public void destroyItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
-        PhotoView photoView = (PhotoView) object;
-        Glide.with(container.getContext().getApplicationContext()).clear(photoView);
-        container.removeView(photoView);
+        ImageViewerPage page = (ImageViewerPage) object;
+        page.release();
+        container.removeView(page);
     }
 }

@@ -1,0 +1,13 @@
+<resources>
+    <string name="uploader_playback_entry">投稿连播</string>
+    <string name="uploader_playback_entry_desc">连播该UP主全部可见投稿</string>
+    <string name="uploader_playback_oldest">正序：旧 → 新</string>
+    <string name="uploader_playback_newest">倒序：新 → 旧</string>
+    <string name="uploader_playback_preparing">正在准备投稿连播…</string>
+    <string name="uploader_playback_failed">投稿连播准备失败，请重试</string>
+    <string name="uploader_playback_menu">投稿连播</string>
+    <string name="uploader_playback_on">已开启投稿连播</string>
+    <string name="uploader_playback_off">已关闭投稿连播</string>
+    <string name="uploader_playback_order_oldest">正序播放（旧→新）</string>
+    <string name="uploader_playback_order_newest">倒序播放（新→旧）</string>
+</resources>

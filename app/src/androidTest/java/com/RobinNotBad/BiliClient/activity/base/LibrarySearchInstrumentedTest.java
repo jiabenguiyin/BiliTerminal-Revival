@@ -228,11 +228,11 @@ public class LibrarySearchInstrumentedTest {
         await(() -> all.videoList.size() == 20);
         submit(all, QUERY);
         await(() -> all.videoList.size() == 2 && all.videoList.get(0).aid == 201);
+        await(() -> all.recyclerView.findViewHolderForAdapterPosition(0) != null);
         Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(AddFavoriteActivity.class.getName(), null, false);
         try {
             instrumentation.runOnMainSync(() -> {
-                VideoCardHolder row = all.videoCardAdapter.onCreateViewHolder(new FrameLayout(all), 0);
-                all.videoCardAdapter.onBindViewHolder(row, 0);
+                VideoCardHolder row = (VideoCardHolder) all.recyclerView.findViewHolderForAdapterPosition(0);
                 row.itemView.performLongClick();
             });
             Activity manager = monitor.waitForActivityWithTimeout(7000);
@@ -257,9 +257,9 @@ public class LibrarySearchInstrumentedTest {
         assertTrue(hasRequest("/fav/resource/list", "keyword", QUERY, "type", "0"));
         instrumentation.runOnMainSync(() -> folder.findViewById(R.id.library_clear).performClick());
         await(() -> folder.videoList.size() == 1 && folder.videoList.get(0).aid == 500);
+        await(() -> folder.recyclerView.findViewHolderForAdapterPosition(0) != null);
         instrumentation.runOnMainSync(() -> {
-            VideoCardHolder row = folder.videoCardAdapter.onCreateViewHolder(new FrameLayout(folder), 0);
-            folder.videoCardAdapter.onBindViewHolder(row, 0);
+            VideoCardHolder row = (VideoCardHolder) folder.recyclerView.findViewHolderForAdapterPosition(0);
             row.itemView.performLongClick();
             row.itemView.performLongClick();
         });

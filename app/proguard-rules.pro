@@ -43,3 +43,5 @@
     public static *** d(...);
     public static *** i(...);
 }
+# Keep the API23 media adapter isolated from Android4.x class verification.
+-keep class tv.danmaku.ijk.media.player.AndroidMediaPlayer$MediaDataSourceApi23 { *; }

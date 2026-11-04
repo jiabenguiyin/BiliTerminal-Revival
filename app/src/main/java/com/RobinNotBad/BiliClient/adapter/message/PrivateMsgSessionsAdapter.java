@@ -6,12 +6,10 @@ import android.graphics.Color;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -151,22 +149,12 @@ public class PrivateMsgSessionsAdapter
                         })
                         .create();
                 MsgUtil.prepareAlertDialog(menu);
-                menu.setOnShowListener(dialog -> fitMenuToScreen(menu));
                 menu.show();
                 return true;
             });
         } catch (JSONException err) {
             Log.e("PrivateMsgUserAdapter", err.toString());
         }
-    }
-
-    private void fitMenuToScreen(AlertDialog dialog) {
-        Window window = dialog.getWindow();
-        if (window == null) return;
-        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
-        int margin = Math.max(8, Math.round(8 * metrics.density));
-        int width = Math.max(1, metrics.widthPixels - margin * 2);
-        window.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
     private void confirmRemoveSession(long talkerUid) {
