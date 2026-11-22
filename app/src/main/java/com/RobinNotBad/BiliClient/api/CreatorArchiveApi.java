@@ -16,6 +16,9 @@ public final class CreatorArchiveApi {
     public static final String ALL = "is_pubing,pubed,not_pubed";
     public static final String PUBLISHED = "pubed";
     public static final String UNPUBLISHED = "is_pubing,not_pubed";
+    private static final int ID_SEARCH_PAGES_PER_REQUEST = 4;
+    private static final java.util.regex.Pattern ARCHIVE_ID =
+            java.util.regex.Pattern.compile("(?i:BV)[A-Za-z0-9]{10}|(?i:av)[0-9]+");
     private static final Set<String> PENDING = Collections.newSetFromMap(new ConcurrentHashMap<String,Boolean>());
     private CreatorArchiveApi() { }
 
@@ -117,15 +120,57 @@ public final class CreatorArchiveApi {
         public final ArrayList<Archive> items;
         public final boolean hasMore;
         public final long total;
-        private Page(ArrayList<Archive> items,boolean hasMore,long total){this.items=items;this.hasMore=hasMore;this.total=total;}
+        public final int number;
+
+        private Page(ArrayList<Archive> items, boolean hasMore, long total, int number) {
+            this.items = items;
+            this.hasMore = hasMore;
+            this.total = total;
+            this.number = number;
+        }
     }
-    public static Page archives(Session session,int page,String status)throws IOException,JSONException {
+
+    public static boolean isArchiveId(String keyword) {
+        return ARCHIVE_ID.matcher(keyword).matches();
+    }
+
+    public static Page archives(Session session, int page, String status, String keyword)
+            throws IOException, JSONException {
         verifyAccount(session);
-        if(!ALL.equals(status)&&!PUBLISHED.equals(status)&&!UNPUBLISHED.equals(status))throw new IllegalArgumentException("Unknown archive filter");
-        HttpUrl url=HttpUrl.parse("https://member.bilibili.com/x/web/archives").newBuilder()
-                .addQueryParameter("pn",String.valueOf(Math.max(1,page))).addQueryParameter("ps","20")
-                .addQueryParameter("status",status).addQueryParameter("coop","1").addQueryParameter("interactive","1").build();
-        return parsePage(read(session,url.toString()),session.mid,Math.max(1,page));
+        if (!ALL.equals(status) && !PUBLISHED.equals(status) && !UNPUBLISHED.equals(status))
+            throw new IllegalArgumentException("Unknown archive filter");
+        int firstPage = Math.max(1, page);
+        if (!isArchiveId(keyword)) return archivePage(session, firstPage, status, keyword);
+
+        // ID lookups stay within the same account and filter, with bounded work per tap.
+        boolean byBvid = keyword.regionMatches(true, 0, "BV", 0, 2);
+        String id = keyword.substring(2);
+        if (!byBvid) id = id.replaceFirst("^0+(?!$)", "");
+        ArrayList<Archive> matches = new ArrayList<>(1);
+        Page source;
+        int currentPage = firstPage;
+        do {
+            source = archivePage(session, currentPage, status, "");
+            for (Archive archive : source.items) {
+                boolean matchesId = byBvid
+                        ? archive.bvid.equals("BV" + id) : Long.toString(archive.aid).equals(id);
+                if (matchesId) {
+                    matches.add(archive);
+                    return new Page(matches, false, 1, currentPage);
+                }
+            }
+            currentPage++;
+        } while (source.hasMore && currentPage - firstPage < ID_SEARCH_PAGES_PER_REQUEST);
+        return new Page(matches, source.hasMore, 0, source.number);
+    }
+
+    private static Page archivePage(Session session, int page, String status, String keyword)
+            throws IOException, JSONException {
+        HttpUrl.Builder url = HttpUrl.parse("https://member.bilibili.com/x/web/archives").newBuilder()
+                .addQueryParameter("pn", String.valueOf(page)).addQueryParameter("ps", "20")
+                .addQueryParameter("status", status).addQueryParameter("coop", "1").addQueryParameter("interactive", "1");
+        if (!keyword.isEmpty()) url.addQueryParameter("keyword", keyword);
+        return parsePage(read(session, url.build().toString()), session.mid, page);
     }
     public static Page parsePage(JSONObject response,long mid,int requested)throws IOException,JSONException {
         JSONObject data=data(response),pagination=data.optJSONObject("page");
@@ -141,7 +186,7 @@ public final class CreatorArchiveApi {
                 throw new Failure(-10002,"稿件信息不完整，请刷新重试");
             Archive item=new Archive(mid,archive,row.optJSONObject("stat"));if(seen.add(item.aid))items.add(item);
         }
-        return new Page(items,!items.isEmpty()&&(long)page*size<total,total);
+        return new Page(items,!items.isEmpty()&&(long)page*size<total,total,page);
     }
     public static final class OwnedArchive {
         public final long aid;
@@ -153,12 +198,17 @@ public final class CreatorArchiveApi {
         }
     }
     public static OwnedArchive prepareDelete(Session session,Archive item)throws IOException,JSONException {
+        JSONObject info=ownedData(session,item).getJSONObject("archive");
+        return new OwnedArchive(session,item,info);
+    }
+    private static JSONObject ownedData(Session session,Archive item)throws IOException,JSONException {
         verifyAccount(session);
         if(item==null||item.aid<=0||item.accountMid!=session.mid||item.ownerMid>0&&item.ownerMid!=session.mid)
-            throw new Failure(-403,"仅能删除当前账号本人发布的稿件");
+            throw new Failure(-403,"仅能管理当前账号本人发布的稿件");
         HttpUrl.Builder url=HttpUrl.parse("https://member.bilibili.com/x/vupre/web/archive/view").newBuilder();
         if(item.bvid.isEmpty())url.addQueryParameter("aid",String.valueOf(item.aid));else url.addQueryParameter("bvid",item.bvid);
-        JSONObject info=data(read(session,url.build().toString())).optJSONObject("archive");
+        JSONObject result=data(read(session,url.build().toString()));
+        JSONObject info=result.optJSONObject("archive");
         if(info==null||info.optLong("aid",0)!=item.aid)throw new Failure(-10002,"稿件信息已变化，请刷新后重新选择");
         long owner=info.optLong("mid",item.ownerMid);
         if(owner<=0&&item.state==0) {
@@ -167,7 +217,105 @@ public final class CreatorArchiveApi {
             if(view.optLong("aid",0)==item.aid&&uploader!=null)owner=uploader.optLong("mid",0);
         }
         if(owner!=session.mid)throw new Failure(-403,"无法确认本人稿件归属，请前往官方管理核对");
-        return new OwnedArchive(session,item,info);
+        return result;
+    }
+
+    public static final class TitleEdit {
+        public final long aid;
+        public final String title,bvid;
+        private final Session session;
+        private final Archive archive;
+        private final String payload;
+        private final AtomicBoolean submitted=new AtomicBoolean();
+        private TitleEdit(Session session,Archive archive,JSONObject payload) {
+            this.session=session;this.archive=archive;aid=archive.aid;
+            title=payload.optString("title");bvid=archive.bvid;this.payload=payload.toString();
+        }
+    }
+
+    public static TitleEdit prepareTitleEdit(Session session,Archive item)throws IOException,JSONException {
+        if(item==null||item.state!=0)throw new Failure(-10004,"暂仅支持修改已发布稿件的标题");
+        return new TitleEdit(session,item,titlePayload(ownedData(session,item)));
+    }
+
+    static JSONObject titlePayload(JSONObject data)throws JSONException,Failure {
+        JSONObject archive=data.optJSONObject("archive");
+        JSONArray videos=data.optJSONArray("videos");
+        if(archive==null||archive.optLong("aid",0)<=0||archive.optString("title","").trim().isEmpty()
+                ||archive.optInt("state",Integer.MIN_VALUE)!=0||videos==null||videos.length()==0
+                ||!archive.has("tid")||archive.optInt("tid",0)<=0
+                ||(archive.optInt("copyright",0)!=1&&archive.optInt("copyright",0)!=2)
+                ||!(archive.opt("tag") instanceof String)||archive.optString("tag").trim().isEmpty()
+                ||!(archive.opt("cover") instanceof String)||!(archive.opt("desc") instanceof String))
+            throw new Failure(-10004,"稿件编辑数据不完整，请使用官方管理修改标题");
+        if(archive.optInt("interactive",0)!=0||archive.optInt("charging_pay",0)!=0)
+            throw new Failure(-10004,"此类稿件请前往官方管理修改标题");
+        if(archive.optInt("copyright")==2&&archive.optString("source","").trim().isEmpty())
+            throw new Failure(-10004,"转载来源信息不完整，请使用官方管理");
+        for(int i=0;i<videos.length();i++) {
+            JSONObject part=videos.optJSONObject(i);
+            if(part==null||part.optString("filename","").trim().isEmpty())
+                throw new Failure(-10004,"分P信息不完整，请使用官方管理修改标题");
+        }
+        // Preserve all returned archive metadata and every part, including unknown fields.
+        JSONObject payload=new JSONObject(archive.toString());
+        payload.put("videos",new JSONArray(videos.toString()));
+        return payload;
+    }
+
+    public static String validateTitle(String input)throws Failure {
+        String title=input==null?"":input.trim();
+        if(title.isEmpty()||title.codePointCount(0,title.length())>80)
+            throw new Failure(-10005,"标题需为 1～80 个字符");
+        for(int i=0;i<title.length();i++)if(Character.isISOControl(title.charAt(i)))
+            throw new Failure(-10005,"标题不能包含换行或控制字符");
+        return title;
+    }
+
+    /** True means read-back matched. False means accepted but still awaiting audit/propagation. */
+    public static boolean editTitle(Session session,TitleEdit edit,String input)throws IOException,JSONException {
+        session.requireCurrent();
+        if(edit==null||edit.session!=session||!session.verified||session.csrf.isEmpty())
+            throw new Failure(-101,"标题修改授权已失效，请重新选择稿件");
+        String title=validateTitle(input);
+        if(title.equals(edit.title))throw new Failure(-10005,"标题没有变化");
+        String key=session.mid+":"+edit.aid;
+        if(!PENDING.add(key))throw new Failure(-10003,"该稿件正在处理，请勿重复提交");
+        try {
+            JSONObject previous=new JSONObject(edit.payload);
+            JSONObject fresh=titlePayload(ownedData(session,edit.archive));
+            if(!sameJson(previous,fresh))throw new Failure(-10006,"稿件信息已变化，请重新打开编辑，避免覆盖其他修改");
+            fresh.put("title",title);
+            if(!edit.submitted.compareAndSet(false,true))throw new Failure(-10003,"此修改已提交，请刷新核对结果");
+            session.requireCurrent();
+            String url=HttpUrl.parse("https://member.bilibili.com/x/vu/web/edit").newBuilder()
+                    .addQueryParameter("csrf",session.csrf).build().toString();
+            try(Response response=NetWorkUtil.postJsonOnce(url,fresh.toString(),session.headers())) {
+                if(!response.isSuccessful()||response.body()==null)throw new IOException("标题修改结果未确认");
+                checkCode(new JSONObject(response.body().string()));
+            }
+            try {
+                JSONObject confirmed=ownedData(session,edit.archive).getJSONObject("archive");
+                return title.equals(confirmed.optString("title"));
+            }catch(IOException|JSONException readBackFailure){return false;}
+        }finally{PENDING.remove(key);}
+    }
+
+    static boolean sameJson(Object first,Object second)throws JSONException {
+        if(first instanceof JSONObject&&second instanceof JSONObject) {
+            JSONObject a=(JSONObject)first,b=(JSONObject)second;
+            if(a.length()!=b.length())return false;
+            Iterator<String> keys=a.keys();
+            while(keys.hasNext()){String key=keys.next();if(!b.has(key)||!sameJson(a.get(key),b.get(key)))return false;}
+            return true;
+        }
+        if(first instanceof JSONArray&&second instanceof JSONArray) {
+            JSONArray a=(JSONArray)first,b=(JSONArray)second;
+            if(a.length()!=b.length())return false;
+            for(int i=0;i<a.length();i++)if(!sameJson(a.get(i),b.get(i)))return false;
+            return true;
+        }
+        return first==second||first!=null&&first.equals(second);
     }
     public static void delete(Session session,OwnedArchive item)throws IOException,JSONException {
         session.requireCurrent();

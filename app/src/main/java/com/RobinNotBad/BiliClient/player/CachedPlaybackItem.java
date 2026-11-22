@@ -12,6 +12,7 @@ import java.io.IOException;
 /** References to one already-downloaded item; never contains a remote playback URL. */
 public final class CachedPlaybackItem {
     public String title="", media="", danmaku="", subtitles="", folder="";
+    public String cover="";
     public long aid, cid, collectionId;
     public int collectionIndex=-1, partIndex=-1;
     public boolean audioOnly;
@@ -20,11 +21,12 @@ public final class CachedPlaybackItem {
         return new JSONObject().put("title",title).put("media",media).put("danmaku",danmaku)
                 .put("subtitles",subtitles).put("folder",folder).put("audio_only",audioOnly)
                 .put("aid",aid).put("cid",cid).put("collection_id",collectionId)
-                .put("collection_index",collectionIndex).put("part_index",partIndex);
+                .put("collection_index",collectionIndex).put("part_index",partIndex).put("cover",cover);
     }
     public static CachedPlaybackItem fromJson(JSONObject json) throws JSONException {
         CachedPlaybackItem item=new CachedPlaybackItem();
         item.title=json.optString("title","");item.media=json.getString("media");
+        item.cover=json.optString("cover","");
         item.danmaku=json.optString("danmaku","");item.subtitles=json.optString("subtitles","");
         item.folder=json.optString("folder","");item.audioOnly=json.optBoolean("audio_only");
         item.aid=json.optLong("aid");item.cid=json.optLong("cid");item.collectionId=json.optLong("collection_id");
@@ -50,6 +52,7 @@ public final class CachedPlaybackItem {
         }
         PlayerData data=new PlayerData(PlayerData.TYPE_LOCAL);
         data.title=title;data.videoUrl=media;data.danmakuUrl=danmaku;data.danmakuCount=-1;
+        data.cover=cover;
         data.aid=aid;data.cid=cid;
         return data;
     }

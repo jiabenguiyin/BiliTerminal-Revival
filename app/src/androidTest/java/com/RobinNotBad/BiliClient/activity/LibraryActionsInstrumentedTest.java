@@ -10,6 +10,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import android.view.inputmethod.InputMethodManager;
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.settings.TestActivity;
 import com.RobinNotBad.BiliClient.activity.user.HistoryActivity;
@@ -37,6 +38,10 @@ public class LibraryActionsInstrumentedTest {
     private final ArrayList<Activity> owners=new ArrayList<>();private final ArrayList<VideoReportController> controllers=new ArrayList<>();
     private final ConcurrentLinkedQueue<Request> requests=new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<HttpUrl> historyPosts=new ConcurrentLinkedQueue<>(),reportPosts=new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<HttpUrl> favoriteSortPosts = new ConcurrentLinkedQueue<>();
+    private volatile List<Long> folderSequence = Arrays.asList(1L, 2L, 3L);
+    private volatile boolean manualPaging;
+    private volatile int favoriteSortCode;
     private final Set<Long> removed=Collections.newSetFromMap(new ConcurrentHashMap<Long,Boolean>());
     private final Map<String,Object> saved=new HashMap<>();private AtomicReference<OkHttpClient> clients;private OkHttpClient oldClient;
     private HistoryActivity history;private VideoReportController report;private TestActivity host;
@@ -69,10 +74,38 @@ public class LibraryActionsInstrumentedTest {
                     json.put("code",0).put("data",new JSONObject().put("list",rows).put("has_more",false));
                 }else if(path.endsWith("/fav/folder/created/list"))json.put("code",0).put("data",new JSONObject().put("count",1).put("has_more",false)
                         .put("list",new JSONArray().put(new JSONObject().put("id",10042).put("fid",100).put("mid",42).put("title","测试收藏夹").put("media_count",2))));
-                else if(path.endsWith("/fav/resource/list")){
-                    long first="view".equals(r.url().queryParameter("order"))?2:1;
-                    JSONArray rows=new JSONArray();for(long id:new long[]{first,first==1?2:1})rows.put(new JSONObject().put("id",id).put("type",2).put("title","收藏 "+id).put("cover","").put("bvid","BV"+id).put("upper",new JSONObject().put("name","UP")));
-                    json.put("code",0).put("data",new JSONObject().put("medias",rows).put("has_more",false));
+                else if (path.endsWith("/fav/folder/info")) {
+                    json.put("code", 0).put("data", new JSONObject().put("id", 10042).put("mid", 42)
+                            .put("title", "测试收藏夹").put("attr", 0).put("intro", "").put("cover", ""));
+                } else if (path.endsWith("/fav/resource/sort")) {
+                    Buffer body = new Buffer();
+                    r.body().writeTo(body);
+                    HttpUrl form = HttpUrl.parse("https://fixture.invalid/?" + body.readUtf8());
+                    favoriteSortPosts.add(form);
+                    if (favoriteSortCode == 0) {
+                        ArrayList<Long> reordered = new ArrayList<>(folderSequence);
+                        for (String operation : form.queryParameter("sort").split(",")) {
+                            String[] fields = operation.split(":");
+                            long predecessor = Long.parseLong(fields[0]);
+                            Long moved = Long.valueOf(fields[2]);
+                            if (!reordered.remove(moved)) throw new IOException("Missing moved video");
+                            int target = predecessor == 0 ? 0 : reordered.indexOf(predecessor) + 1;
+                            reordered.add(target, moved);
+                        }
+                        folderSequence = reordered;
+                    }
+                    json.put("code", favoriteSortCode);
+                } else if(path.endsWith("/fav/resource/list")){
+                    String order = r.url().queryParameter("order");
+                    String page = r.url().queryParameter("pn");
+                    List<Long> ids = "view".equals(order) ? Arrays.asList(2L, 1L) : Arrays.asList(1L, 2L);
+                    boolean hasMore = manualPaging && order == null && "1".equals(page);
+                    if (manualPaging && order == null) {
+                        List<Long> sequence = folderSequence;
+                        ids = hasMore ? sequence.subList(0, 2) : sequence.subList(2, sequence.size());
+                    }
+                    JSONArray rows=new JSONArray();for(long id:ids)rows.put(new JSONObject().put("id",id).put("type",2).put("title","收藏 "+id).put("cover","").put("bvid","BV"+id).put("upper",new JSONObject().put("name","UP")));
+                    json.put("code",0).put("data",new JSONObject().put("medias",rows).put("has_more",hasMore));
                 }else json.put("code",-404);
             }catch(IOException e){throw e;}catch(Exception e){throw new IOException(e);}
             return new Response.Builder().request(r).protocol(Protocol.HTTP_1_1).code(200).message("fixture")
@@ -117,8 +150,131 @@ public class LibraryActionsInstrumentedTest {
         await(()->folders.recyclerView.findViewHolderForAdapterPosition(1)!=null);
         ui.runOnMainSync(()->folders.recyclerView.findViewHolderForAdapterPosition(1).itemView.performLongClick());
         AlertDialog menu=(AlertDialog)field(folders,"activeDialog");assertNotNull(menu);assertEquals(3,menu.getListView().getAdapter().getCount());
-        ui.runOnMainSync(()->menu.getListView().performItemClick(null,2,2));await(()->field(folders,"activeDialog")!=null&&field(folders,"activeDialog")!=menu);
-        ui.runOnMainSync(()->((AlertDialog)field(folders,"activeDialog")).getButton(AlertDialog.BUTTON_NEGATIVE).performClick());assertTrue(historyPosts.isEmpty());
+        FavoriteVideoSortActivity editor = launchSortEditor(() -> menu.getListView().performItemClick(null, 2, 2));
+        ui.runOnMainSync(() -> editor.findViewById(R.id.favorite_sort_cancel).performClick());
+        assertTrue(favoriteSortPosts.isEmpty());
+    }
+
+    @Test public void manualSortMovesAcrossPagesAndReloadsAfterSuccessfulSave() throws Exception {
+        manualPaging = true;
+        FavoriteVideoListActivity favorites = open(FavoriteVideoListActivity.class, favoriteFolderIntent());
+        await(() -> favorites.recyclerView.getAdapter().getItemCount() == 2);
+        FavoriteVideoSortActivity editor = editFromFolder(favorites);
+        ui.runOnMainSync(() -> editor.listener.onLoad(2));
+        await(() -> editor.recyclerView.getAdapter().getItemCount() == 3 && !editor.swipeRefreshLayout.isRefreshing());
+        tapMove(editor, 2, 1);
+        assertEquals(Arrays.asList(3L, 1L, 2L), favoriteIds(editor.recyclerView));
+        assertTrue(favoriteSortPosts.isEmpty());
+
+        favoriteSortCode = -400;
+        ui.runOnMainSync(() -> editor.findViewById(R.id.favorite_sort_save).performClick());
+        await(() -> favoriteSortPosts.size() == 1 && editor.findViewById(R.id.favorite_sort_save).isEnabled());
+        assertEquals("mtime", FavoriteVideoOrder.read(42, 10042));
+        assertEquals(Arrays.asList(3L, 1L, 2L), favoriteIds(editor.recyclerView));
+
+        favoriteSortCode = 0;
+        ui.runOnMainSync(() -> editor.findViewById(R.id.favorite_sort_save).performClick());
+        await(() -> editor.isFinishing() && favoriteIds(favorites.recyclerView).equals(Arrays.asList(3L, 1L)));
+        assertEquals(FavoriteVideoOrder.FOLDER_ORDER, FavoriteVideoOrder.read(42, 10042));
+        assertEquals(2, favoriteSortPosts.size());
+        HttpUrl form = favoriteSortPosts.peek();
+        assertEquals("10042", form.queryParameter("media_id"));
+        assertEquals("0:0:3:2", form.queryParameter("sort"));
+        assertEquals("current-csrf", form.queryParameter("csrf"));
+        FavoritePlaybackSource.Session queue = FavoritePlaybackSource.Session.capture(42, 42, 10042, false,
+                "", 1, new ApiResult(), false, (List<VideoCard>) field(favorites.recyclerView.getAdapter(), "videoCardList"));
+        queue.favoriteOrder = FavoriteVideoOrder.FOLDER_ORDER;
+        assertEquals(Arrays.asList(3L, 1L, 2L), new FavoritePlaybackSource().nextPage(queue).ids);
+    }
+
+    @Test public void cancelingManualSortDiscardsDraftWithoutChangingFolder() throws Exception {
+        FavoriteVideoListActivity favorites = open(FavoriteVideoListActivity.class, favoriteFolderIntent());
+        await(() -> favorites.recyclerView.getAdapter().getItemCount() == 2);
+        FavoriteVideoSortActivity editor = editFromFolder(favorites);
+        tapMove(editor, 0, 0);
+        assertEquals(Arrays.asList(2L, 1L), favoriteIds(editor.recyclerView));
+        ui.runOnMainSync(() -> editor.findViewById(R.id.favorite_sort_cancel).performClick());
+        AlertDialog discard = (AlertDialog) field(editor, "dialog");
+        assertNotNull(discard);
+        ui.runOnMainSync(() -> discard.getButton(AlertDialog.BUTTON_POSITIVE).performClick());
+        await(editor::isFinishing);
+        assertTrue(favoriteSortPosts.isEmpty());
+        assertEquals(Arrays.asList(1L, 2L), favoriteIds(favorites.recyclerView));
+    }
+
+    @Test public void longPressDragChangesTheDraftWithoutSubmitting() throws Exception {
+        FavoriteVideoListActivity favorites = open(FavoriteVideoListActivity.class, favoriteFolderIntent());
+        await(() -> favorites.recyclerView.getAdapter().getItemCount() == 2);
+        FavoriteVideoSortActivity editor = editFromFolder(favorites);
+        Rect first = new Rect(), second = new Rect();
+        await(() -> {
+            RecyclerView.ViewHolder upper = editor.recyclerView.findViewHolderForAdapterPosition(0);
+            RecyclerView.ViewHolder lower = editor.recyclerView.findViewHolderForAdapterPosition(1);
+            return editor.hasWindowFocus() && upper != null && lower != null
+                    && upper.itemView.getGlobalVisibleRect(first) && lower.itemView.getGlobalVisibleRect(second);
+        });
+        long down = SystemClock.uptimeMillis();
+        float x = second.centerX(), start = second.centerY(), end = first.top + 4;
+        sendDragEvent(down, MotionEvent.ACTION_DOWN, x, start);
+        SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 180);
+        for (int step = 1; step <= 8; step++) {
+            sendDragEvent(down, MotionEvent.ACTION_MOVE, x, start + (end - start) * step / 8);
+            SystemClock.sleep(18);
+        }
+        sendDragEvent(down, MotionEvent.ACTION_UP, x, end);
+        await(() -> editor.findViewById(R.id.favorite_sort_save).isEnabled());
+        assertEquals(Arrays.asList(2L, 1L), favoriteIds(editor.recyclerView));
+        assertTrue(favoriteSortPosts.isEmpty());
+    }
+
+    private void sendDragEvent(long down, int action, float x, float y) {
+        MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
+        try {
+            event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            ui.sendPointerSync(event);
+        } finally {
+            event.recycle();
+        }
+    }
+
+    private Intent favoriteFolderIntent() {
+        return new Intent().putExtra("mid", 42L).putExtra("fid", 10042L).putExtra("name", "测试收藏夹");
+    }
+
+    private FavoriteVideoSortActivity editFromFolder(FavoriteVideoListActivity favorites) throws Exception {
+        ui.runOnMainSync(() -> favorites.findViewById(R.id.library_sort).performClick());
+        AlertDialog sort = (AlertDialog) field(favorites, "sortDialog");
+        return launchSortEditor(() -> sort.getButton(AlertDialog.BUTTON_POSITIVE).performClick());
+    }
+
+    private FavoriteVideoSortActivity launchSortEditor(Runnable click) throws Exception {
+        Instrumentation.ActivityMonitor monitor = ui.addMonitor(FavoriteVideoSortActivity.class.getName(), null, false);
+        try {
+            ui.runOnMainSync(click);
+            FavoriteVideoSortActivity editor = (FavoriteVideoSortActivity) monitor.waitForActivityWithTimeout(7000);
+            assertNotNull(editor);
+            owners.add(editor);
+            await(() -> editor.recyclerView.getAdapter() != null && editor.recyclerView.getAdapter().getItemCount() == 2);
+            return editor;
+        } finally {
+            ui.removeMonitor(monitor);
+        }
+    }
+
+    private void tapMove(FavoriteVideoSortActivity editor, int position, int action) {
+        ui.runOnMainSync(() -> editor.recyclerView.scrollToPosition(position));
+        await(() -> editor.recyclerView.findViewHolderForAdapterPosition(position) != null);
+        ui.runOnMainSync(() -> editor.recyclerView.findViewHolderForAdapterPosition(position).itemView.performClick());
+        AlertDialog dialog = (AlertDialog) field(editor, "dialog");
+        assertNotNull(dialog);
+        ui.runOnMainSync(() -> dialog.getListView().performItemClick(null, action, action));
+        await(() -> editor.findViewById(R.id.favorite_sort_save).isEnabled());
+    }
+
+    private List<Long> favoriteIds(RecyclerView list) {
+        List<Long> ids = new ArrayList<>();
+        for (VideoCard video : (List<VideoCard>) field(list.getAdapter(), "videoCardList")) ids.add(video.aid);
+        return ids;
     }
     @Test public void historyCancelThenSingleDeleteUsesCookieCsrfOnce()throws Exception{
         openHistory();AlertDialog cancel=historyAction(0);ui.runOnMainSync(()->cancel.getButton(AlertDialog.BUTTON_NEGATIVE).performClick());assertTrue(historyPosts.isEmpty());
@@ -178,6 +334,10 @@ public class LibraryActionsInstrumentedTest {
             assertEquals("soft input mode="+Integer.toHexString(mode),WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE,mode);
         });
         assertTrue(note.hasFocus());
+        InputMethodManager input=(InputMethodManager)host.getSystemService(Context.INPUT_METHOD_SERVICE);
+        long deadline=SystemClock.uptimeMillis()+3000;
+        while(SystemClock.uptimeMillis()<deadline&&!input.isAcceptingText())SystemClock.sleep(100);
+        assertTrue("The description field did not activate the input method",input.isAcceptingText());
         assertTrue(reportPosts.isEmpty());
     }
     @Test public void reportWithRequiredProofUsesOfficialFlowWithoutPosting()throws Exception{

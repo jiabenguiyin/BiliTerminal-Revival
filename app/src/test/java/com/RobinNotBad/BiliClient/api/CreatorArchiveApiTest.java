@@ -49,4 +49,45 @@ public class CreatorArchiveApiTest {
             assertEquals(path.startsWith("/bfs/")?"https://i0.hdslb.com"+path:path.startsWith("//")?"https:"+path:"",cover);
         }
     }
+
+    @Test public void titleValidationRejectsEmptyOverlongAndControlCharacters() throws Exception {
+        assertEquals("新标题",CreatorArchiveApi.validateTitle("  新标题  "));
+        StringBuilder max=new StringBuilder();for(int i=0;i<80;i++)max.append("测");
+        assertEquals(80,CreatorArchiveApi.validateTitle(max.toString()).length());
+        for(String input:new String[]{"", "  ", max+"试", "标题\n换行", "标题\u0000异常"}){
+            try{CreatorArchiveApi.validateTitle(input);fail();}catch(CreatorArchiveApi.Failure expected){assertEquals(-10005,expected.code);}
+        }
+    }
+    private JSONObject titleData() throws Exception {
+        return new JSONObject("{\"archive\":{\"aid\":1001,\"title\":\"原题\",\"state\":0,\"copyright\":1,\"tid\":17,"
+                +"\"tag\":\"测试,手表\",\"cover\":\"//fixture/cover\",\"desc\":\"简介\",\"unknown_flag\":{\"enabled\":1}},"
+                +"\"videos\":[{\"filename\":\"part-1\",\"title\":\"分P一\",\"extra\":1},{\"filename\":\"part-2\",\"title\":\"分P二\"}]}");
+    }
+    @Test public void titlePayloadPreservesUnknownMetadataAndAllPartsWithoutMutatingSource() throws Exception {
+        JSONObject data=titleData(),payload=CreatorArchiveApi.titlePayload(data);
+        payload.put("title","新题");
+        assertEquals("原题",data.getJSONObject("archive").getString("title"));
+        assertEquals(1,payload.getJSONObject("unknown_flag").getInt("enabled"));
+        assertEquals(2,payload.getJSONArray("videos").length());
+        assertEquals("分P二",payload.getJSONArray("videos").getJSONObject(1).getString("title"));
+        payload.getJSONArray("videos").getJSONObject(0).put("title","仅测试副本");
+        assertEquals("分P一",data.getJSONArray("videos").getJSONObject(0).getString("title"));
+    }
+    @Test public void incompleteOrSpecialEditingDataIsRejectedBeforeSubmission() throws Exception {
+        for(String field:new String[]{"tid","tag","desc","cover","copyright"}){
+            JSONObject data=titleData();data.getJSONObject("archive").remove(field);
+            try{CreatorArchiveApi.titlePayload(data);fail(field);}catch(CreatorArchiveApi.Failure expected){}
+        }
+        JSONObject missingPart=titleData();missingPart.getJSONArray("videos").getJSONObject(1).remove("filename");
+        try{CreatorArchiveApi.titlePayload(missingPart);fail();}catch(CreatorArchiveApi.Failure expected){}
+        JSONObject interactive=titleData();interactive.getJSONObject("archive").put("interactive",1);
+        try{CreatorArchiveApi.titlePayload(interactive);fail();}catch(CreatorArchiveApi.Failure expected){}
+    }
+    @Test public void editConflictCheckIgnoresKeyOrderButDetectsChangesToAnyPart() throws Exception {
+        JSONObject before=titleData();JSONObject reordered=new JSONObject(before.toString());
+        assertTrue(CreatorArchiveApi.sameJson(new JSONObject("{\"a\":1,\"b\":2}"),new JSONObject("{\"b\":2,\"a\":1}")));
+        assertTrue(CreatorArchiveApi.sameJson(before,reordered));
+        reordered.getJSONArray("videos").getJSONObject(1).put("title","其他端的新编辑");
+        assertFalse(CreatorArchiveApi.sameJson(before,reordered));
+    }
 }

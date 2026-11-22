@@ -8,6 +8,8 @@ import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 import android.view.View;
 
@@ -21,6 +23,7 @@ import com.RobinNotBad.BiliClient.adapter.dynamic.DynamicHolder;
 import com.RobinNotBad.BiliClient.adapter.viewpager.ViewPagerFragmentAdapter;
 import com.RobinNotBad.BiliClient.helper.TutorialHelper;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
+import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,7 +39,7 @@ public class UserInfoActivity extends BaseActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_simple_viewpager);
+        setContentView(R.layout.activity_user_info);
 
         Intent intent = getIntent();
         long mid = intent.getLongExtra("mid", 114514);
@@ -93,6 +96,44 @@ public class UserInfoActivity extends BaseActivity {
 
         TutorialHelper.showPagerTutorial(this, 3);
 
+    }
+
+    @Override public void setRound() {
+        View header = findViewById(R.id.userinfo_header_group);
+        TextView clock = findViewById(R.id.timeText);
+        if (header == null || clock == null) {
+            super.setRound();
+            return;
+        }
+        boolean round = SharedPreferencesUtil.getBoolean("player_ui_round", false);
+        int side = MsgUtil.dp(this, 8), gap = MsgUtil.dp(this, 4);
+        RelativeLayout.LayoutParams row = new RelativeLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, MsgUtil.dp(this, 36));
+        RelativeLayout.LayoutParams time = new RelativeLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clock.setTextSize(round ? 12 : 14);
+        if (round) {
+            time.addRule(RelativeLayout.CENTER_HORIZONTAL);
+            time.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            time.topMargin = gap / 2;
+            row.addRule(RelativeLayout.CENTER_HORIZONTAL);
+            row.addRule(RelativeLayout.BELOW, R.id.timeText);
+            row.leftMargin = row.rightMargin = roundHeaderSideMargin(clock, gap);
+            row.topMargin = gap;
+        } else {
+            row.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+            row.addRule(RelativeLayout.LEFT_OF, R.id.timeText);
+            row.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            row.leftMargin = side;
+            row.rightMargin = gap;
+            row.topMargin = gap / 2;
+            time.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+            time.addRule(RelativeLayout.CENTER_VERTICAL);
+            time.rightMargin = side;
+        }
+        clock.setAlpha(round ? 0.85f : 1f);
+        header.setLayoutParams(row);
+        clock.setLayoutParams(time);
     }
 
     @Override

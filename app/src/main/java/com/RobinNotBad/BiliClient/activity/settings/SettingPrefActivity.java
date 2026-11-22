@@ -44,6 +44,9 @@ public class SettingPrefActivity extends RefreshListActivity {
                         new String[]{"自动判断", "强制兼容", "强制高性能"}));
                 add(new SettingSection("switch", "新动态数量检查", SharedPreferencesUtil.DYNAMIC_UPDATE_CHECK_ENABLE,
                         getString(R.string.desc_dynamic_update_check_enable), "true"));
+                add(new SettingSection("switch", getString(R.string.dynamic_up_list_enable),
+                        SharedPreferencesUtil.DYNAMIC_UP_LIST_ENABLE,
+                        getString(R.string.dynamic_up_list_enable_desc), "true"));
                 add(new SettingSection("switch", "消息数量检查", SharedPreferencesUtil.MESSAGE_UPDATE_CHECK_ENABLE,
                         getString(R.string.desc_message_update_check_enable), "true"));
                 add(new SettingSection("switch", getString(R.string.message_menu_arrow_dot), SharedPreferencesUtil.MESSAGE_MENU_ARROW_DOT_ENABLE,

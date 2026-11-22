@@ -22,6 +22,8 @@ public class SharedPreferencesUtil {
     public static final String PLAYER_LARGE_DANMAKU_GUARD = "player_large_danmaku_guard";
     public static final String DYNAMIC_UPDATE_CHECK_ENABLE = "dynamic_update_check_enable";
     public static final String DYNAMIC_UPDATE_NUM = "dynamic_update_num";
+    public static final String DYNAMIC_UP_LIST_ENABLE = "dynamic_up_list_enable";
+    public static final String MESSAGE_REFRESH_ON_RETURN = "message_refresh_on_return";
     public static final String MESSAGE_UPDATE_CHECK_ENABLE = "message_update_check_enable";
     public static final String MESSAGE_MENU_ARROW_DOT_ENABLE = "message_menu_arrow_dot_enable";
     public static final String MESSAGE_UPDATE_NUM = "message_update_num";
@@ -44,6 +46,7 @@ public class SharedPreferencesUtil {
     public static final String PLAYER_CACHED_PLAYBACK_SCOPE = "player_cached_playback_scope";
     public static final String PLAYER_COLLECTION_PLAYBACK_ENABLED = "player_collection_playback_enabled";
     public static final String PLAYER_SCREEN_LOCK = "player_screen_lock";
+    public static final String PLAYER_ROUND_SIDE_INSET_DP = "player_round_side_inset_dp";
     public static final String PLAYER_ZOOM_TAP_SEEK = "player_zoom_tap_seek";
     public static final String KEEP_UPDATE_PACKAGE = "keep_update_package";
     public static final String ACCEPT_BETA_UPDATES = "accept_beta_updates";

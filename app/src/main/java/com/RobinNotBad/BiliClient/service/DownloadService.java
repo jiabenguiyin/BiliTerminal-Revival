@@ -168,7 +168,15 @@ public class DownloadService extends Service {
                     PlayerData data = section.toPlayerData();
 
                     // 如果是仅音频下载，使用DASH格式获取音频流
-                    if (section.isAudioOnly()) {
+                    if(section.episodeId>0){
+                        if(section.accountMid>0&&section.accountMid!=com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getLong("mid",0))
+                            throw new JSONException("该番剧缓存任务属于其他账号，请切回原账号后重试");
+                        com.RobinNotBad.BiliClient.api.BangumiDownloadApi.resolve(data);
+                        if(data.qn!=section.qn)throw new JSONException("所选缓存画质暂不可用，请删除该任务后重新选择可用画质");
+                        if(section.accountMid>0&&section.accountMid!=com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getLong("mid",0))
+                            throw new JSONException("账号已变化，请切回原账号后重试缓存");
+                        url_video=data.videoUrl;url_audio=null;
+                    } else if (section.isAudioOnly()) {
                         // Queued/retried downloads must use a fresh URL; the address
                         // saved when the task was created may already have expired.
                         PlayerApi.getAudioForDownload(data);
@@ -183,7 +191,7 @@ public class DownloadService extends Service {
                 } catch (JSONException e) {
                     failed = true;
                     exitCode = ERR_JSON;
-                    failureDetail = "下载链接获取失败，请稍后重试";
+                    failureDetail = section.episodeId>0?e.getMessage():"下载链接获取失败，请稍后重试";
                     setFailure(section.id, failureDetail);
                     refreshDownloadList();
                     continue;
@@ -231,7 +239,7 @@ public class DownloadService extends Service {
                             if (!section.isAudioOnly()) {
                                 toastState("下载字幕");
                                 result = downSubtitles(section.aid, section.cid, path);
-                                if (result != NORMAL) {
+                                if (result != NORMAL && (section.episodeId<=0||result==EXIT_PAUSED||result==EXIT_DELETED)) {
                                     failed = true;
                                     exitCode = result;
                                     continue;
@@ -240,7 +248,7 @@ public class DownloadService extends Service {
                                 toastState("下载弹幕");
                                 result = downDanmaku(url_danmaku,
                                         path.getOrCreateFile("danmaku.xml", "text/xml"));
-                                if (result != NORMAL) {
+                                if (result != NORMAL && (section.episodeId<=0||result==EXIT_PAUSED||result==EXIT_DELETED)) {
                                     failed = true;
                                     exitCode = result;
                                     continue;
@@ -280,7 +288,7 @@ public class DownloadService extends Service {
                             if (!section.isAudioOnly()) {
                                 toastState("下载字幕");
                                 result = downSubtitles(section.aid, section.cid, path);
-                                if (result != NORMAL) {
+                                if (result != NORMAL && (section.episodeId<=0||result==EXIT_PAUSED||result==EXIT_DELETED)) {
                                     failed = true;
                                     exitCode = result;
                                     continue;
@@ -289,7 +297,7 @@ public class DownloadService extends Service {
                                 toastState("下载弹幕");
                                 result = downDanmaku(url_danmaku,
                                         path.getOrCreateFile("danmaku.xml", "text/xml"));
-                                if (result != NORMAL) {
+                                if (result != NORMAL && (section.episodeId<=0||result==EXIT_PAUSED||result==EXIT_DELETED)) {
                                     failed = true;
                                     exitCode = result;
                                     continue;
@@ -974,6 +982,30 @@ public class DownloadService extends Service {
                     database.close();
             }
         });
+    }
+
+    public static boolean queueBangumi(PlayerData data,String parent,String child,String cover)throws IOException {
+        if(data.type!=PlayerData.TYPE_BANGUMI||data.episodeId<=0||data.aid<=0||data.cid<=0||data.qn<=0)
+            throw new IOException("番剧缓存信息不完整");
+        if(data.mid!=com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getLong("mid",0))
+            throw new IOException("账号已变化，请重新选择剧集");
+        try(DownloadSqlHelper helper=new DownloadSqlHelper(BiliTerminal.context);
+            SQLiteDatabase db=helper.getWritableDatabase()){
+            db.beginTransaction();
+            try {
+                try(Cursor exists=db.rawQuery("select id from download where aid=? and cid=?",
+                        new String[]{String.valueOf(data.aid),String.valueOf(data.cid)})){
+                    if(exists.moveToFirst()){db.setTransactionSuccessful();return false;}
+                }
+                String mode=VideoStorageUtil.getCurrentMode(),ref=VideoStorageUtil.getCurrentReference();
+                VideoStorageUtil.taskDirectory(BiliTerminal.context,mode,ref,parent,child,true)
+                        .getOrCreateFile(".DOWNLOADING","application/octet-stream");
+                db.execSQL("insert into download(type,state,aid,cid,qn,title,child,cover,download_type,audio_url,storage_mode,storage_ref,episode_id,season_id,season_type,account_mid) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        new Object[]{"video_multi","none",data.aid,data.cid,data.qn,parent,child,GlideUtil.url(cover),
+                                "video","",mode,ref,data.episodeId,data.seasonId,data.seasonType,data.mid});
+                db.setTransactionSuccessful();return true;
+            }finally{db.endTransaction();}
+        }
     }
 
     public static void start(long first) {

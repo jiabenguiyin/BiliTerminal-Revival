@@ -159,7 +159,13 @@ public class MsgUtil {
                     ? "页面数据暂时不可用，请返回后重试"
                     : message);
             return;
+        } else if (e instanceof com.RobinNotBad.BiliClient.api.PrivateMsgApi.SessionApiException) {
+            int code = ((com.RobinNotBad.BiliClient.api.PrivateMsgApi.SessionApiException) e).code;
+            if (code == -101) showMsgLong("私信列表需要重新登录（-101）");
+            else showMsgLong("私信列表加载失败，B站接口返回错误（" + code + "）");
+            return;
         } else if (e instanceof IOException) {
+            DiagnosticLogManager.recordReportedNetworkError(e);
             showMsg(context.getString(R.string.err_network));
             return;
         } else if (e instanceof JSONException) {

@@ -6,6 +6,8 @@ import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.SeekBar;
+import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 
 import com.RobinNotBad.BiliClient.BiliTerminal;
@@ -20,6 +22,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 public class SettingUIActivity extends BaseActivity {
 
     private EditText uiScaleInput, uiPaddingH, uiPaddingV, density_input;
+    private SeekBar roundSideInsetSeekBar;
+    private TextView roundSideInsetValue;
     private String defaultDensityText;
     private AlertDialog confirmationDialog;
 
@@ -60,6 +64,22 @@ public class SettingUIActivity extends BaseActivity {
                 }
             });
 
+            roundSideInsetSeekBar = findViewById(R.id.round_side_inset_seekbar);
+            roundSideInsetValue = findViewById(R.id.round_side_inset_value);
+            int sideInset = Math.max(0, Math.min(16, SharedPreferencesUtil.getInt(
+                    SharedPreferencesUtil.PLAYER_ROUND_SIDE_INSET_DP, 4)));
+            roundSideInsetSeekBar.setProgress(sideInset);
+            updateRoundSideInsetLabel(sideInset);
+            roundSideInsetSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    updateRoundSideInsetLabel(progress);
+                    if (fromUser) SharedPreferencesUtil.putInt(
+                            SharedPreferencesUtil.PLAYER_ROUND_SIDE_INSET_DP, progress);
+                }
+                @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+                @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+            });
+
             findViewById(R.id.preview).setOnClickListener(view -> {
                 if (!save(true)) return;
                 Intent intent = new Intent();
@@ -72,6 +92,8 @@ public class SettingUIActivity extends BaseActivity {
                 SharedPreferencesUtil.putFloat("dpi", 1.0f);
                 SharedPreferencesUtil.putInt("density", -1);
                 SharedPreferencesUtil.putBoolean("player_ui_round", false);
+                SharedPreferencesUtil.putInt(SharedPreferencesUtil.PLAYER_ROUND_SIDE_INSET_DP, 4);
+                roundSideInsetSeekBar.setProgress(4);
                 uiScaleInput.setText("1.0");
                 uiPaddingH.setText("0");
                 uiPaddingV.setText("0");
@@ -97,6 +119,11 @@ public class SettingUIActivity extends BaseActivity {
             scrollView.setFocusableInTouchMode(true);
             scrollView.requestFocus();
         });
+    }
+
+    private void updateRoundSideInsetLabel(int value) {
+        if (roundSideInsetValue != null)
+            roundSideInsetValue.setText(getString(R.string.round_side_inset_value, value));
     }
 
     private boolean save(boolean reportErrors) {

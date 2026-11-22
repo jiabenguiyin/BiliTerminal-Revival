@@ -96,6 +96,48 @@
                         android:alpha="0.9"
                         android:text="@string/desc_setting_ui_round"
                         android:textSize="11sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="6dp"
+                        android:paddingTop="4dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/round_side_inset_title"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/round_side_inset_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="38dp"
+                            android:gravity="end"
+                            android:text="4 dp"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <SeekBar
+                        android:id="@+id/round_side_inset_seekbar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:max="16"
+                        android:minHeight="40dp"
+                        android:paddingHorizontal="8dp"
+                        android:progress="4" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="6dp"
+                        android:alpha="0.75"
+                        android:text="@string/round_side_inset_desc"
+                        android:textSize="10sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

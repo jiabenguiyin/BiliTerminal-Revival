@@ -53,6 +53,17 @@
             android:focusableInTouchMode="true"
             android:orientation="vertical">
 
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/login_file_action"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp">
+                <TextView android:id="@+id/login_file_label"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:minHeight="44dp" android:padding="8dp" android:gravity="center"
+                    android:text="从文本文件导入" android:textSize="13sp" />
+            </com.google.android.material.card.MaterialCardView>
+
             <TextView
                 android:id="@+id/desc"
                 android:layout_width="match_parent"
@@ -79,6 +90,7 @@
 
             <EditText
                 android:id="@+id/loginInput"
+                android:saveEnabled="false"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -88,7 +100,7 @@
                 android:padding="8dp"
                 android:text=""
                 android:textSize="13sp"
-                android:inputType="textMultiLine" />
+                android:inputType="textMultiLine|textNoSuggestions" />
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/confirm"

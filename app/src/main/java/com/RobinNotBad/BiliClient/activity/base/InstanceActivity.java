@@ -10,10 +10,13 @@ import com.RobinNotBad.BiliClient.activity.MenuActivity;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 public class InstanceActivity extends BaseActivity {
+    private boolean menuClickEnabled;
     private final Runnable unreadObserver=this::refreshMessageIndicator;
     protected void refreshMessageIndicator() {
-        com.RobinNotBad.BiliClient.ui.MessageBadgeStyle.title(findViewById(R.id.pageName),R.drawable.arrow_down,
-                com.RobinNotBad.BiliClient.util.MessageUnreadCounter.getCount());
+        boolean hasMenu = menuClickEnabled;
+        com.RobinNotBad.BiliClient.ui.MessageBadgeStyle.title(findViewById(R.id.pageName),
+                hasMenu ? R.drawable.arrow_down : R.drawable.arrow_back,
+                hasMenu ? com.RobinNotBad.BiliClient.util.MessageUnreadCounter.getCount() : 0);
     }
     @Override protected void onResume() {
         super.onResume();
@@ -33,6 +36,7 @@ public class InstanceActivity extends BaseActivity {
     }
 
     public void setMenuClick() {
+        menuClickEnabled = true;
         findViewById(R.id.top).setOnClickListener(view -> menuClick.run());
         refreshMessageIndicator();
     }

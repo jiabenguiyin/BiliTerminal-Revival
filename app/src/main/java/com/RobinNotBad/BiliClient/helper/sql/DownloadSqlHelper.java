@@ -12,7 +12,7 @@ import com.RobinNotBad.BiliClient.util.VideoStorageUtil;
 
 public class DownloadSqlHelper extends SQLiteOpenHelper {
     public DownloadSqlHelper(@Nullable Context context) {
-        super(context, "download.db", null, 6);
+        super(context, "download.db", null, 7);
     }
 
     @Override
@@ -30,7 +30,8 @@ public class DownloadSqlHelper extends SQLiteOpenHelper {
                 "audio_url TEXT," +
                 "storage_mode TEXT," +
                 "storage_ref TEXT," +
-                "last_error TEXT DEFAULT '')");
+                "last_error TEXT DEFAULT '',"+
+                "episode_id BIGINT DEFAULT 0,season_id BIGINT DEFAULT 0,season_type INTEGER DEFAULT 1,account_mid BIGINT DEFAULT 0)");
     }
 
     @Override
@@ -50,6 +51,12 @@ public class DownloadSqlHelper extends SQLiteOpenHelper {
                                 FileUtil.getVideoDownloadPath().getAbsolutePath()});
             }
             if (oldVersion < 6) db.execSQL("ALTER TABLE download ADD COLUMN last_error TEXT DEFAULT ''");
+            if (oldVersion < 7) {
+                db.execSQL("ALTER TABLE download ADD COLUMN episode_id BIGINT DEFAULT 0");
+                db.execSQL("ALTER TABLE download ADD COLUMN season_id BIGINT DEFAULT 0");
+                db.execSQL("ALTER TABLE download ADD COLUMN season_type INTEGER DEFAULT 1");
+                db.execSQL("ALTER TABLE download ADD COLUMN account_mid BIGINT DEFAULT 0");
+            }
         } catch (Throwable e) {
             MsgUtil.err(e);
         }

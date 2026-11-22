@@ -8,12 +8,15 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ListView;
 import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.appcompat.app.AlertDialog;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
@@ -64,6 +67,9 @@ public class LibrarySearchInstrumentedTest {
     private final ArrayList<Activity> activities = new ArrayList<>();
     private final AtomicInteger favoriteCode = new AtomicInteger();
     private final AtomicBoolean deleted = new AtomicBoolean();
+    private final ConcurrentLinkedQueue<Long> removedAids = new ConcurrentLinkedQueue<>();
+    private final AtomicBoolean severalFavoriteVideos = new AtomicBoolean();
+    private final AtomicInteger rejectRemovalAid = new AtomicInteger();
     private final AtomicBoolean noFolders = new AtomicBoolean();
     private final AtomicBoolean aggregateFixture = new AtomicBoolean();
     private final AtomicBoolean manyFolders = new AtomicBoolean();
@@ -74,6 +80,7 @@ public class LibrarySearchInstrumentedTest {
     private OkHttpClient oldClient;
     private long oldMid;
     private String oldCsrf;
+    private String oldCookies;
 
     @Before public void setUp() throws Exception {
         Field field = NetWorkUtil.class.getDeclaredField("INSTANCE");
@@ -88,9 +95,19 @@ public class LibrarySearchInstrumentedTest {
                 if (url.encodedPath().endsWith("/fav/resource/batch-del")) {
                     Buffer body = new Buffer();
                     chain.request().body().writeTo(body);
-                    requests.add(HttpUrl.parse("https://example.invalid/delete?" + body.readUtf8()));
-                    deleted.set(true);
-                    result = ok(new JSONObject());
+                    HttpUrl form = HttpUrl.parse("https://example.invalid/delete?" + body.readUtf8());
+                    requests.add(form);
+                    assertEquals("library-test-csrf", form.queryParameter("csrf"));
+                    assertEquals("library-test-session", NetWorkUtil.getInfoFromCookie("SESSDATA",
+                            chain.request().header("Cookie")));
+                    long aid = Long.parseLong(form.queryParameter("resources").split(":")[0]);
+                    if (rejectRemovalAid.get() == aid) {
+                        result = new JSONObject().put("code", 11010).put("message", "Denied");
+                    } else {
+                        removedAids.add(aid);
+                        deleted.set(true);
+                        result = ok(new JSONObject());
+                    }
                 } else if (url.encodedPath().contains("/fav/folder/created/")) {
                     JSONArray folders = new JSONArray();
                     boolean second = "2".equals(url.queryParameter("pn"));
@@ -122,6 +139,8 @@ public class LibrarySearchInstrumentedTest {
                                 for (int i = 0; i < 20; i++) videos.put(favorite(500 + i).put("fav_time", 900 - i));
                             } else videos.put(favorite(600).put("fav_time", 1000))
                                     .put(favorite(500).put("fav_time", 999));
+                        } else if (severalFavoriteVideos.get() && !searching) {
+                            for (long id = 500; id <= 502; id++) if (!removedAids.contains(id)) videos.put(favorite(id));
                         } else if (!deleted.get()) videos.put(favorite(searching ? 501 : 500));
                         result = favoriteCode.get() == 0 ? ok(new JSONObject().put("medias", videos)
                                 .put("has_more", all && !second)) : new JSONObject().put("code", favoriteCode.get()).put("message", "Denied");
@@ -148,8 +167,11 @@ public class LibrarySearchInstrumentedTest {
         }).build());
         oldMid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
         oldCsrf = SharedPreferencesUtil.getString("csrf", "");
+        oldCookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
         SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, 42);
         SharedPreferencesUtil.putString("csrf", "library-test-csrf");
+        SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies,
+                "DedeUserID=42; SESSDATA=library-test-session; bili_jct=library-test-csrf");
     }
 
     @After public void tearDown() {
@@ -162,6 +184,7 @@ public class LibrarySearchInstrumentedTest {
         clients.set(oldClient);
         SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, oldMid);
         SharedPreferencesUtil.putString("csrf", oldCsrf);
+        SharedPreferencesUtil.putString(SharedPreferencesUtil.cookies, oldCookies);
     }
 
     @Test public void allFavoritesEntrySearchPagingAndClearWork() {
@@ -249,26 +272,130 @@ public class LibrarySearchInstrumentedTest {
     }
 
     @Test public void folderSearchAndDeletionKeepTheSelectedFolderId() {
-        SearchableVideoListActivity folder = launch(FavoriteVideoListActivity.class,
-                new Intent().putExtra("fid", 10042L).putExtra("mid", 42L).putExtra("name", "Folder"));
+        FavoriteVideoListActivity folder = ownFolder();
         await(() -> folder.videoList.size() == 1);
         submit(folder, QUERY);
         await(() -> folder.videoList.size() == 1 && folder.videoList.get(0).aid == 501);
         assertTrue(hasRequest("/fav/resource/list", "keyword", QUERY, "type", "0"));
         instrumentation.runOnMainSync(() -> folder.findViewById(R.id.library_clear).performClick());
         await(() -> folder.videoList.size() == 1 && folder.videoList.get(0).aid == 500);
-        await(() -> folder.recyclerView.findViewHolderForAdapterPosition(0) != null);
-        instrumentation.runOnMainSync(() -> {
-            VideoCardHolder row = (VideoCardHolder) folder.recyclerView.findViewHolderForAdapterPosition(0);
-            row.itemView.performLongClick();
-            row.itemView.performLongClick();
-        });
+        openRemovalMenu(folder);
+        chooseRemovalAction(folder, 1);
+        assertFalse(deleted.get());
+        clickRemovalButton(folder, AlertDialog.BUTTON_POSITIVE);
         await(() -> deleted.get() && folder.videoList.isEmpty() && folder.bottom);
         assertTrue(hasRequest("/delete", "resources", "500:2", "media_id", "10042"));
         instrumentation.runOnMainSync(() -> {
             assertEquals(View.VISIBLE, folder.findViewById(R.id.library_search_bar).getVisibility());
             assertEquals(View.VISIBLE, folder.emptyView.getVisibility());
         });
+    }
+
+    @Test public void multipleRemovalKeepsUncheckedVideosAndCanBeCancelledOutside() {
+        severalFavoriteVideos.set(true);
+        FavoriteVideoListActivity folder = ownFolder();
+        await(() -> ((SearchableVideoListActivity) folder).videoList.size() == 3);
+        openRemovalMenu(folder);
+        chooseRemovalAction(folder, 0);
+        instrumentation.runOnMainSync(() -> {
+            AlertDialog dialog = removalDialog(folder);
+            assertTrue(dialog.getListView().isItemChecked(0));
+            assertFalse(dialog.getListView().isItemChecked(1));
+            MotionEvent outside = MotionEvent.obtain(0, 0, MotionEvent.ACTION_OUTSIDE, -100, -100, 0);
+            try { dialog.onTouchEvent(outside); } finally { outside.recycle(); }
+            assertFalse(dialog.isShowing());
+        });
+        assertFalse(deleted.get());
+
+        openRemovalMenu(folder);
+        chooseRemovalAction(folder, 0);
+        clickRemovalButton(folder, AlertDialog.BUTTON_NEGATIVE);
+        assertFalse(deleted.get());
+
+        openRemovalMenu(folder);
+        chooseRemovalAction(folder, 0);
+        instrumentation.runOnMainSync(() -> {
+            AlertDialog dialog = removalDialog(folder);
+            clickChoice(dialog, 0);
+            assertFalse(dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled());
+            clickChoice(dialog, 0);
+            clickChoice(dialog, 1);
+            assertTrue(dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled());
+        });
+        clickRemovalButton(folder, AlertDialog.BUTTON_POSITIVE);
+        SearchableVideoListActivity list = folder;
+        await(() -> list.videoList.size() == 1 && list.videoList.get(0).aid == 502);
+        assertTrue(hasRequest("/delete", "resources", "500:2", "media_id", "10042"));
+        assertTrue(hasRequest("/delete", "resources", "501:2", "media_id", "10042"));
+        assertFalse(hasRequest("/delete", "resources", "502:2", "media_id", "10042"));
+    }
+
+    @Test public void removalStopsAfterPartialFailureAndReloadsTheFolder() {
+        severalFavoriteVideos.set(true);
+        rejectRemovalAid.set(501);
+        FavoriteVideoListActivity folder = ownFolder();
+        await(() -> ((SearchableVideoListActivity) folder).videoList.size() == 3);
+        openRemovalMenu(folder);
+        chooseRemovalAction(folder, 0);
+        instrumentation.runOnMainSync(() -> {
+            AlertDialog dialog = removalDialog(folder);
+            clickChoice(dialog, 1);
+            clickChoice(dialog, 2);
+        });
+        clickRemovalButton(folder, AlertDialog.BUTTON_POSITIVE);
+        SearchableVideoListActivity list = folder;
+        await(() -> list.videoList.size() == 2 && list.videoList.get(0).aid == 501);
+        assertTrue(hasRequest("/delete", "resources", "501:2", "media_id", "10042"));
+        assertFalse(hasRequest("/delete", "resources", "502:2", "media_id", "10042"));
+    }
+
+    @Test public void confirmationDoesNotRemoveFavoritesAfterAccountChanges() {
+        FavoriteVideoListActivity folder = ownFolder();
+        openRemovalMenu(folder);
+        chooseRemovalAction(folder, 1);
+        instrumentation.runOnMainSync(() -> SharedPreferencesUtil.putLong(SharedPreferencesUtil.mid, 43));
+        clickRemovalButton(folder, AlertDialog.BUTTON_POSITIVE);
+        assertFalse(hasRequest("/delete", "resources", "500:2", "media_id", "10042"));
+    }
+
+    private FavoriteVideoListActivity ownFolder() {
+        return launch(FavoriteVideoListActivity.class,
+                new Intent().putExtra("fid", 10042L).putExtra("mid", 42L).putExtra("name", "Folder"));
+    }
+
+    private void openRemovalMenu(FavoriteVideoListActivity folder) {
+        await(() -> folder.recyclerView.findViewHolderForAdapterPosition(0) != null
+                && !folder.swipeRefreshLayout.isRefreshing());
+        instrumentation.runOnMainSync(() -> assertTrue(folder.recyclerView
+                .findViewHolderForAdapterPosition(0).itemView.performLongClick()));
+    }
+
+    private void chooseRemovalAction(FavoriteVideoListActivity folder, int index) {
+        instrumentation.runOnMainSync(() -> clickChoice(removalDialog(folder), index));
+        instrumentation.waitForIdleSync();
+    }
+
+    private static void clickChoice(AlertDialog dialog, int index) {
+        ListView list = dialog.getListView();
+        list.performItemClick(list.getAdapter().getView(index, null, list), index, list.getItemIdAtPosition(index));
+    }
+
+    private void clickRemovalButton(FavoriteVideoListActivity folder, int button) {
+        instrumentation.runOnMainSync(() -> removalDialog(folder).getButton(button).performClick());
+        instrumentation.waitForIdleSync();
+    }
+
+    private static AlertDialog removalDialog(FavoriteVideoListActivity folder) {
+        try {
+            Field field = FavoriteVideoListActivity.class.getDeclaredField("removalDialog");
+            field.setAccessible(true);
+            AlertDialog dialog = (AlertDialog) field.get(folder);
+            assertNotNull(dialog);
+            assertTrue(dialog.isShowing());
+            return dialog;
+        } catch (ReflectiveOperationException error) {
+            throw new AssertionError(error);
+        }
     }
 
     @Test public void emptyResultsAndNarrowSearchBarsDoNotCoverControls() {

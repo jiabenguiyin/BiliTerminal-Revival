@@ -7,6 +7,7 @@ public class PrivateMsgSession {
     public int sessionType = 1;
     public int systemMsgType = 0;
     public int unread = 0;
+    public long sessionTs = 0;
     public int contentType = 0;
     public JSONObject content;
     public String accountName = "";

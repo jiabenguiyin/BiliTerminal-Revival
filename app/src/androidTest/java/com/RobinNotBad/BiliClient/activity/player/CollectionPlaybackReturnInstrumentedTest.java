@@ -173,6 +173,19 @@ public class CollectionPlaybackReturnInstrumentedTest {
         assertEquals(1, details.getHits()); assertResult(FIRST, FIRST + 10, true);
     }
 
+    @Test public void returningHomeSuppressesAutomaticCurrentVideoDetailNavigation() throws Exception {
+        launch(false); next(); awaitItem(SECOND, 0);
+        main(() -> {
+            player.getIntent().putExtra(com.RobinNotBad.BiliClient.BiliTerminal.RETURNING_HOME, true);
+            jump.getIntent().putExtra(com.RobinNotBad.BiliClient.BiliTerminal.RETURNING_HOME, true);
+        });
+        back(); await(() -> resumed(original));
+        assertEquals("Return-home result must not reopen the latest video detail", 1, details.getHits());
+        assertTrue(jump.isFinishing() || jump.isDestroyed());
+        assertResult(SECOND, SECOND + 10, true);
+        assertHistory(SECOND, SECOND + 10);
+    }
+
     @Test public void disablingCollectionAfterAdvanceStillReturnsCurrentVideo() throws Exception {
         launch(false); next(); awaitItem(SECOND, 0);
         SharedPreferencesUtil.putBoolean(SharedPreferencesUtil.PLAYER_COLLECTION_PLAYBACK_ENABLED, false);

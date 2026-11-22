@@ -24,6 +24,7 @@ public final class CollectionPlaybackQueue {
 
     public boolean contains(long aid) { return aids.contains(aid); }
     public int size() { return aids.size(); }
+    public int indexOf(long aid) { return aids.indexOf(aid); }
     public void append(long[] values) {
         LinkedHashSet<Long> unique = new LinkedHashSet<>(aids);
         if (values != null) for (long value : values) if (value > 0) unique.add(value);

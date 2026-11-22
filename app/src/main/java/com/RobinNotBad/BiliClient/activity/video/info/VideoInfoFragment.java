@@ -5,6 +5,7 @@ import static android.app.Activity.RESULT_OK;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Build;
@@ -15,6 +16,7 @@ import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
+import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.util.DisplayMetrics;
@@ -34,6 +36,7 @@ import androidx.activity.result.ActivityResultCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.lifecycle.Lifecycle;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -50,8 +53,10 @@ import com.RobinNotBad.BiliClient.activity.video.collection.CollectionInfoActivi
 import com.RobinNotBad.BiliClient.adapter.user.UpListAdapter;
 import com.RobinNotBad.BiliClient.api.BangumiApi;
 import com.RobinNotBad.BiliClient.api.DynamicApi;
+import com.RobinNotBad.BiliClient.api.ExperienceRecordApi;
 import com.RobinNotBad.BiliClient.api.LikeCoinFavApi;
 import com.RobinNotBad.BiliClient.api.PlayerApi;
+import com.RobinNotBad.BiliClient.api.ShareApi;
 import com.RobinNotBad.BiliClient.api.VideoInfoApi;
 import com.RobinNotBad.BiliClient.api.WatchLaterApi;
 import com.RobinNotBad.BiliClient.model.PlayerData;
@@ -59,6 +64,7 @@ import com.RobinNotBad.BiliClient.model.VideoInfo;
 import com.RobinNotBad.BiliClient.ui.widget.RadiusBackgroundSpan;
 import com.RobinNotBad.BiliClient.ui.widget.recycler.CustomLinearManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
+import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.FileUtil;
 import com.RobinNotBad.BiliClient.util.VideoStorageUtil;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
@@ -142,6 +148,13 @@ public class VideoInfoFragment extends BaseFragment {
     private TextView tagsText;
     private ImageView like, coin, fav;
     private int coinAdd = 0;
+    private boolean shareRequestInFlight;
+    private long pendingShareAccount;
+    private String pendingShareCookies = "";
+    private long pendingShareAid;
+    private ArrayList<ExperienceRecordApi.Record> pendingShareExperienceBefore;
+    private final ActivityResultLauncher<Intent> shareLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), this::onShareReturned);
     private boolean desc_expand = false, tags_expand = false;
     private Animation shakeAnimation;
     private Runnable tripleActionRunnable;
@@ -229,6 +242,7 @@ public class VideoInfoFragment extends BaseFragment {
         MaterialButton addWatchlater = rootview.findViewById(R.id.addWatchlater);
         MaterialButton download = rootview.findViewById(R.id.download);
         MaterialButton relay = rootview.findViewById(R.id.relay);
+        MaterialButton share = rootview.findViewById(R.id.share_video);
         TextView bvidText = rootview.findViewById(R.id.bvidText);
         TextView danmakuCount = rootview.findViewById(R.id.danmakuCount);
         like = rootview.findViewById(R.id.btn_like);
@@ -319,7 +333,7 @@ public class VideoInfoFragment extends BaseFragment {
         StringUtil.setCopy(title, videoInfo.title);
 
         //争议信息
-        if (!videoInfo.argueMsg.isEmpty()) {
+        if (!TextUtils.isEmpty(videoInfo.argueMsg)) {
             exclusiveTipLabel.setText(videoInfo.argueMsg);
             exclusiveTip.setVisibility(View.VISIBLE);
         }
@@ -499,10 +513,13 @@ public class VideoInfoFragment extends BaseFragment {
             return true;
         });
 
+        share.setOnClickListener(v -> shareVideo(rootview));
+
         //未登录隐藏按钮
         if (SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0) == 0) {
             addWatchlater.setVisibility(View.GONE);
             relay.setVisibility(View.GONE);
+            share.setVisibility(View.GONE);
         }
 
         //合集按钮
@@ -581,6 +598,162 @@ public class VideoInfoFragment extends BaseFragment {
             }
             return false;
         });
+    }
+
+    private void shareVideo(View rootview) {
+        if (shareRequestInFlight) return;
+        long account = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        if (account <= 0 || com.RobinNotBad.BiliClient.util.NetWorkUtil.getInfoFromCookie("SESSDATA", cookies).isEmpty()) {
+            MsgUtil.showMsg("请先登录后分享");
+            return;
+        }
+        shareRequestInFlight = true;
+        View shareButton = rootview.findViewById(R.id.share_video);
+        shareButton.setEnabled(false);
+        String shareText = videoInfo.title + "\nhttps://www.bilibili.com/video/" + videoInfo.bvid;
+        long shareAid = videoInfo.aid;
+        CenterThreadPool.run(() -> {
+            ArrayList<ExperienceRecordApi.Record> experienceBefore = null;
+            try {
+                if (account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)
+                        || !AccountManager.sameSession(cookies,
+                        SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, ""))) {
+                    throw new IllegalStateException("账号已切换");
+                }
+                try {
+                    experienceBefore = ExperienceRecordApi.getRecords(account, cookies);
+                } catch (Exception ignored) {
+                    // Still allow sharing when the experience snapshot is unavailable.
+                }
+            } catch (Exception error) {
+                if (error instanceof IllegalStateException && "账号已切换".equals(error.getMessage())) {
+                    Activity activity = getActivity();
+                    if (activity != null) activity.runOnUiThread(() -> {
+                        shareRequestInFlight = false;
+                        if (shareButton != null) shareButton.setEnabled(true);
+                        if (isAdded() && getView() == rootview) MsgUtil.showMsg("账号已切换，请重新操作");
+                    });
+                    return;
+                }
+            }
+            Activity activity = getActivity();
+            if (activity == null) return;
+            ArrayList<ExperienceRecordApi.Record> finalExperienceBefore = experienceBefore;
+            activity.runOnUiThread(() -> {
+                if (!isAdded() || getView() != rootview
+                        || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
+                pendingShareAccount = account;
+                pendingShareCookies = cookies;
+                pendingShareAid = shareAid;
+                pendingShareExperienceBefore = finalExperienceBefore;
+                Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_TEXT, shareText);
+                try {
+                    shareLauncher.launch(Intent.createChooser(send, "分享视频"));
+                } catch (ActivityNotFoundException ignored) {
+                    shareRequestInFlight = false;
+                    if (shareButton != null) shareButton.setEnabled(true);
+                    MsgUtil.showMsg("设备没有可用的分享应用");
+                    return;
+                }
+                MsgUtil.showMsg("分享后返回确认结果");
+            });
+        });
+    }
+
+    private void onShareReturned(ActivityResult result) {
+        if (!isAdded() || getActivity() == null || getView() == null
+                || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+            clearPendingShare();
+            return;
+        }
+        AlertDialog dialog = new AlertDialog.Builder(requireContext())
+                .setTitle("确认分享结果")
+                .setMessage("你是否已在所选应用中完成发送？")
+                .setNegativeButton("未完成", (d, which) -> {
+                    clearPendingShare();
+                    shareRequestInFlight = false;
+                    setShareButtonEnabled(true);
+                    MsgUtil.showMsg("分享未完成，未登记经验");
+                })
+                .setPositiveButton("已完成", (d, which) -> registerCompletedShare())
+                .create();
+        dialog.setCancelable(false);
+        MsgUtil.prepareAlertDialog(dialog);
+        dialog.show();
+    }
+
+    private void registerCompletedShare() {
+        final long account = pendingShareAccount;
+        final String cookies = pendingShareCookies;
+        final long aid = pendingShareAid;
+        final ArrayList<ExperienceRecordApi.Record> before = pendingShareExperienceBefore;
+        clearPendingShare();
+        if (aid <= 0 || !ExperienceRecordApi.isCurrent(account, cookies)) {
+            shareRequestInFlight = false;
+            setShareButtonEnabled(true);
+            MsgUtil.showMsg("账号已切换，无法登记分享经验");
+            return;
+        }
+        MsgUtil.showMsg("正在登记分享并核对经验…");
+        CenterThreadPool.run(() -> {
+            int shareCode = Integer.MIN_VALUE;
+            try {
+                shareCode = ShareApi.shareVideo(aid, cookies);
+            } catch (Exception ignored) {
+                // Sharing was confirmed; report registration independently.
+            }
+            boolean reward = false;
+            if (shareCode == 0 && before != null && ExperienceRecordApi.isCurrent(account, cookies)) {
+                try {
+                    ArrayList<ExperienceRecordApi.Record> after = ExperienceRecordApi.getRecords(account, cookies);
+                    reward = ExperienceRecordApi.hasNewShareReward(before, after);
+                    if (!reward) {
+                        Thread.sleep(800);
+                        if (ExperienceRecordApi.isCurrent(account, cookies)) {
+                            after = ExperienceRecordApi.getRecords(account, cookies);
+                            reward = ExperienceRecordApi.hasNewShareReward(before, after);
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // External sharing was confirmed; experience verification can be temporarily unavailable.
+                }
+            }
+            final boolean hasReward = reward;
+            final int finalShareCode = shareCode;
+            Activity activity = getActivity();
+            if (activity == null) return;
+            activity.runOnUiThread(() -> {
+                shareRequestInFlight = false;
+                setShareButtonEnabled(true);
+                if (finalShareCode == 0) {
+                    MsgUtil.showMsg(hasReward ? "分享成功，经验 +5" : "分享成功，今日经验未确认或已领取");
+                } else if (finalShareCode == 71000) {
+                    MsgUtil.showMsg("分享成功，B站提示今日已登记");
+                } else if (finalShareCode == -101 || finalShareCode == -111) {
+                    MsgUtil.showMsg("分享已完成，但登录失效，经验登记失败");
+                } else if (finalShareCode == Integer.MIN_VALUE) {
+                    MsgUtil.showMsg("分享已完成，但B站登记失败，经验未确认");
+                } else {
+                    MsgUtil.showMsg("分享已完成，但B站登记失败（" + finalShareCode + "）");
+                }
+            });
+        });
+    }
+
+    private void clearPendingShare() {
+        pendingShareAccount = 0;
+        pendingShareCookies = "";
+        pendingShareAid = 0;
+        pendingShareExperienceBefore = null;
+    }
+
+    private void setShareButtonEnabled(boolean enabled) {
+        View currentView = getView();
+        if (currentView == null) return;
+        View shareButton = currentView.findViewById(R.id.share_video);
+        if (shareButton != null) shareButton.setEnabled(enabled);
     }
 
     private void scheduleTripleAction(Runnable action) {

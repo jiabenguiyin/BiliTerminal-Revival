@@ -395,7 +395,7 @@ public class CollectionPlaybackInstrumentedTest {
         await(()->field("collectionQueue")!=null,8000);
         main(()->{call("autohideReset");call("showcon");});
         inst.waitForIdleSync();
-        await(()->player.findViewById(R.id.collection_order_btn).getWidth()>0,4000);
+        await(()->player.findViewById(Boolean.TRUE.equals(field("isAudioOnlyMode"))?R.id.audio_next:R.id.collection_order_btn).getWidth()>0,4000);
     }
     private void complete() {
         main(()->{

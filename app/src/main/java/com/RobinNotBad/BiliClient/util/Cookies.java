@@ -38,7 +38,7 @@ public class Cookies {
     }
 
     public String getOrDefault(String key, String defaultVal) {
-        String val = cookieMap.get(key);
+        String val = get(key);
         return val != null ? val : defaultVal;
     }
 
@@ -49,6 +49,10 @@ public class Cookies {
     public void remove(String key) {
         String existingKey = findKey(key);
         if (existingKey != null) cookieMap.remove(existingKey);
+    }
+    void canonicalize(String key) {
+        String existing=findKey(key);
+        if(existing!=null&&!existing.equals(key))cookieMap.put(key,cookieMap.remove(existing));
     }
 
     private String findKey(String key) {

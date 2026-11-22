@@ -77,6 +77,7 @@ import com.RobinNotBad.BiliClient.model.Subtitle;
 import com.RobinNotBad.BiliClient.model.SubtitleLink;
 import com.RobinNotBad.BiliClient.model.ViewPoint;
 import com.RobinNotBad.BiliClient.player.DanmakuWindowLoader;
+import com.RobinNotBad.BiliClient.player.PlayerInfoOverlay;
 import com.RobinNotBad.BiliClient.player.DanmakuLoadPolicy;
 import com.RobinNotBad.BiliClient.player.CollectionPlaybackQueue;
 import com.RobinNotBad.BiliClient.player.CollectionPlaybackSource;
@@ -446,11 +447,32 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private LinearLayout interactionChoiceLayout;
     private InteractionProgressStore.Snapshot interactionRestoreSnapshot;
     private long lastInteractionSaveAt = 0L;
+    private PlayerInfoOverlay infoOverlay;
+    private com.RobinNotBad.BiliClient.player.AudioPlaybackPanel audioPanel;
+    private final Runnable toolbarBoundsUpdate=this::applyRightToolbarBounds;
+    private boolean roundSideControlsPositioned;
+    private final Runnable expandedMenuBoundsUpdate=this::applyExpandedMenuBounds;
+    private long audioSleepDeadline;
+    private final Runnable audioSleepCheck=()->{
+        if(destroyed||audioSleepDeadline<=0)return;
+        long remaining=audioSleepDeadline-SystemClock.elapsedRealtime();
+        if(remaining>0){mainHandler.postDelayed(this.audioSleepCheck,remaining);return;}
+        audioSleepDeadline=0;setMediaPlaying(false);if(isPlaying)playerPause();updateAudioDashboard();
+        MsgUtil.showMsg("已到定时停止时间");
+    };
 
     @Override
     public void onBackPressed() {
         if (!SharedPreferencesUtil.getBoolean("back_disable", false))
             super.onBackPressed();
+    }
+
+    @Override public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && !SharedPreferencesUtil.getBoolean("back_disable", false)) {
+            BiliTerminal.returnHome(this);
+            return true;
+        }
+        return super.onKeyLongPress(keyCode, event);
     }
 
     @Override
@@ -785,6 +807,10 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         mainHandler = new Handler(Looper.getMainLooper());
+        if(savedInstanceState!=null){
+            audioSleepDeadline=savedInstanceState.getLong("audio_sleep_deadline",0);
+            if(audioSleepDeadline>0)mainHandler.post(audioSleepCheck);
+        }
 
         setVideoGestures();
         autohideReset();
@@ -843,7 +869,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 loadHighEnergyData();
             }
 
-            if (!destroyed && isOnlineVideo && aid > 0 && cid > 0 && SharedPreferencesUtil.getBoolean("player_show_viewpoints", false)) {
+            if (!destroyed && isOnlineVideo && aid > 0 && cid > 0 && SharedPreferencesUtil.getBoolean("player_show_viewpoints", true)) {
                 loadViewPoints();
             }
 
@@ -859,7 +885,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private void findview() {
         layout_control = findViewById(R.id.control_layout);
         layout_top = findViewById(R.id.top);
+        infoOverlay = new PlayerInfoOverlay(findViewById(R.id.interaction_values_scroll),
+                findViewById(R.id.interaction_values), findViewById(R.id.player_chapter_list), position -> {
+                    if (destroyed || screenLocked || isLiveMode) return;
+                    seekToPosition(position);
+                    autohideReset();
+                });
         right_control = findViewById(R.id.right_control);
+        applyPlayerMargins(right_control,0,0,playerDp(4),0);
         right_second = findViewById(R.id.right_second);
         layout_card_bg = findViewById(R.id.card_bg);
         card_subtitle = findViewById(R.id.subtitle_card);
@@ -900,7 +933,13 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         text_speed = findViewById(R.id.text_speed);
         longPressSpeedHint = findViewById(R.id.long_press_speed_hint);
         layout_control.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                updateExpandedMenuBounds());
+                {updateRightToolbarBounds();updateExpandedMenuBounds();updateAudioDashboard();});
+        findViewById(R.id.bottom_control).addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->updateRightToolbarBounds());
+        layout_top.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{updateRightToolbarBounds();updateAudioDashboard();});
+        text_speed.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->updateRightToolbarBounds());
+        btn_lock.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->updateRightToolbarBounds());
+        btn_menu.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->updateExpandedMenuBounds());
+        findViewById(R.id.right_toolbar_scroll).getViewTreeObserver().addOnScrollChangedListener(this::updateExpandedMenuBounds);
         layout_speed = findViewById(R.id.layout_speed);
         seekbar_speed = findViewById(R.id.seekbar_speed);
         text_newspeed = findViewById(R.id.text_newspeed);
@@ -910,6 +949,22 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         text_subtitle = findViewById(R.id.text_subtitle);
         text_audio_title = findViewById(R.id.audio_title);
         text_audio_subtitle = findViewById(R.id.audio_subtitle);
+        audioPanel=findViewById(R.id.audio_panel);
+        findViewById(R.id.round_menu_btn).setOnClickListener(v->showCompactPlayerTools());
+        audioPanel.setActions(new com.RobinNotBad.BiliClient.player.AudioPlaybackPanel.Actions(){
+            public void play(){if(!screenLocked&&isPrepared&&!playbackSwitchInFlight)setMediaPlaying(!desiredMediaPlaying());}
+            public void seek(long position){if(!screenLocked&&isPrepared&&!playbackSwitchInFlight)seekToPosition(position);}
+            public void skip(boolean next){if(!screenLocked)skipPlaybackItem(next);}
+            public void more(){showAudioOptions();}
+            public void controls(){if(screenLocked)return;if(layout_top.getVisibility()==View.VISIBLE)hidecon.run();else showcon();}
+            public boolean hold(float x,float y){
+                if(screenLocked||!isPrepared||!isPlaying||playbackSwitchInFlight)return false;
+                lastSurfaceX=x;lastSurfaceY=y;gesture_click_disabled=false;surfaceClickCancelled=false;multiTouchGesture=false;
+                return layout_control.performLongClick();
+            }
+            public void holdTouch(MotionEvent event){handleLongPressSwitch(event);}
+            public void releaseHold(){stopLongPressSpeed();longPressSwitchSequence=false;gesture_click_disabled=false;}
+        });
         swipe_seek_hint = findViewById(R.id.swipe_seek_hint);
     }
 
@@ -1360,7 +1415,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private boolean isVideoZoomed() {
-        return scaleGestureListener != null
+        return !isAudioOnlyMode && scaleGestureListener != null
                 && (scaleGestureListener.can_reset
                 || layout_video != null && Math.abs(layout_video.getScaleX() - 1f) > 0.01f);
     }
@@ -1403,6 +1458,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             lockedDebugVisibility = btn_debug.getVisibility();
 
             screenLocked = true;
+            updatePlayerInfoOverlay();
             if (segmentSkipButton != null) segmentSkipButton.setVisibility(View.GONE);
             layout_control.removeCallbacks(hidecon);
             layout_card_bg.setVisibility(View.GONE);
@@ -1887,6 +1943,12 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 SharedPreferencesUtil.PLAYER_SCREEN_LOCK, true) ? View.VISIBLE : View.GONE);
         positionPlaybackSpeedLabel();
         layout_top.setVisibility(View.VISIBLE);
+        if(isAudioOnlyMode){
+            right_control.setVisibility(View.GONE);bottom_buttons.setVisibility(View.GONE);
+            seekbar_progress.setVisibility(View.GONE);text_progress.setVisibility(View.GONE);text_online.setVisibility(View.GONE);
+            updateAudioDashboard();autohideReset();return;
+        }
+        text_progress.setVisibility(View.VISIBLE);
         bottom_buttons.setVisibility(View.VISIBLE);
         seekbar_progress.setVisibility(View.VISIBLE);
         seekbar_progress.setEnabled(false);
@@ -1895,6 +1957,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             text_speed.setVisibility(View.VISIBLE);
             updateDebugButtonVisibility();
         }
+        if(isAudioOnlyMode)text_speed.setVisibility(View.GONE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             batteryView.setPower(batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY));
         }
@@ -1907,6 +1970,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
 
         autohideReset();
         refreshSegmentSkipPosition();
+        updatePlayerInfoOverlay();
     }
 
     private final Runnable progressbarEnable = () -> seekbar_progress.setEnabled(true);
@@ -1917,12 +1981,15 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         btn_lock.setVisibility(View.GONE);
         right_control.setVisibility(View.GONE);
         layout_top.setVisibility(View.GONE);
+        updateAudioDashboard();
+        updatePlayerInfoOverlay();
         bottom_buttons.setVisibility(View.GONE);
         seekbar_progress.setVisibility(View.GONE);
         if (isPrepared && (!isAudioOnlyMode)) {
             text_speed.setVisibility(View.GONE);
             btn_debug.setVisibility(View.GONE);
         }
+        if(isAudioOnlyMode)text_speed.setVisibility(View.GONE);
         if (screen_round) {
             text_progress.setGravity(Gravity.CENTER);
             text_progress.setPadding(0, 0, 0, ToolsUtil.dp2px(8f));
@@ -3138,6 +3205,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     runOnUiThread(() -> {
                         if (destroyed || tickCid != cid) return;
                         updateSegmentSkip(acceptedPosition);
+                        updateAudioDashboard();
                         if (lastPgcSave < 0 || now - lastPgcSave >= 5000) {
                             savePgcProgress(acceptedPosition); lastPgcSave = now;
                         }
@@ -3959,6 +4027,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
         if (btn_control != null)
             btn_control.setImageResource(R.drawable.btn_player_play);
+        updateAudioDashboard();
         if (mediaSession != null) {
             updateMediaSessionPlaybackState();
         }
@@ -3982,6 +4051,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
         if (btn_control != null)
             btn_control.setImageResource(R.drawable.btn_player_pause);
+        updateAudioDashboard();
         if (mediaSession != null) {
             updateMediaSessionPlaybackState();
         }
@@ -4446,6 +4516,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @Override
     protected void onResume() {
         super.onResume();
+        updatePlayerInfoOverlay();
         applyPlaybackGain();
         updateSeekButtons();
         refreshSegmentSkipPosition();
@@ -4495,6 +4566,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     @Override
     protected void onDestroy() {
         cancelPendingSingleTap();
+        if(layout_control!=null)layout_control.removeCallbacks(toolbarBoundsUpdate);
+        if(layout_control!=null)layout_control.removeCallbacks(expandedMenuBoundsUpdate);
         Logu.v("结束");
         stopHardwareVolumeRepeat();
         if (eventBusInit) {
@@ -4505,6 +4578,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         favoriteGeneration++;
         playbackSwitchGeneration++;
         if (playbackOptionsMenu != null) playbackOptionsMenu.dismiss();
+        if(mainHandler!=null)mainHandler.removeCallbacks(audioSleepCheck);
         stopDanmakuLoading();
         onLongClick = false;
         danmakuPausedByBuffering = false;
@@ -4762,6 +4836,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void updateMediaSessionPlaybackState() {
+        updateAudioDashboard();
         if (mediaSession == null) {
             return;
         }
@@ -4879,6 +4954,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         // inside the row squeezes and shifts every playback/volume hit target.
         applyPlayerPadding(bottom_buttons, 0, 0, 0, 0);
         applyPlayerPadding(layout_card_bg, playerSafeLeft, playerSafeTop, playerSafeRight, playerSafeBottom);
+        updateRightToolbarBounds();
         updateExpandedMenuBounds();
     }
 
@@ -5017,6 +5093,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             text_online.setVisibility(View.GONE);
 
         layout_top.setOnClickListener(view -> finish());
+        layout_top.setOnLongClickListener(view -> { BiliTerminal.returnHome(this); return true; });
 
         RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT);
@@ -5079,7 +5156,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 right_second.setVisibility(View.GONE);
                 btn_menu.setImageResource(R.mipmap.morehide);
             } else {
-                if (expandedMenuAvailableWidth() < playerDp(32)) {
+                if (expandedMenuAvailableWidth() < playerDp(32)||compactPlayerToolsNeeded()) {
                     showCompactPlayerTools();
                     return;
                 }
@@ -5344,6 +5421,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             saveLocalPlaybackProgress(boundedPosition);
             savePgcProgress(boundedPosition);
             updateSegmentSkip(boundedPosition);
+            updateAudioDashboard();
         }
     }
 
@@ -5463,8 +5541,122 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         }
     }
 
+    private boolean roundPlayerDisplay(){
+        return screen_round||Build.VERSION.SDK_INT>=23&&getResources().getConfiguration().isScreenRound();
+    }
+
+    private void updateAudioDashboard(){
+        if(audioPanel==null||!isAudioOnlyMode||destroyed)return;
+        if(Looper.myLooper()!=Looper.getMainLooper()){
+            if(mainHandler!=null)mainHandler.post(this::updateAudioDashboard);
+            return;
+        }
+        if(!screenLocked)btn_lock.setVisibility(View.GONE);
+        boolean previous=hasMultiplePages()&&currentPageIndex>0;
+        boolean next=hasMultiplePages()&&currentPageIndex+1<pagenames.size();
+        String queue="";
+        if(hasMultiplePages())queue=" · P"+(currentPageIndex+1)+"/"+pagenames.size();
+        if(collectionPlaybackActive()){
+            long key=currentQueueKey();
+            queue+=" · "+(cachedPlaybackSnapshot!=null?"歌单":"列表")+(collectionQueue.indexOf(key)+1)+"/"+collectionQueue.size()
+                    +(favoriteSession!=null&&!favoriteSession.bottom?"+":"");
+            previous|=collectionQueue.previousForUser(key,collectionPlaybackOrder)>0
+                    ||favoriteSession!=null&&!favoriteSession.bottom&&collectionPlaybackOrder==CollectionPlaybackQueue.REVERSE;
+            next|=collectionQueue.canSkipNext(key,collectionPlaybackOrder)
+                    ||favoriteSession!=null&&!favoriteSession.bottom&&collectionPlaybackOrder!=CollectionPlaybackQueue.REVERSE;
+        }
+        String state=playbackSwitchInFlight?"正在切换":!isPrepared?"准备中":playbackCompleted?"播放结束"
+                :isPlaying&&(videoTrackBuffering||audioTrackBuffering)?"缓冲中":isPlaying?"正在播放":"已暂停";
+        String timer=audioSleepDeadline>0?" · "+Math.max(1,(audioSleepDeadline-SystemClock.elapsedRealtime()+59999)/60000)+"分钟后停止":"";
+        audioPanel.update(videoTitle==null||videoTitle.isEmpty()?getAudioOnlyModeName():videoTitle,
+                state+" · "+currentPlaybackSpeed+"×"+queue+timer,video_now,video_all,isPlaying,isPrepared&&!playbackSwitchInFlight,
+                screenLocked,previous&&!playbackSwitchInFlight&&!favoritePaging,next&&!playbackSwitchInFlight&&!favoritePaging);
+        audioPanel.setCover(getIntent().getStringExtra("cover"));
+        View root=findViewById(R.id.root_layout);
+        audioPanel.fit(root.getWidth(),root.getHeight(),layout_top.getVisibility()==View.VISIBLE?layout_top.getBottom():0,
+                playerSafeLeft,playerSafeTop,playerSafeRight,playerSafeBottom,roundPlayerDisplay());
+    }
+
+    private void showAudioOptions(){
+        if(screenLocked||destroyed)return;
+        if(playbackOptionsMenu!=null)playbackOptionsMenu.dismiss();
+        playbackOptionsMenu=new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this,audioPanel);
+        playbackOptionsMenu.getMenu().add(0,1,0,"倍速："+currentPlaybackSpeed+"×");
+        playbackOptionsMenu.getMenu().add(0,2,1,"播放列表").setEnabled(hasMultiplePages()||collectionPlaybackActive());
+        playbackOptionsMenu.getMenu().add(0,3,2,"定时停止");
+        if(!isLocalAudioFile)playbackOptionsMenu.getMenu().add(0,4,3,"返回视频画面");
+        playbackOptionsMenu.getMenu().add(0,5,4,"锁定播放器");
+        playbackOptionsMenu.getMenu().add(0,6,5,"音量−");
+        playbackOptionsMenu.getMenu().add(0,7,6,"音量+");
+        playbackOptionsMenu.getMenu().add(0,8,7,"更多播放功能");
+        playbackOptionsMenu.setOnMenuItemClickListener(item->{
+            if(screenLocked)return true;
+            if(item.getItemId()==1)showAudioSpeeds();
+            else if(item.getItemId()==2)showAudioQueue();
+            else if(item.getItemId()==3)showAudioSleepOptions();
+            else if(item.getItemId()==4)toggleAudioOnlyMode();
+            else if(item.getItemId()==5)setScreenLocked(true);
+            else if(item.getItemId()==8)showCompactPlayerTools();
+            else changeVolume(item.getItemId()==7);
+            return true;
+        });playbackOptionsMenu.show();
+    }
+    private void showAudioSpeeds(){
+        playbackOptionsMenu=new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this,audioPanel);
+        for(int i=0;i<speed_values.length;i++)playbackOptionsMenu.getMenu().add(0,i+1,i,speed_values[i]+"×")
+                .setCheckable(true).setChecked(Math.abs(currentPlaybackSpeed-speed_values[i])<.01f);
+        playbackOptionsMenu.setOnMenuItemClickListener(item->{
+            if(!screenLocked){int i=item.getItemId()-1;seekbar_speed.setProgress(i);
+                text_speed.setText(speed_strs[i]);text_newspeed.setText(speed_strs[i]);setPlaybackSpeed(speed_values[i]);updateAudioDashboard();}
+            return true;
+        });playbackOptionsMenu.show();
+    }
+    private void showAudioQueue(){
+        int index=hasMultiplePages()?currentPageIndex:collectionPlaybackActive()?collectionQueue.indexOf(currentQueueKey()):0;
+        showAudioQueue(Math.max(0,index/30*30));
+    }
+    private void showAudioQueue(int start){
+        final boolean parts=hasMultiplePages();
+        final long[] ids=!parts&&collectionPlaybackActive()?collectionQueue.toArray():new long[0];
+        final long sourceAid=aid,sourceCid=cid;
+        playbackOptionsMenu=new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this,audioPanel);
+        int count=parts?pagenames.size():ids.length;
+        for(int i=start;i<Math.min(count,start+30);i++){
+            String name=parts?pagenames.get(i):cachedPlaybackSnapshot!=null&&ids[i]>0&&ids[i]<=cachedPlaybackSnapshot.items.size()
+                    ?cachedPlaybackSnapshot.items.get((int)ids[i]-1).title:"合集第"+(i+1)+"个视频";
+            playbackOptionsMenu.getMenu().add(0,i+1,i,name).setCheckable(true)
+                    .setChecked(parts?i==currentPageIndex:ids[i]==currentQueueKey());
+        }
+        if(start>0)playbackOptionsMenu.getMenu().add(0,-1,count+1,"上一页");
+        if(start+30<count)playbackOptionsMenu.getMenu().add(0,-2,count+2,"下一页");
+        playbackOptionsMenu.setOnMenuItemClickListener(item->{
+            int i=item.getItemId()-1;
+            if(screenLocked||!isPrepared||playbackSwitchInFlight||favoritePaging||sourceAid!=aid||sourceCid!=cid)return true;
+            if(item.getItemId()<0){showAudioQueue(item.getItemId()==-1?start-30:start+30);return true;}
+            if(parts&&i>=0&&i<cids.size())switchToPage(i);
+            else if(i>=0&&i<ids.length&&ids[i]!=currentQueueKey())switchPlaybackItem(ids[i],0,true,false);
+            return true;
+        });playbackOptionsMenu.show();
+    }
+    private void showAudioSleepOptions(){
+        final int[] minutes={0,15,30,60};
+        playbackOptionsMenu=new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this,audioPanel);
+        for(int i=0;i<minutes.length;i++)playbackOptionsMenu.getMenu().add(0,i+1,i,i==0?"关闭定时停止":minutes[i]+"分钟后停止");
+        playbackOptionsMenu.setOnMenuItemClickListener(item->{
+            if(!screenLocked)setAudioSleepDelay(minutes[item.getItemId()-1]*60000L);return true;
+        });playbackOptionsMenu.show();
+    }
+    private void setAudioSleepDelay(long delay){
+        mainHandler.removeCallbacks(audioSleepCheck);
+        audioSleepDeadline=delay>0?SystemClock.elapsedRealtime()+delay:0;
+        if(delay>0)mainHandler.postDelayed(audioSleepCheck,delay);
+        updateAudioDashboard();
+        MsgUtil.showMsg(delay>0?"已设置定时停止":"已关闭定时停止");
+    }
+
     private void updateAudioOnlyUI() {
         runOnUiThread(() -> {
+            updatePlayerInfoOverlay();
             if (!isLiveMode) {
                 if (isAudioOnlyMode) {
                     stopDanmakuLoading();
@@ -5478,15 +5670,14 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 btn_danmaku.setVisibility(View.GONE);
                 layout_video.setVisibility(View.GONE);
                 layout_audio_only.setVisibility(View.VISIBLE);
+                right_control.setVisibility(View.GONE);bottom_buttons.setVisibility(View.GONE);
+                seekbar_progress.setVisibility(View.GONE);text_progress.setVisibility(View.GONE);text_online.setVisibility(View.GONE);
                 if (mDanmakuView != null) {
                     mDanmakuView.setVisibility(View.GONE);
                 }
                 if (text_audio_title != null) {
                     String title = text_title.getText().toString();
                     text_audio_title.setText(title.isEmpty() ? getAudioOnlyModeName() : title);
-                }
-                if (text_audio_subtitle != null) {
-                    text_audio_subtitle.setText(getAudioOnlyModeName() + "，仅播放音频");
                 }
             } else {
                 // 退出听视频模式
@@ -5495,10 +5686,13 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 btn_danmaku.setVisibility(View.VISIBLE);
                 layout_video.setVisibility(View.VISIBLE);
                 layout_audio_only.setVisibility(View.GONE);
+                text_progress.setVisibility(View.VISIBLE);
+                if(layout_top.getVisibility()==View.VISIBLE)showcon();
                 if (mDanmakuView != null && isDanmakuVisible) {
                     mDanmakuView.setVisibility(View.VISIBLE);
                 }
             }
+            updateAudioDashboard();
         });
     }
 
@@ -5686,6 +5880,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     video_now = video_now_last = 0;
                     getIntent().putExtra("aid", aid).putExtra("cid", cid).putExtra("mid", mid)
                             .putExtra("url", playerData.videoUrl).putExtra("title", playerData.title)
+                            .putExtra("cover",playerData.cover)
                             .putExtra("audio_url", playerData.audioUrl).putExtra("danmaku", playerData.danmakuUrl)
                             .putExtra("danmaku_count", playerData.danmakuCount).putExtra("progress", restoreProgress)
                             .putExtra("currentPageIndex", currentPageIndex);
@@ -5730,6 +5925,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     }
 
                     interactionData = null;
+                    if (infoOverlay != null) infoOverlay.setChapters(null);
+                    updatePlayerInfoOverlay();
                     currentEdgeId = 0;
                     currentQuestion = null;
                     questionShown = false;
@@ -5769,7 +5966,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                             loadHighEnergyData();
                         }
 
-                        if (!destroyed && isOnlineVideo && aid > 0 && cid > 0 && SharedPreferencesUtil.getBoolean("player_show_viewpoints", false)) {
+                        if (!destroyed && isOnlineVideo && aid > 0 && cid > 0 && SharedPreferencesUtil.getBoolean("player_show_viewpoints", true)) {
                             loadViewPoints();
                         }
 
@@ -6086,7 +6283,11 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private void updateCollectionPlaybackControls() {
         if (btn_collection_order == null) return;
         boolean active = collectionPlaybackActive();
-        btn_collection_order.setVisibility(active && !screenLocked ? View.VISIBLE : View.GONE);
+        int visibility = active && !screenLocked ? View.VISIBLE : View.GONE;
+        if (btn_collection_order.getVisibility() != visibility) {
+            btn_collection_order.setVisibility(visibility);
+            updateRightToolbarBounds();
+        }
         int[] icons = {R.drawable.icon_collection_sequence, R.drawable.icon_collection_shuffle,
                 R.drawable.icon_collection_repeat, R.drawable.icon_collection_reverse};
         int[] names = {R.string.collection_playback_sequential, R.string.collection_playback_shuffle,
@@ -6139,10 +6340,132 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 - Math.max(playerDp(4), playerSafeRight));
     }
 
+    private boolean compactPlayerToolsNeeded(){
+        return roundPlayerDisplay()||right_control.getHeight()<playerDp(68);
+    }
+    private void updateRightToolbarBounds(){
+        if(layout_control==null||destroyed)return;
+        layout_control.removeCallbacks(toolbarBoundsUpdate);
+        layout_control.post(toolbarBoundsUpdate);
+    }
+    private void applyRightToolbarBounds(){
+        if(destroyed||right_control==null||layout_control.getHeight()<=0)return;
+        View more=findViewById(R.id.round_menu_btn);
+        more.setVisibility(View.GONE);
+        if(!roundPlayerDisplay()){
+            if(roundSideControlsPositioned)restoreStandardSideControls();
+            boolean visible=!screenLocked&&!isAudioOnlyMode&&layout_top.getVisibility()==View.VISIBLE;
+            right_control.setVisibility(visible?View.VISIBLE:View.GONE);return;
+        }
+        boolean visible=!screenLocked&&!isAudioOnlyMode&&layout_top.getVisibility()==View.VISIBLE;
+        right_control.setVisibility(visible?View.VISIBLE:View.GONE);
+        if(!visible)return;
+        int width=layout_control.getWidth(),height=layout_control.getHeight();
+        int top=Math.max(playerSafeTop,layout_top.getBottom());
+        View bottom=findViewById(R.id.bottom_control);
+        int end=bottom.getVisibility()==View.VISIBLE?bottom.getTop()-playerDp(4):height-playerSafeBottom;
+        int railHeight=Math.min(Math.max(playerDp(28),end-top),playerDp(144));
+        fitRoundToolbarButtons(railHeight);
+        int y=Math.max(top,Math.min((height-railHeight)/2,end-railHeight));
+        double radius=Math.min(width,height)/2d;
+        double dy=Math.min(radius,Math.max(Math.abs(y-height/2d),Math.abs(y+railHeight-height/2d)));
+        int edgeGapDp=Math.max(0,Math.min(16,SharedPreferencesUtil.getInt(
+                SharedPreferencesUtil.PLAYER_ROUND_SIDE_INSET_DP,4)));
+        int inset=Math.max(playerSafeRight,
+                (int)Math.ceil(width/2d-Math.sqrt(Math.max(0,radius*radius-dy*dy)))+playerDp(edgeGapDp));
+        RelativeLayout.LayoutParams p=(RelativeLayout.LayoutParams)right_control.getLayoutParams();
+        // Both rails use parent coordinates. Keeping BELOW/ABOVE here adds the
+        // header height again and shifts the right rail away from the left one.
+        int rightWidth=Math.max(playerDp(28),findViewById(R.id.right_toolbar_scroll).getMeasuredWidth());
+        int columnWidth=Math.max(playerDp(48),Math.max(rightWidth,text_speed.getMeasuredWidth()));
+        int axis=inset+columnWidth/2;
+        int rightMargin=axis-rightWidth/2;
+        if(right_control.getPaddingRight()!=0)right_control.setPadding(0,0,0,0);
+        if(p.height!=railHeight||p.topMargin!=y||p.rightMargin!=rightMargin
+                ||p.getRules()[RelativeLayout.BELOW]!=0||p.getRules()[RelativeLayout.ABOVE]!=0){
+            p.addRule(RelativeLayout.BELOW,0);p.addRule(RelativeLayout.ABOVE,0);
+            p.addRule(RelativeLayout.CENTER_VERTICAL,0);p.addRule(RelativeLayout.ALIGN_PARENT_TOP,RelativeLayout.TRUE);
+            p.width=ViewGroup.LayoutParams.WRAP_CONTENT;p.height=railHeight;p.topMargin=y;p.rightMargin=rightMargin;
+            if(Build.VERSION.SDK_INT>=17)p.setMarginEnd(rightMargin);
+            right_control.setLayoutParams(p);
+        }
+        int leftHeight=0,lastBottomMargin=0;
+        View[] leftControls={btn_debug,text_speed,btn_lock};
+        for(View control:leftControls)if(control.getVisibility()==View.VISIBLE){
+            RelativeLayout.LayoutParams cp=(RelativeLayout.LayoutParams)control.getLayoutParams();
+            leftHeight+=control.getMeasuredHeight()+cp.bottomMargin;
+            lastBottomMargin=cp.bottomMargin;
+        }
+        leftHeight-=lastBottomMargin;
+        int leftTop=Math.max(top,Math.min(y+(railHeight-leftHeight)/2,end-leftHeight));
+        for(View control:leftControls)if(control.getVisibility()==View.VISIBLE){
+            RelativeLayout.LayoutParams cp=(RelativeLayout.LayoutParams)control.getLayoutParams();
+            int left=axis-control.getMeasuredWidth()/2;
+            if(cp.topMargin!=leftTop||cp.leftMargin!=left||cp.getRules()[RelativeLayout.ABOVE]!=0
+                    ||cp.getRules()[RelativeLayout.CENTER_VERTICAL]!=0){
+                cp.addRule(RelativeLayout.ABOVE,0);cp.addRule(RelativeLayout.CENTER_VERTICAL,0);
+                cp.addRule(RelativeLayout.ALIGN_PARENT_TOP,RelativeLayout.TRUE);
+                cp.topMargin=leftTop;cp.leftMargin=left;
+                if(Build.VERSION.SDK_INT>=17)cp.setMarginStart(left);
+                control.setLayoutParams(cp);
+            }
+            leftTop+=control.getMeasuredHeight()+cp.bottomMargin;
+        }
+        roundSideControlsPositioned=true;
+    }
+
+    private void restoreStandardSideControls(){
+        fitRoundToolbarButtons(0);
+        RelativeLayout.LayoutParams rail=(RelativeLayout.LayoutParams)right_control.getLayoutParams();
+        rail.addRule(RelativeLayout.ALIGN_PARENT_TOP,0);
+        rail.addRule(RelativeLayout.BELOW,R.id.top);rail.addRule(RelativeLayout.ABOVE,R.id.bottom_control);
+        rail.height=ViewGroup.LayoutParams.MATCH_PARENT;rail.topMargin=0;rail.rightMargin=playerSafeRight;
+        if(Build.VERSION.SDK_INT>=17)rail.setMarginEnd(playerSafeRight);
+        right_control.setLayoutParams(rail);
+        for(View control:new View[]{btn_debug,text_speed,btn_lock}){
+            RelativeLayout.LayoutParams cp=(RelativeLayout.LayoutParams)control.getLayoutParams();
+            cp.addRule(RelativeLayout.ALIGN_PARENT_TOP,0);cp.topMargin=0;
+            int left=control==btn_lock?playerSafeLeft:playerDp(4);
+            cp.leftMargin=left;if(Build.VERSION.SDK_INT>=17)cp.setMarginStart(left);
+            if(control==btn_lock)cp.addRule(RelativeLayout.CENTER_VERTICAL,RelativeLayout.TRUE);
+            else if(control==btn_debug)cp.addRule(RelativeLayout.ABOVE,R.id.text_speed);
+            control.setLayoutParams(cp);
+        }
+        positionPlaybackSpeedLabel();
+        roundSideControlsPositioned=false;
+    }
+
+    private void fitRoundToolbarButtons(int height) {
+        ImageButton[] buttons = {btn_danmaku, btn_rotate, btn_menu, btn_collection_order};
+        int visible = 0;
+        for (ImageButton button : buttons) if (button.getVisibility() == View.VISIBLE) visible++;
+        // Condense the rail when chapters take part of the screen. Keep it
+        // scrollable if the available space would make the controls too small.
+        int maxButtonHeight = height > 0 && visible > 0
+                ? Math.max(playerDp(22), height / visible) : Integer.MAX_VALUE;
+        for (ImageButton button : buttons) {
+            ViewGroup.LayoutParams params = button.getLayoutParams();
+            int normalHeight = params.width;
+            int fittedHeight = Math.min(normalHeight, maxButtonHeight);
+            if (params.height != fittedHeight) {
+                params.height = fittedHeight;
+                button.setLayoutParams(params);
+            }
+            if (button != btn_collection_order) {
+                button.setScaleType(fittedHeight < normalHeight ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.FIT_XY);
+            }
+        }
+    }
+
     private void updateExpandedMenuBounds() {
+        if(layout_control==null||destroyed||!menu_opened)return;
+        layout_control.removeCallbacks(expandedMenuBoundsUpdate);
+        layout_control.post(expandedMenuBoundsUpdate);
+    }
+    private void applyExpandedMenuBounds() {
         if (right_second == null || !menu_opened || screenLocked || layout_control.getWidth() <= 0) return;
         int available = expandedMenuAvailableWidth();
-        if (available < playerDp(32)) {
+        if (available < playerDp(32)||compactPlayerToolsNeeded()) {
             right_second.setVisibility(View.GONE);
             menu_opened = false;
             btn_menu.setImageResource(R.mipmap.morehide);
@@ -6152,9 +6475,17 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         View content = findViewById(R.id.right_second_container);
         content.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        ViewGroup.LayoutParams params = right_second.getLayoutParams();
+        android.widget.LinearLayout.LayoutParams params = (android.widget.LinearLayout.LayoutParams)right_second.getLayoutParams();
         int width = Math.min(available, content.getMeasuredWidth());
-        if (params.width != width) { params.width = width; right_second.setLayoutParams(params); }
+        int[] menuPosition=new int[2],parentPosition=new int[2];
+        btn_menu.getLocationInWindow(menuPosition);right_control.getLocationInWindow(parentPosition);
+        float center=menuPosition[1]-parentPosition[1]+btn_menu.getHeight()/2f;
+        float parentCenter=right_control.getPaddingTop()
+                +(right_control.getHeight()-right_control.getPaddingTop()-right_control.getPaddingBottom())/2f;
+        int topMargin=Math.round(2*(center-parentCenter));
+        if (params.width != width||params.topMargin!=topMargin||params.bottomMargin!=0) {
+            params.width=width;params.topMargin=topMargin;params.bottomMargin=0;right_second.setLayoutParams(params);
+        }
     }
 
     private void showCompactPlayerTools() {
@@ -6164,10 +6495,12 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         playbackOptionsMenu = new com.RobinNotBad.BiliClient.player.PlayerOptionsMenu(this, btn_menu);
         playbackOptionsMenu.setOnDismissListener(this::autohideReset);
         int[] ids = {R.id.danmaku_send_btn, R.id.subtitle_btn, R.id.loop_btn, R.id.audio_only_btn,
-                R.id.auto_next_btn, R.id.viewpoint_btn, R.id.seek_back_btn, R.id.seek_forward_btn};
+                R.id.auto_next_btn, R.id.viewpoint_btn, R.id.seek_back_btn, R.id.seek_forward_btn,R.id.danmaku_btn,R.id.rotate_btn,
+                R.id.collection_order_btn,R.id.button_quality};
         int seconds = com.RobinNotBad.BiliClient.player.PlaybackVolume.seekSeconds(SharedPreferencesUtil.getInt(
                 com.RobinNotBad.BiliClient.player.PlaybackVolume.SEEK_SECONDS, 10));
-        String[] labels = {"发送弹幕", "字幕", "循环播放", "听视频模式", "分P自动连播", "视频看点", "快退"+seconds+"秒", "快进"+seconds+"秒"};
+        String[] labels = {"发送弹幕", "字幕", "循环播放", "听视频模式", "分P自动连播", "视频看点", "快退"+seconds+"秒", "快进"+seconds+"秒","弹幕开关","旋转画面",
+                String.valueOf(btn_collection_order.getContentDescription()),"画质与连播设置"};
         for (int i = 0; i < ids.length; i++) if (findViewById(ids[i]).getVisibility() == View.VISIBLE)
             playbackOptionsMenu.getMenu().add(0, 100 + i, i, labels[i]);
         playbackOptionsMenu.setOnMenuItemClickListener(item -> {
@@ -6231,6 +6564,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         state.putInt("manual_playback_quality",manualPlaybackQuality);
         state.putBoolean("explicit_online_enabled", explicitOnlineEnabled);
         state.putBoolean("cached_user_audio_only", cachedUserAudioOnlyMode);
+        state.putLong("audio_sleep_deadline",audioSleepDeadline);
         if (collectionQueue != null && favoritePlaybackToken == null) {
             state.putLong("collection_id", collectionQueue.collectionId);
             state.putLongArray("collection_aids", collectionQueue.toArray());
@@ -6362,22 +6696,20 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     private ViewPointAdapter viewPointAdapter;
 
     private void loadViewPoints() {
+        final long requestedAid = aid, requestedCid = cid;
         CenterThreadPool.run(() -> {
             try {
                 Logu.d("视频分段", "开始加载分段数据 aid=" + aid + " cid=" + cid);
-                viewPoints = PlayerApi.getViewPoints(aid, cid);
-
-                if (viewPoints != null && !viewPoints.isEmpty()) {
-                    runOnUiThread(() -> {
-                        if (!destroyed && btn_viewpoint != null) {
-                            btn_viewpoint.setVisibility(View.VISIBLE);
-                            btn_viewpoint.setOnClickListener(view -> showViewPointSelectorCard());
-                            Logu.d("视频分段", "成功加载 " + viewPoints.size() + " 个分段");
-                        }
-                    });
-                } else {
-                    Logu.d("视频分段", "未获取到分段数据");
-                }
+                List<ViewPoint> points = PlayerApi.getViewPoints(requestedAid, requestedCid);
+                runOnUiThread(() -> {
+                    if (destroyed || requestedAid != aid || requestedCid != cid) return;
+                    viewPoints = points;
+                    if (infoOverlay != null) infoOverlay.setChapters(points);
+                    if (viewPointAdapter != null) viewPointAdapter.setData(points);
+                    btn_viewpoint.setVisibility(points != null && !points.isEmpty() ? View.VISIBLE : View.GONE);
+                    btn_viewpoint.setOnClickListener(view -> showViewPointSelectorCard());
+                    updatePlayerInfoOverlay();
+                });
             } catch (Exception e) {
                 Logu.e("视频分段", "加载失败: " + e.getMessage());
                 e.printStackTrace();
@@ -6422,14 +6754,17 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     // 再往下就是互动视频的天下了
 
     private void loadInteractionVideo() {
+        final long requestedAid = aid, requestedCid = cid;
         CenterThreadPool.run(() -> {
             try {
-                long graphVersion = PlayerApi.getInteractionGraphVersion(aid, cid);
+                long graphVersion = PlayerApi.getInteractionGraphVersion(requestedAid, requestedCid);
+                if (destroyed || aid != requestedAid || cid != requestedCid) return;
                 if (graphVersion > 0) {
                     interactionGraphVersion = graphVersion;
                     Logu.d("互动视频", "检测到互动视频，graph_version: " + interactionGraphVersion + ", cid: " + cid);
                     
                     runOnUiThread(() -> {
+                        if (destroyed || aid != requestedAid || cid != requestedCid) return;
                         questionShown = false;
                         currentQuestion = null;
                         if (interactionChoiceLayout != null) {
@@ -6450,7 +6785,9 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                         edgeId = currentEdgeId;
                     }
                     
-                    interactionData = InteractionVideoApi.getEdgeInfo(aid, null, interactionGraphVersion, edgeId);
+                    InteractionVideoData loadedData = InteractionVideoApi.getEdgeInfo(requestedAid, null, graphVersion, edgeId);
+                    if (destroyed || aid != requestedAid || cid != requestedCid) return;
+                    interactionData = loadedData;
                     if (interactionData != null) {
                         currentEdgeId = interactionData.edgeId;
                         if (interactionRestoreSnapshot != null
@@ -6478,6 +6815,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     });
                 }
             } catch (Exception e) {
+                if (destroyed || aid != requestedAid || cid != requestedCid) return;
                 Logu.e("互动视频", "加载失败: " + e.getMessage());
                 e.printStackTrace();
                 interactionData = null;
@@ -6492,6 +6830,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
     }
 
     private void updateDebugButtonVisibility() {
+        updatePlayerInfoOverlay();
         if (btn_debug == null) return;
         boolean debugEnabled = SharedPreferencesUtil.getBoolean("player_interaction_debug", false);
         if (debugEnabled && interactionData != null && interactionData.hiddenVars != null && !interactionData.hiddenVars.isEmpty() && !isLiveMode && !isAudioOnlyMode) {
@@ -6499,6 +6838,15 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
         } else {
             btn_debug.setVisibility(View.GONE);
         }
+    }
+
+    private void updatePlayerInfoOverlay() {
+        if (infoOverlay != null && layout_top != null) infoOverlay.show(
+                !screenLocked && layout_top.getVisibility() == View.VISIBLE,
+                !isLiveMode && !isAudioOnlyMode, interactionData,
+                SharedPreferencesUtil.getBoolean("player_show_viewpoints", true));
+        updateAudioDashboard();
+        updateRightToolbarBounds();
     }
 
     private void checkEndInteractionQuestions() {
@@ -6689,6 +7037,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 currentEdgeId = newData.edgeId;
                 InteractionProgressStore.apply(interactionRestoreSnapshot, newData);
                 saveInteractionProgress(true);
+                runOnUiThread(this::updatePlayerInfoOverlay);
                 
                 long targetCid = choice.cid;
                 if (targetCid > 0 && targetCid != cid) {
@@ -6778,6 +7127,8 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                     }
                     
                     interactionData = newData;
+                    if (infoOverlay != null) infoOverlay.setChapters(null);
+                    updatePlayerInfoOverlay();
                     if (interactionRestoreSnapshot != null
                             && interactionRestoreSnapshot.cid == targetCid
                             && interactionRestoreSnapshot.graphVersion == interactionGraphVersion) {
@@ -6822,7 +7173,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                             loadHighEnergyData();
                         }
                         
-                        if (!destroyed && isOnlineVideo && aid > 0 && cid > 0 && SharedPreferencesUtil.getBoolean("player_show_viewpoints", false)) {
+                        if (!destroyed && isOnlineVideo && aid > 0 && cid > 0 && SharedPreferencesUtil.getBoolean("player_show_viewpoints", true)) {
                             loadViewPoints();
                         }
                     }), 60);
@@ -6907,6 +7258,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
                 Logu.e("互动视频", "执行动作失败: " + action);
             }
         }
+        runOnUiThread(this::updatePlayerInfoOverlay);
     }
 
     private long evaluateValueExpression(String expr) {
@@ -6969,6 +7321,7 @@ public class PlayerActivity extends Activity implements IMediaPlayer.OnPreparedL
             result.putExtra("progress", (int) ijkPlayer.getCurrentPosition());
             result.putExtra("aid", aid);
             result.putExtra("cid", cid);
+            result.putExtra(BiliTerminal.RETURNING_HOME, getIntent().getBooleanExtra(BiliTerminal.RETURNING_HOME, false));
             result.putExtra("online_video", isOnlineVideo && !isLiveMode && !bangumiPlayback);
             Logu.d("进度回传", String.valueOf(ijkPlayer.getCurrentPosition()));
             setResult(RESULT_OK, result);

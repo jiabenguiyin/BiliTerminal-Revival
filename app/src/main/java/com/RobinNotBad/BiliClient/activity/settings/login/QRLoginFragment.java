@@ -4,7 +4,6 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,6 +21,7 @@ import com.RobinNotBad.BiliClient.activity.SplashActivity;
 import com.RobinNotBad.BiliClient.activity.base.InstanceActivity;
 import com.RobinNotBad.BiliClient.api.CookiesApi;
 import com.RobinNotBad.BiliClient.api.LoginApi;
+import com.RobinNotBad.BiliClient.api.QrLoginResponse;
 import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.Logu;
@@ -95,6 +95,14 @@ public class QRLoginFragment extends Fragment {
             if (isAdded()) requireActivity().finish();
         });
 
+        MaterialCardView webLogin = view.findViewById(R.id.webLogin);
+        webLogin.setOnClickListener(v -> startActivity(new Intent(
+                requireContext(), LoginStyleActivity.class)));
+
+        MaterialCardView intlLogin = view.findViewById(R.id.intlLogin);
+        intlLogin.setOnClickListener(v -> startActivity(new Intent(
+                requireContext(), IntlPasswordLoginActivity.class)));
+
         qrImageView.setOnClickListener(v -> {
             if (need_refresh) {
                 qrImageView.setImageResource(R.mipmap.loading_qr);
@@ -131,6 +139,9 @@ public class QRLoginFragment extends Fragment {
 
     @SuppressLint("SetTextI18n")
     public void refreshQrCode() {
+        if (timer != null) timer.cancel();
+        need_refresh = true;
+        if (qrImageView != null) qrImageView.setEnabled(false);
         CenterThreadPool.run(() -> {
             try {
                 CenterThreadPool.runOnUiThread(() -> scanStat.setText("正在获取二维码"));
@@ -140,26 +151,33 @@ public class QRLoginFragment extends Fragment {
                 //CookiesApi.activeCookieInfo();
 
                 CenterThreadPool.runOnUiThread(() -> {
-                    Log.e("debug-image", QRImage.getWidth() + "," + QRImage.getHeight());
+                    need_refresh = false;
+                    qrImageView.setEnabled(true);
                     qrImageView.setImageBitmap(QRImage);
                     startLoginDetect();
                 });
             } catch (IOException e) {
                 CenterThreadPool.runOnUiThread(() -> {
+                    need_refresh = true;
                     qrImageView.setEnabled(true);
-                    scanStat.setText("获取二维码失败，网络错误");
+                    scanStat.setText("获取二维码失败，网络错误\n点击二维码重试");
                 });
                 e.printStackTrace();
             } catch (JSONException e) {
                 CenterThreadPool.runOnUiThread(() -> {
+                    need_refresh = true;
                     qrImageView.setEnabled(true);
-                    scanStat.setText("登录接口可能失效，请找开发者");
+                    String detail = e.getMessage() == null ? "响应数据无效" : e.getMessage();
+                    detail = detail.replaceAll("\\s+", " ");
+                    if (detail.length() > 96) detail = detail.substring(0, 96);
+                    scanStat.setText("获取二维码失败：" + detail + "\n点击二维码重试");
                 });
                 e.printStackTrace();
             } catch (Exception e) {
                 CenterThreadPool.runOnUiThread(() -> {
+                    need_refresh = true;
                     qrImageView.setEnabled(true);
-                    scanStat.setText("遇到其他错误：\n" + e.getMessage());
+                    scanStat.setText("获取二维码失败，请检查网络后点击二维码重试");
                 });
                 e.printStackTrace();
             }
@@ -173,6 +191,7 @@ public class QRLoginFragment extends Fragment {
     }
 
     public void startLoginDetect() {
+        if (timer != null) timer.cancel();
         timer = new Timer();
         timer.schedule(new TimerTask() {
             @SuppressLint("SetTextI18n")
@@ -187,8 +206,20 @@ public class QRLoginFragment extends Fragment {
                     }
 
                     String str = response.body().string();
-                    JSONObject loginJson = new JSONObject(str);
-                    int code = loginJson.getJSONObject("data").getInt("code");
+                    QrLoginResponse loginState = QrLoginResponse.parse(str);
+                    if (!loginState.hasStatus()) {
+                        Logu.w("qr_poll", "missing status; responseCode=" + loginState.responseCode);
+                        this.cancel();
+                        CenterThreadPool.runOnUiThread(() -> {
+                            if (!isAdded()) return;
+                            need_refresh = true;
+                            qrImageView.setEnabled(true);
+                            scanStat.setText(loginState.failureSummary() + "\n点击二维码重试，或使用其他设备导入");
+                        });
+                        return;
+                    }
+                    JSONObject loginData = loginState.data;
+                    int code = loginState.statusCode;
                     Logu.v("login_state", "code=" + code);
                     switch (code) {
                         case 86090:
@@ -199,6 +230,7 @@ public class QRLoginFragment extends Fragment {
                             break;
                         case 86038:
                             CenterThreadPool.runOnUiThread(() -> {
+                                need_refresh = true;
                                 scanStat.setText("二维码已失效，点击上方重新获取");
                                 qrImageView.setEnabled(true);
                             });
@@ -210,7 +242,7 @@ public class QRLoginFragment extends Fragment {
                             String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
 
                             if (!AccountManager.saveLogin(cookies, response.headers("Set-Cookie"),
-                                    loginJson.getJSONObject("data").getString("refresh_token"))) {
+                                    loginData.optString("refresh_token"))) {
                                 CenterThreadPool.runOnUiThread(() ->
                                         scanStat.setText("登录信息保存失败，请重新扫码"));
                                 return;
@@ -220,9 +252,9 @@ public class QRLoginFragment extends Fragment {
                             if (instance != null && !instance.isDestroyed()) instance.finish();
 
                             LoginApi.requestSSOs();
-                            if (loginJson.getJSONObject("data").has("url")) {
+                            if (loginData.has("url")) {
                                 try {
-                                    NetWorkUtil.get(loginJson.getJSONObject("data").optString("url"));
+                                    LoginApi.activateLoginRedirect(loginData.optString("url"));
                                 } catch (Throwable ignored) {
                                 }
                             }
@@ -232,14 +264,20 @@ public class QRLoginFragment extends Fragment {
                             if (isAdded()) requireActivity().finish();
                             break;
                         default:
-                            CenterThreadPool.runOnUiThread(() -> scanStat.setText("二维码登录API可能变动，\n但你仍然可以尝试扫码登录。\n建议反馈给开发者"));
+                            this.cancel();
+                            CenterThreadPool.runOnUiThread(() -> {
+                                need_refresh = true;
+                                qrImageView.setEnabled(true);
+                                scanStat.setText("扫码状态暂不支持（" + code + "）\n点击二维码重试，或使用其他设备导入");
+                            });
                             break;
                     }
 
                 } catch (Exception e) {
                     if (isAdded()) CenterThreadPool.runOnUiThread(() -> {
+                        need_refresh = true;
                         qrImageView.setEnabled(true);
-                        scanStat.setText("无法获取二维码信息，点击上方重试\n" + e.getMessage());
+                        scanStat.setText("无法获取扫码状态，点击二维码重试");
                         MsgUtil.err(e);
                     });
                     this.cancel();

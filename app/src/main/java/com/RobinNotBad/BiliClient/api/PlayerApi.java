@@ -745,6 +745,7 @@ public class PlayerApi {
                 intent.putExtra("danmaku", playerData.danmakuUrl);
                 intent.putExtra("danmaku_count", playerData.danmakuCount);
                 intent.putExtra("title", playerData.title);
+                intent.putExtra("cover", playerData.cover);
                 intent.putExtra("content_type", playerData.type);
                 intent.putExtra("clip_segments", playerData.clipSegments);
                 intent.putExtra("pgc_season", playerData.seasonId);
@@ -887,8 +888,8 @@ public class PlayerApi {
 
         java.util.List<com.RobinNotBad.BiliClient.model.ViewPoint> viewPoints = new java.util.ArrayList<>();
         
-        if (data.has("view_points")) {
-            JSONArray viewPointsArray = data.getJSONArray("view_points");
+        JSONArray viewPointsArray = data.optJSONArray("view_points");
+        if (viewPointsArray != null) {
             for (int i = 0; i < viewPointsArray.length(); i++) {
                 JSONObject vp = viewPointsArray.getJSONObject(i);
                 String content = vp.optString("content", "");

@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import java.io.IOException;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -106,6 +107,11 @@ public class PrivateMsgActivity extends BaseActivity {
 
         Intent intent = getIntent();
         uid = intent.getLongExtra("uid", 114514);
+        String draft = intent.getStringExtra("draft");
+        if (savedInstanceState == null && draft != null) {
+            contentEt.setText(draft);
+            contentEt.setSelection(contentEt.length());
+        }
         Log.e("", String.valueOf(uid));
 
         MsgUtil.showMsg("私信有可能被拦截\n尽量不要用终端发私信喵");
@@ -283,13 +289,18 @@ public class PrivateMsgActivity extends BaseActivity {
             return;
         }
         sending = true;
+        final long sendingAccount=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0);
+        if(sendingAccount<=0){sending=false;MsgUtil.showMsg("请先登录后发送私信");return;}
+        final long thanksAccount=getIntent().getLongExtra("thanks_account",0);
+        if(thanksAccount>0&&thanksAccount!=sendingAccount){sending=false;MsgUtil.showMsg("账号已切换，请重新打开感谢入口");return;}
         sendBtn.setEnabled(false);
         pickImageBtn.setEnabled(false);
         CenterThreadPool.run(() -> {
             boolean success = true;
             String failureMessage = "发送失败";
             try {
-                long selfUid = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 114514);
+                long selfUid = sendingAccount;
+                if(selfUid!=SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid,0))throw new IOException("账号已切换，请重试");
                 if (!content.trim().isEmpty()) {
                     JSONObject result = PrivateMsgApi.sendMsg(selfUid, uid, PrivateMessage.TYPE_TEXT,
                             System.currentTimeMillis() / 1000,
@@ -297,6 +308,9 @@ public class PrivateMsgActivity extends BaseActivity {
                     if (result.optInt("code", -1) != 0) {
                         success = false;
                         failureMessage = result.optString("message", "文字消息发送失败");
+                    } else if(thanksAccount==sendingAccount) {
+                        com.RobinNotBad.BiliClient.util.MessageThanksState.confirmSent(sendingAccount,
+                                getIntent().getLongExtra("thanks_notice_id",0),uid);
                     }
                 }
                 for (Uri image : images) {

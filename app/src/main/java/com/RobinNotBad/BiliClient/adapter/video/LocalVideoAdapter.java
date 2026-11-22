@@ -83,6 +83,7 @@ public class LocalVideoAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                         playerData.danmakuUrl = localVideo.danmakuFileList.get(0);
                     }
                     playerData.title = localVideo.title;
+                    playerData.cover = localVideo.cover;
 
                     try {
                         Intent player = PlayerApi.jumpToPlayer(playerData);
@@ -113,6 +114,7 @@ public class LocalVideoAdapter extends RecyclerView.Adapter<RecyclerView.ViewHol
                     intent.putExtra("folderLocator", localVideo.folderLocator);
                     intent.putExtra("audioOnlyList", localVideo.audioOnlyList);
                     intent.putExtra("title", localVideo.title);
+                    intent.putExtra("cover", localVideo.cover);
                     com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot.start(context, intent,
                             localVideoList, localVideo, localVideo.videoFileList.get(0));
                 }

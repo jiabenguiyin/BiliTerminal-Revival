@@ -124,6 +124,25 @@ public final class DiagnosticLogManager {
         record("network_request", details);
     }
 
+    public static void recordReportedNetworkError(Throwable error) {
+        if (error == null) return;
+        JSONObject details = new JSONObject();
+        try {
+            details.put("exception_type", error.getClass().getSimpleName());
+            Throwable cause = error.getCause();
+            if (cause != null && cause != error) details.put("cause_type", cause.getClass().getSimpleName());
+            for (StackTraceElement frame : error.getStackTrace()) {
+                if (frame.getClassName().startsWith("com.RobinNotBad.BiliClient.")) {
+                    details.put("origin_class", frame.getClassName());
+                    details.put("origin_method", frame.getMethodName());
+                    break;
+                }
+            }
+        } catch (JSONException ignored) {
+        }
+        record("reported_network_error", details);
+    }
+
     public static void recordLifecycle(Activity activity, String state) {
         if (activity == null) return;
         JSONObject details = new JSONObject();

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <RelativeLayout
+        android:id="@+id/top"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="36dp"
+        android:layout_alignParentTop="true">
+
+        <LinearLayout
+            android:id="@+id/userinfo_header_group"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentTop="true"
+            android:layout_toLeftOf="@id/timeText"
+            android:layout_marginLeft="8dp"
+            android:layout_marginRight="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/pageName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:lines="1"
+                android:text="用户信息"
+                android:textStyle="bold"
+                app:drawableStartCompat="@drawable/arrow_back" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/user_video_search"
+                android:layout_width="36dp"
+                android:layout_height="32dp"
+                android:layout_marginLeft="4dp"
+                android:padding="7dp"
+                android:background="@drawable/background_button_compat"
+                android:contentDescription="搜索投稿"
+                app:srcCompat="@drawable/icon_search" />
+        </LinearLayout>
+
+        <com.RobinNotBad.BiliClient.ui.widget.TextClock
+            android:id="@+id/timeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentRight="true"
+            android:layout_marginRight="8dp"
+            android:layout_marginTop="3dp" />
+    </RelativeLayout>
+
+    <androidx.viewpager.widget.ViewPager
+        android:id="@+id/viewPager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/top" />
+
+    <ImageView
+        android:id="@+id/loading"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@mipmap/loading_2233"
+        android:layout_below="@id/top" />
+
+    <TextView
+        android:id="@+id/text_tutorial_pager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/top"
+        android:visibility="gone"
+        android:background="#6000"
+        android:clickable="false"
+        android:gravity="center"
+        android:text="@string/tutorial_pager" />
+</RelativeLayout>

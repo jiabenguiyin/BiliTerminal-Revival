@@ -39,8 +39,15 @@ public class Reply implements Serializable {
     public boolean isDynamic;
     public ArrayList<Reply> childMsgList = new ArrayList<>();
     public boolean isTop;
+    // App ReplyControl.translation_switch: 0 unspecified, 1 unsupported,
+    // 2 show translation, 3 show original. Web responses may omit this field.
+    public int translationSwitch;
 
     public Reply() {
+    }
+
+    public boolean canTranslate() {
+        return translationSwitch == 2 || translationSwitch == 3;
     }
 
     public void setTop(boolean top) {
@@ -70,6 +77,11 @@ public class Reply implements Serializable {
         JSONObject content = replyJson.getJSONObject("content");
 
         JSONObject replyCtrl = replyJson.getJSONObject("reply_control");
+        Object translationControl = replyCtrl.opt("translation_switch");
+        if (translationControl instanceof Number) {
+            double value = ((Number) translationControl).doubleValue();
+            if (value == 2 || value == 3) translationSwitch = (int) value;
+        }
         long ctime = replyJson.getLong("ctime") * 1000;
 
         String time;

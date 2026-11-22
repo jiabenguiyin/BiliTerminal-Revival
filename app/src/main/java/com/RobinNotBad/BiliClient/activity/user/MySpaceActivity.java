@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.RobinNotBad.BiliClient.R;
@@ -20,6 +22,7 @@ import com.RobinNotBad.BiliClient.util.AccountManager;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.GlideUtil;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
+import com.RobinNotBad.BiliClient.util.MySpaceOrder;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.StringUtil;
 import com.bumptech.glide.Glide;
@@ -31,7 +34,7 @@ public class MySpaceActivity extends InstanceActivity {
 
     private ImageView userAvatar;
     private TextView userName, userFans, userExp;
-    private MaterialCardView myInfo, editProfile, follow, watchLater, favorite, bangumi, history, creative, vip, accountSwitch, loginRecord, logout;
+    private MaterialCardView myInfo, editProfile, follow, watchLater, favorite, bangumi, history, creative, vip, accountSwitch, loginRecord, experienceRecord, logout;
 
     private boolean confirmLogout = false;
     private volatile boolean loadingProfile = false;
@@ -40,7 +43,10 @@ public class MySpaceActivity extends InstanceActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (myInfo != null) loadProfile();
+        if (myInfo != null) {
+            applyButtonOrder();
+            loadProfile();
+        }
     }
 
     @Override
@@ -73,9 +79,13 @@ public class MySpaceActivity extends InstanceActivity {
             vip = findViewById(R.id.vip);
             accountSwitch = findViewById(R.id.account_switch);
             loginRecord = findViewById(R.id.login_record);
+            experienceRecord = findViewById(R.id.experience_record);
             logout = findViewById(R.id.logout);
 
 
+            findViewById(R.id.myspace_sort).setOnClickListener(v ->
+                    startActivity(new Intent(this, MySpaceSortActivity.class)));
+            applyButtonOrder();
             bindStaticActions();
             loadProfile();
 
@@ -84,6 +94,67 @@ public class MySpaceActivity extends InstanceActivity {
             scrollView.setFocusableInTouchMode(true);
             scrollView.requestFocus();
         });
+    }
+
+    private void applyButtonOrder() {
+        LinearLayout actions = findViewById(R.id.myspace_actions);
+        if (actions == null) return;
+        for (MySpaceOrder.Item item : MySpaceOrder.parse(
+                SharedPreferencesUtil.getString(MySpaceOrder.PREFERENCE, ""))) {
+            View action = findViewById(item.viewId);
+            if (action != null && action.getParent() == actions) {
+                actions.removeView(action);
+                actions.addView(action);
+            }
+        }
+    }
+
+    @Override public void setRound() {
+        LinearLayout header = findViewById(R.id.myspace_header_group);
+        TextView title = findViewById(R.id.pageName);
+        TextView clock = findViewById(R.id.timeText);
+        if (header == null || title == null || clock == null) {
+            super.setRound();
+            return;
+        }
+
+        boolean round = SharedPreferencesUtil.getBoolean("player_ui_round", false);
+        float density = getResources().getDisplayMetrics().density;
+        int side = Math.round(8 * density);
+        int gap = Math.round(4 * density);
+        RelativeLayout.LayoutParams headerParams = new RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT, Math.round(36 * density));
+        RelativeLayout.LayoutParams clockParams = new RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+
+        if (round) {
+            clockParams.addRule(RelativeLayout.CENTER_HORIZONTAL);
+            clockParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            clockParams.topMargin = gap / 2;
+            clock.setAlpha(0.85f);
+            clock.setTextSize(12);
+
+            headerParams.addRule(RelativeLayout.CENTER_HORIZONTAL);
+            headerParams.addRule(RelativeLayout.BELOW, R.id.timeText);
+            headerParams.leftMargin = headerParams.rightMargin = roundHeaderSideMargin(clock, gap);
+            headerParams.topMargin = gap;
+        } else {
+            headerParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+            headerParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            headerParams.leftMargin = side;
+            headerParams.topMargin = gap / 2;
+
+            clockParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+            clockParams.addRule(RelativeLayout.CENTER_VERTICAL);
+            clockParams.rightMargin = side;
+            clock.setAlpha(1f);
+            clock.setTextSize(14);
+        }
+
+        header.setLayoutParams(headerParams);
+        clock.setLayoutParams(clockParams);
     }
 
     private void bindStaticActions() {
@@ -99,6 +170,7 @@ public class MySpaceActivity extends InstanceActivity {
         vip.setOnClickListener(view -> startActivity(new Intent(this, VipActivity.class)));
         accountSwitch.setOnClickListener(view -> startActivity(new Intent(this, AccountSwitchActivity.class)));
         loginRecord.setOnClickListener(view -> startActivity(new Intent(this, LoginRecordActivity.class)));
+        experienceRecord.setOnClickListener(view -> startActivity(new Intent(this, ExperienceRecordActivity.class)));
         logout.setOnClickListener(view -> {
             if (confirmLogout) {
                 String cookies = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
@@ -134,7 +206,7 @@ public class MySpaceActivity extends InstanceActivity {
         CenterThreadPool.run(() -> {
             try {
                 UserInfo userInfo = UserInfoApi.getCurrentUserInfo();
-                int userCoin = UserInfoApi.getCurrentUserCoin();
+                double userCoin = UserInfoApi.getCurrentUserCoin();
                 if (isActivityAlive()) runOnUiThread(() -> {
                     loadingProfile = false;
                     if (generation != profileGeneration || userInfo.mid !=
@@ -162,7 +234,7 @@ public class MySpaceActivity extends InstanceActivity {
     }
 
     @SuppressLint("SetTextI18n")
-    private void bindProfile(UserInfo userInfo, int userCoin) {
+    private void bindProfile(UserInfo userInfo, double userCoin) {
         if (userInfo == null || userInfo.mid <= 0) {
             showLoginExpired();
             return;
@@ -174,7 +246,7 @@ public class MySpaceActivity extends InstanceActivity {
                 .into(userAvatar);
         userName.setText(userInfo.name);
         AccountManager.updateCurrentProfile(userInfo);
-        userFans.setText(StringUtil.toWan(userInfo.fans) + "粉丝 " + userCoin + "硬币");
+        userFans.setText(StringUtil.toWan(userInfo.fans) + "粉丝 " + UserInfoApi.formatCoinAmount(userCoin) + "硬币");
         userExp.setText("EXP:" + userInfo.current_exp
                 + (userInfo.level >= 6 ? "" : "/" + userInfo.next_exp));
         setProfileAction(view -> startActivity(new Intent(this, UserInfoActivity.class)

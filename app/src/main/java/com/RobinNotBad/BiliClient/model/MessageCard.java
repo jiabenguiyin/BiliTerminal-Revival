@@ -26,6 +26,8 @@ public class MessageCard {
     public long sourceId;
     public long rootId;
     public long targetId;
+    public boolean readStateKnown;
+    public boolean isNew;
 
     public static class Cursor {
         public final boolean is_end;

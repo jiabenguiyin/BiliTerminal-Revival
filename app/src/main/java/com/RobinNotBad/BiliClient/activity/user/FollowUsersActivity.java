@@ -1,8 +1,18 @@
 package com.RobinNotBad.BiliClient.activity.user;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
+import android.view.KeyEvent;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
+import android.widget.RelativeLayout;
 
 import androidx.appcompat.app.AlertDialog;
 
@@ -33,6 +43,9 @@ public class FollowUsersActivity extends RefreshListActivity {
     private FollowGroupAdapter groupAdapter;
     private int mode;
     private boolean groupMode;
+    private EditText searchInput;
+    private String searchKeyword = "";
+    private int listGeneration;
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -52,15 +65,88 @@ public class FollowUsersActivity extends RefreshListActivity {
 
         setPageName(mode == 0 ? "关注列表" : "粉丝列表");
 
+        if (mode == 0) setupFollowingSearch();
+
         recyclerView.setHasFixedSize(true);
 
         userList = new ArrayList<>();
+        setOnRefreshListener(this::reloadList);
+        setOnLoadMoreListener(this::continueLoading);
 
         if (groupMode) {
             loadGroupMode();
         } else {
             loadNormalMode();
         }
+    }
+
+    private void setupFollowingSearch() {
+        RelativeLayout root = (RelativeLayout) swipeRefreshLayout.getParent();
+        View bar = LayoutInflater.from(this).inflate(com.RobinNotBad.BiliClient.R.layout.view_library_search, root, false);
+        RelativeLayout.LayoutParams barParams = new RelativeLayout.LayoutParams(-1, -2);
+        barParams.addRule(RelativeLayout.BELOW, com.RobinNotBad.BiliClient.R.id.top);
+        root.addView(bar, barParams);
+        RelativeLayout.LayoutParams listParams = (RelativeLayout.LayoutParams) swipeRefreshLayout.getLayoutParams();
+        listParams.addRule(RelativeLayout.BELOW, com.RobinNotBad.BiliClient.R.id.library_search_bar);
+        swipeRefreshLayout.setLayoutParams(listParams);
+        RelativeLayout.LayoutParams emptyParams = (RelativeLayout.LayoutParams) emptyView.getLayoutParams();
+        emptyParams.addRule(RelativeLayout.BELOW, com.RobinNotBad.BiliClient.R.id.library_search_bar);
+        emptyView.setLayoutParams(emptyParams);
+
+        searchInput = bar.findViewById(com.RobinNotBad.BiliClient.R.id.library_keyword);
+        searchInput.setHint("搜索关注的用户");
+        View clear = bar.findViewById(com.RobinNotBad.BiliClient.R.id.library_clear);
+        clear.setVisibility(View.INVISIBLE);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                clear.setVisibility(s.length() == 0 ? View.INVISIBLE : View.VISIBLE);
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
+        clear.setOnClickListener(v -> {
+            searchInput.setText("");
+            submitSearch();
+        });
+        bar.findViewById(com.RobinNotBad.BiliClient.R.id.library_search).setOnClickListener(v -> submitSearch());
+        searchInput.setOnEditorActionListener((v, action, event) -> {
+            if (action == EditorInfo.IME_ACTION_SEARCH || (event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_UP)) {
+                submitSearch();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private void submitSearch() {
+        searchKeyword = searchInput.getText().toString().trim();
+        searchInput.clearFocus();
+        InputMethodManager keyboard = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (keyboard != null) keyboard.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
+        reloadList();
+    }
+
+    private void reloadList() {
+        listGeneration++;
+        page = 1;
+        bottom = false;
+        userList.clear();
+        if (mode == 0 && groupMode && searchKeyword.isEmpty()) {
+            loadGroupMode();
+            return;
+        }
+        adapter = new UserListAdapter(this, userList);
+        if (canCancelFollow()) {
+            adapter.setOnItemLongClickListener((position, user) -> confirmCancelFollow(user, () -> {
+                if (position >= 0 && position < userList.size() && userList.get(position).mid == user.mid) {
+                    userList.remove(position);
+                    adapter.notifyItemRemoved(position);
+                }
+            }));
+        }
+        setAdapter(adapter);
+        loadNormalPage(1, listGeneration, searchKeyword);
     }
 
     private boolean canCancelFollow() {
@@ -107,44 +193,54 @@ public class FollowUsersActivity extends RefreshListActivity {
     }
 
     private void loadNormalMode() {
-        CenterThreadPool.run(() -> {
-            try {
-                int result = mode == 0 ? FollowApi.getFollowingList(mid, page, userList) : FollowApi.getFollowerList(mid, page, userList);
-                adapter = new UserListAdapter(this, userList);
-                if (canCancelFollow()) {
-                    adapter.setOnItemLongClickListener((position, user) ->
-                            confirmCancelFollow(user, () -> {
-                                if (position >= 0 && position < userList.size()
-                                        && userList.get(position).mid == user.mid) {
-                                    userList.remove(position);
-                                    adapter.notifyItemRemoved(position);
-                                }
-                            }));
-                }
-                setOnLoadMoreListener(this::continueLoading);
-                setRefreshing(false);
-                setAdapter(adapter);
+        reloadList();
+    }
 
-                if (result == 1) {
-                    Log.e("debug", "到底了");
-                    setBottom(true);
-                }
+    private void loadNormalPage(int requestedPage, int generation, String keyword) {
+        setRefreshing(true);
+        CenterThreadPool.run(() -> {
+            List<UserInfo> resultList = new ArrayList<>();
+            try {
+                int result = mode == 0 && !keyword.isEmpty()
+                        ? FollowApi.searchFollowingList(mid, requestedPage, keyword, resultList)
+                        : mode == 0 ? FollowApi.getFollowingList(mid, requestedPage, resultList)
+                        : FollowApi.getFollowerList(mid, requestedPage, resultList);
+                runOnUiThread(() -> {
+                    if (isDestroyed() || generation != listGeneration) return;
+                    int first = userList.size();
+                    userList.addAll(resultList);
+                    adapter.notifyItemRangeInserted(first, resultList.size());
+                    page = requestedPage;
+                    bottom = result == 1 || (!keyword.isEmpty() && requestedPage >= 5);
+                    setRefreshing(false);
+                    if (userList.isEmpty()) {
+                        emptyView.setText(keyword.isEmpty() ? "暂无内容" : "没有找到匹配的关注用户");
+                        showEmptyView();
+                    } else hideEmptyView();
+                    if (bottom) Log.e("debug", "到底了");
+                });
             } catch (Exception e) {
-                if (e.getMessage() != null && (e.getMessage().startsWith("22115") || e.getMessage().startsWith("22118"))) {
-                    finish();
-                    MsgUtil.showMsg(e.getMessage());
-                } else {
-                    loadFail(e);
-                }
+                runOnUiThread(() -> {
+                    if (isDestroyed() || generation != listGeneration) return;
+                    if (e.getMessage() != null && (e.getMessage().startsWith("22115") || e.getMessage().startsWith("22118"))) {
+                        finish();
+                        MsgUtil.showMsg(e.getMessage());
+                    } else {
+                        loadFail(e);
+                    }
+                });
             }
         });
     }
 
     private void loadGroupMode() {
+        final int generation = listGeneration;
+        setRefreshing(true);
         CenterThreadPool.run(() -> {
             try {
                 List<FollowTag> tagList = FollowApi.getFollowTags();
                 runOnUiThread(() -> {
+                    if (isDestroyed() || generation != listGeneration || !searchKeyword.isEmpty()) return;
                     groupAdapter = new FollowGroupAdapter(this);
                     groupAdapter.setOnGroupExpandListener(tagid -> loadGroupUsers(tagid));
                     if (canCancelFollow()) {
@@ -161,6 +257,7 @@ public class FollowUsersActivity extends RefreshListActivity {
                     setRefreshing(false);
                 });
             } catch (Exception e) {
+                if (generation != listGeneration) return;
                 if (e.getMessage() != null && (e.getMessage().startsWith("22115") || e.getMessage().startsWith("22118"))) {
                     finish();
                     MsgUtil.showMsg(e.getMessage());
@@ -207,32 +304,16 @@ public class FollowUsersActivity extends RefreshListActivity {
     }
 
     private void continueLoading(int page) {
-        if (groupMode) {
+        if (groupMode && searchKeyword.isEmpty()) {
             setRefreshing(false);
             return;
         }
-        CenterThreadPool.run(() -> {
-            try {
-                List<UserInfo> list = new ArrayList<>();
-                int result = mode == 0 ? FollowApi.getFollowingList(mid, page, list) : FollowApi.getFollowerList(mid, page, list);
-                Log.e("debug", "下一页");
-                runOnUiThread(() -> {
-                    userList.addAll(list);
-                    adapter.notifyItemRangeInserted(userList.size() - list.size(), list.size());
-                });
-                if (result == 1) {
-                    Log.e("debug", "到底了");
-                    setBottom(true);
-                }
-                setRefreshing(false);
-            } catch (Exception e) {
-                if (e.getMessage() != null && (e.getMessage().startsWith("22115") || e.getMessage().startsWith("22118"))) {
-                    finish();
-                    MsgUtil.showMsg(e.getMessage());
-                } else {
-                    loadFail(e);
-                }
-            }
-        });
+        loadNormalPage(page, listGeneration, searchKeyword);
+    }
+
+    @Override protected void onDestroy() {
+        listGeneration++;
+        if (cancelFollowDialog != null) cancelFollowDialog.dismiss();
+        super.onDestroy();
     }
 }

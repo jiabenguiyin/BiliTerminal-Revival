@@ -16,8 +16,10 @@ import com.RobinNotBad.BiliClient.activity.base.RefreshMainActivity;
 import com.RobinNotBad.BiliClient.adapter.dynamic.DynamicAdapter;
 import com.RobinNotBad.BiliClient.adapter.dynamic.DynamicHolder;
 import com.RobinNotBad.BiliClient.api.DynamicApi;
+import com.RobinNotBad.BiliClient.api.FollowApi;
 import com.RobinNotBad.BiliClient.helper.TutorialHelper;
 import com.RobinNotBad.BiliClient.model.Dynamic;
+import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
@@ -25,6 +27,8 @@ import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,7 +41,12 @@ public class DynamicActivity extends RefreshMainActivity {
     private ArrayList<Dynamic> dynamicList;
     private DynamicAdapter dynamicAdapter;
     private long offset = 0;
-    private boolean firstRefresh = true;
+    private final List<UserInfo> followedUps = new ArrayList<>();
+    private long upAccount = -1;
+    private boolean upEnabled;
+    private boolean upRequested;
+    private boolean destroyed;
+    private int upGeneration;
     private String type = "all";
     private static final Map<String, String> typeNameMap = createTypeNameMap();
 
@@ -177,6 +186,10 @@ public class DynamicActivity extends RefreshMainActivity {
 
         setPageName("动态");
 
+        dynamicList = new ArrayList<>();
+        dynamicAdapter = new DynamicAdapter(this, dynamicList, recyclerView);
+        setAdapter(dynamicAdapter);
+
         TutorialHelper.showTutorialList(this, R.array.tutorial_dynamic, 6);
 
         refreshDynamic();
@@ -185,14 +198,11 @@ public class DynamicActivity extends RefreshMainActivity {
     @SuppressLint("NotifyDataSetChanged")
     private void refreshDynamic() {
         Log.e("debug", "刷新");
-        if (firstRefresh) {
-            dynamicList = new ArrayList<>();
-        } else {
-            offset = 0;
-            bottom = false;
-            dynamicList.clear();
-            dynamicAdapter.notifyDataSetChanged();
-        }
+        offset = 0;
+        bottom = false;
+        dynamicList.clear();
+        dynamicAdapter.notifyDataSetChanged();
+        syncUpList(true);
 
         addDynamic(type, true);
     }
@@ -212,17 +222,12 @@ public class DynamicActivity extends RefreshMainActivity {
                 setRefreshing(false);
 
                 runOnUiThread(() -> {
+                    if (destroyed) return;
                     dynamicList.addAll(list);
-                    if (firstRefresh) {
-                        firstRefresh = false;
-                        dynamicAdapter = new DynamicAdapter(this, dynamicList, recyclerView);
-                        setAdapter(dynamicAdapter);
+                    if (refresh) {
+                        dynamicAdapter.notifyDataSetChanged();
                     } else {
-                        if (refresh) {
-                            dynamicAdapter.notifyDataSetChanged();
-                        } else {
-                            dynamicAdapter.notifyItemRangeInserted(dynamicList.size() - list.size() + 1, list.size());
-                        }
+                        dynamicAdapter.notifyItemRangeInserted(dynamicList.size() - list.size() + 1, list.size());
                     }
                     if (refresh) {
                         SharedPreferencesUtil.putInt(SharedPreferencesUtil.DYNAMIC_UPDATE_NUM, 0);
@@ -233,6 +238,54 @@ public class DynamicActivity extends RefreshMainActivity {
                 loadFail(e);
             }
         });
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        syncUpList(false);
+    }
+
+    private void syncUpList(boolean refresh) {
+        if (dynamicAdapter == null || destroyed) return;
+        long account = SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0);
+        boolean enabled = SharedPreferencesUtil.getBoolean(
+                SharedPreferencesUtil.DYNAMIC_UP_LIST_ENABLE, true) && account > 0;
+        if (refresh || account != upAccount || enabled != upEnabled) {
+            upGeneration++;
+            upAccount = account;
+            upEnabled = enabled;
+            upRequested = false;
+            followedUps.clear();
+            dynamicAdapter.setFollowingUsers(followedUps, enabled, account);
+        }
+        if (!enabled || upRequested) return;
+        upRequested = true;
+        final int generation = upGeneration;
+        CenterThreadPool.run(() -> {
+            List<UserInfo> users = new ArrayList<>();
+            try {
+                // Keep the watch header bounded; the All entry opens the complete followed list.
+                FollowApi.getFollowingList(account, 1, users);
+            } catch (Exception e) {
+                Log.w("DynamicActivity", "Unable to load followed UP list", e);
+            }
+            runOnUiThread(() -> {
+                if (destroyed || generation != upGeneration
+                        || account != SharedPreferencesUtil.getLong(SharedPreferencesUtil.mid, 0)
+                        || !SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.DYNAMIC_UP_LIST_ENABLE, true)) return;
+                Set<Long> ids = new HashSet<>();
+                for (UserInfo user : users) {
+                    if (user != null && user.mid > 0 && ids.add(user.mid)) followedUps.add(user);
+                }
+                dynamicAdapter.setFollowingUsers(followedUps, true, account);
+            });
+        });
+    }
+
+    @Override protected void onDestroy() {
+        destroyed = true;
+        upGeneration++;
+        super.onDestroy();
     }
 
     @Override

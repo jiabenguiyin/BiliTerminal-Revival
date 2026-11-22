@@ -108,9 +108,13 @@ public class EditProfileActivity extends InstanceActivity {
         CenterThreadPool.run(() -> {
             try {
                 UserInfo profile = UserInfoApi.getCurrentUserEditableProfile();
-                runOnUiThread(() -> bindProfile(profile));
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    bindProfile(profile);
+                });
             } catch (Exception error) {
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     MsgUtil.showMsg("个人资料加载失败：" + error.getMessage());
                     finish();
                 });
@@ -119,6 +123,7 @@ public class EditProfileActivity extends InstanceActivity {
     }
 
     private void bindProfile(UserInfo profile) {
+        if (isDestroyed()) return;
         if (profile == null) {
             MsgUtil.showMsg("个人资料为空");
             finish();
@@ -161,12 +166,14 @@ public class EditProfileActivity extends InstanceActivity {
                         newSign, newSchool);
                 if (code != 0) throw new IllegalStateException("接口返回错误码 " + code);
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     MsgUtil.showMsg("个人资料已保存");
                     setResult(RESULT_OK);
                     finish();
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     save.setEnabled(true);
                     MsgUtil.showMsg("保存失败：" + error.getMessage());
                 });

@@ -10,13 +10,16 @@ import android.view.ViewGroup;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.LinearLayoutManager;
 
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.ListChooseActivity;
 import com.RobinNotBad.BiliClient.activity.dynamic.DynamicActivity;
 import com.RobinNotBad.BiliClient.activity.dynamic.send.SendDynamicActivity;
 import com.RobinNotBad.BiliClient.activity.live.FollowLiveActivity;
+import com.RobinNotBad.BiliClient.activity.user.FollowUsersActivity;
 import com.RobinNotBad.BiliClient.model.Dynamic;
+import com.RobinNotBad.BiliClient.model.UserInfo;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
@@ -33,6 +36,16 @@ public class DynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     final RecyclerView recyclerView;
     final DynamicActivity dynamicActivity;
     final ActivityResultLauncher<Intent> writeDynamicLauncher;
+    private final DynamicUpAdapter upAdapter = new DynamicUpAdapter();
+    private boolean showUpList;
+    private long upAccount;
+
+    public void setFollowingUsers(List<UserInfo> users, boolean enabled, long account) {
+        upAdapter.setUsers(users);
+        showUpList = enabled && !users.isEmpty();
+        upAccount = account;
+        notifyItemChanged(0);
+    }
 
     public DynamicAdapter(Context context, List<Dynamic> dynamicList, RecyclerView recyclerView) {
         this.context = context;
@@ -64,6 +77,11 @@ public class DynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         if (holder instanceof WriteDynamic) {
             WriteDynamic writeDynamic = (WriteDynamic) holder;
+            writeDynamic.upStrip.setVisibility(showUpList ? View.VISIBLE : View.GONE);
+            writeDynamic.upList.setAdapter(upAdapter);
+            writeDynamic.itemView.findViewById(R.id.dynamic_up_all).setOnClickListener(view ->
+                    context.startActivity(new Intent(context, FollowUsersActivity.class)
+                            .putExtra("mode", 0).putExtra("mid", upAccount)));
             writeDynamic.write_dynamic.setOnClickListener((view) -> {
                 Intent intent = new Intent();
                 intent.setClass(context, SendDynamicActivity.class);
@@ -121,12 +139,19 @@ public class DynamicAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
 
     public static class WriteDynamic extends RecyclerView.ViewHolder {
         final MaterialButton write_dynamic, type, live;
+        final View upStrip;
+        final RecyclerView upList;
 
         public WriteDynamic(@NonNull View itemView) {
             super(itemView);
             write_dynamic = itemView.findViewById(R.id.write_dynamic);
             type = itemView.findViewById(R.id.type);
             live = itemView.findViewById(R.id.live);
+            upStrip = itemView.findViewById(R.id.dynamic_up_strip);
+            upList = itemView.findViewById(R.id.dynamic_up_list);
+            upList.setLayoutManager(new LinearLayoutManager(itemView.getContext(),
+                    LinearLayoutManager.HORIZONTAL, false));
+            upList.setNestedScrollingEnabled(false);
         }
     }
 }

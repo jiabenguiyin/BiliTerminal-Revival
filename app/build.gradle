@@ -5,10 +5,10 @@ plugins {
 def betaVerProperty = project.findProperty("betaVer")
 int betaVer = betaVerProperty == null ? 0 : betaVerProperty.toString().toInteger()
 String betaProperty = project.findProperty("beta")?.toString()
-boolean betaBuild = (betaProperty == null ? false : betaProperty.equalsIgnoreCase("true")) || betaVer > 0
+boolean betaBuild = (betaProperty == null ? true : betaProperty.equalsIgnoreCase("true")) || betaVer > 0
 String betaSuffix = project.findProperty("betaSuffix")?.toString()?.trim() ?: (betaVer > 0 ? betaVer.toString() : "")
-int releaseVersionCode = (project.findProperty("versionCode") ?: "2026110401").toString().toInteger()
-String releaseVersionName = (project.findProperty("versionName") ?: "1.2.4").toString()
+int releaseVersionCode = (project.findProperty("versionCode") ?: "2026110705").toString().toInteger()
+String releaseVersionName = (project.findProperty("versionName") ?: "1.2.5").toString()
 
 android {
 
@@ -39,7 +39,7 @@ android {
         }
 
         multiDexEnabled true
-        testInstrumentationRunner (project.findProperty("testRunner") ?: "androidx.test.runner.AndroidJUnitRunner").toString()
+        testInstrumentationRunner (project.findProperty("testRunner") ?: "com.RobinNotBad.BiliClient.MultiDexAndroidJUnitRunner").toString()
         testInstrumentationRunnerArguments class: [
                 'com.RobinNotBad.BiliClient.util.AccountManagerInstrumentedTest',
                 'com.RobinNotBad.BiliClient.util.VideoStorageUtilInstrumentedTest'
@@ -135,7 +135,7 @@ dependencies {
     implementation 'com.github.chrisbanes:PhotoView:2.3.0'
     implementation 'com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0'
     implementation 'org.greenrobot:eventbus:3.2.0'
-    // Geetest（目前没用到）
+    // Geetest (not included; its current Android SDK requires minSdk 21).
     //implementation 'com.geetest.sensebot:sensebot:4.4.2.1'
     //danmaku
     //implementation 'com.github.ctiao:DanmakuFlameMaster:0.9.25'
@@ -159,4 +159,5 @@ dependencies {
     testImplementation 'org.json:json:20180813'
     androidTestImplementation 'androidx.test:runner:1.3.0'
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'
+    androidTestImplementation "androidx.multidex:multidex:$multidex_version"
 }

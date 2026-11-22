@@ -83,13 +83,9 @@ public class FavoriteFolderListActivity extends RefreshListActivity {
                     if (which == 0) startActivityForResult(new Intent(this, FavoriteFolderEditActivity.class)
                             .putExtra("media_id", folder.id).putExtra("owner_mid", accountMid), EDIT_FOLDER);
                     else if(which==1) prepareDelete(folder);
-                    else showDialog(com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.dialog(this,
-                            com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.read(selectedAccount,folder.id),order->{
-                        if(!available(selectedAccount))return;
-                        com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.save(selectedAccount,folder.id,order);
-                        startActivity(new Intent(this,FavoriteVideoListActivity.class).putExtra("mid",selectedAccount)
-                                .putExtra("fid",folder.id).putExtra("name",folder.name));
-                    }));
+                    else if (available(selectedAccount)) {
+                        startActivity(FavoriteVideoSortActivity.intent(this, selectedAccount, folder.id));
+                    }
                 }).create();
         showDialog(menu);
         return true;

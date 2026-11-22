@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:gravity="center" android:padding="4dp">
+    <ImageView android:id="@+id/audio_cover" android:layout_width="80dp" android:layout_height="45dp"
+        android:layout_marginBottom="8dp" android:scaleType="centerCrop"
+        android:src="@drawable/icon_audio_only_on" android:contentDescription="当前视频封面" android:visibility="gone" />
+    <TextView android:id="@+id/audio_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:maxLines="2" android:ellipsize="end" android:gravity="center" android:textSize="14sp"
+        android:textStyle="bold" android:textColor="#ffffff" />
+    <TextView android:id="@+id/audio_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:maxLines="2" android:ellipsize="end"
+        android:layout_marginTop="4dp" android:gravity="center" android:textSize="10sp" android:textColor="#aaaaaa" />
+    <SeekBar android:id="@+id/audio_progress" style="@style/Widget.AppCompat.SeekBar"
+        android:layout_width="match_parent" android:layout_height="28dp" android:contentDescription="听视频进度" />
+    <TextView android:id="@+id/audio_time" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center" android:textSize="11sp" android:textColor="#cccccc" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="44dp" android:gravity="center">
+        <ImageButton android:id="@+id/audio_previous" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:background="@drawable/background_button_compat" android:padding="10dp"
+            android:scaleType="fitCenter" android:src="@android:drawable/ic_media_previous" android:contentDescription="上一集" />
+        <ImageButton android:id="@+id/audio_play" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:background="@drawable/background_button_compat" android:padding="6dp"
+            android:scaleType="fitCenter" android:src="@drawable/btn_player_play" android:contentDescription="播放" />
+        <ImageButton android:id="@+id/audio_next" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:background="@drawable/background_button_compat" android:padding="10dp"
+            android:scaleType="fitCenter" android:src="@android:drawable/ic_media_next" android:contentDescription="下一集" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="40dp">
+        <TextView android:id="@+id/audio_rewind" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:gravity="center" android:text="−10s" android:textColor="#ffffff"
+            android:textSize="12sp" android:background="@drawable/background_button_compat" />
+        <TextView android:id="@+id/audio_forward" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:gravity="center" android:text="+10s" android:textColor="#ffffff"
+            android:textSize="12sp" android:background="@drawable/background_button_compat" />
+        <TextView android:id="@+id/audio_more" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:gravity="center" android:text="更多" android:textColor="#ffffff"
+            android:textSize="12sp" android:background="@drawable/background_button_compat" />
+    </LinearLayout>
+</LinearLayout>

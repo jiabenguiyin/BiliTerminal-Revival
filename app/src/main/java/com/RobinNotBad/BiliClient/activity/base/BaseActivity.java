@@ -111,6 +111,14 @@ public class BaseActivity extends AppCompatActivity {
         if (!SharedPreferencesUtil.getBoolean("back_disable", false)) super.onBackPressed();
     }
 
+    @Override public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && !SharedPreferencesUtil.getBoolean("back_disable", false)) {
+            BiliTerminal.returnHome(this);
+            return true;
+        }
+        return super.onKeyLongPress(keyCode, event);
+    }
+
     public void setPageName(String name) {
         TextView textView = findViewById(R.id.pageName);
         if (textView != null) textView.setText(name);
@@ -119,6 +127,7 @@ public class BaseActivity extends AppCompatActivity {
     public void setTopbarExit() {
         View view = findViewById(R.id.top);
         if (view == null) return;
+        view.setOnLongClickListener(v -> { BiliTerminal.returnHome(this); return true; });
         if (Build.VERSION.SDK_INT > 17 && view.hasOnClickListeners()) return;
         view.setOnClickListener(view1 -> {
             if (Build.VERSION.SDK_INT < 17 || !isDestroyed()) {
@@ -162,6 +171,17 @@ public class BaseActivity extends AppCompatActivity {
                 }
             }
         }
+    }
+
+    /** Keep the entire action row inside the circle, including enlarged text. */
+    protected int roundHeaderSideMargin(TextView clock, int rowGap) {
+        android.graphics.Paint.FontMetricsInt font = clock.getPaint().getFontMetricsInt();
+        double radius = window_width / 2d;
+        double rowTop = Math.min(radius, font.bottom - font.top
+                + clock.getCompoundPaddingTop() + clock.getCompoundPaddingBottom() + rowGap * 1.5d);
+        return Math.max(MsgUtil.dp(this, 8), (int) Math.ceil(radius
+                - Math.sqrt(Math.max(0, radius * radius - Math.pow(radius - rowTop, 2))))
+                + MsgUtil.dp(this, 2));
     }
 
     @Override

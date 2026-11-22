@@ -25,55 +25,24 @@
         android:layout_height="match_parent" />
 
     <RelativeLayout
-        android:id="@+id/audio_only_layout"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#FF000000"
-        android:visibility="gone">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_centerInParent="true"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:paddingHorizontal="20dp">
-
-            <TextView
-                android:id="@+id/audio_title"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:gravity="center"
-                android:maxWidth="220dp"
-                android:text="听视频模式"
-                android:textColor="@color/textwhite"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/audio_subtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:gravity="center"
-                android:maxWidth="220dp"
-                android:text="听视频模式，仅播放音频"
-                android:textColor="#99ffffff"
-                android:textSize="11sp"
-                android:lineSpacingExtra="2dp" />
-
-        </LinearLayout>
-
-    </RelativeLayout>
-
-    <RelativeLayout
         android:id="@+id/control_layout"
         android:gravity="bottom"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipChildren="false"
         android:clipToPadding="false">
+
+        <RelativeLayout
+            android:id="@+id/audio_only_layout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FF000000"
+            android:visibility="gone">
+            <com.RobinNotBad.BiliClient.player.AudioPlaybackPanel
+                android:id="@+id/audio_panel"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </RelativeLayout>
 
         <TextView
             android:id="@+id/text_subtitle"
@@ -142,7 +111,7 @@
                 android:layout_height="wrap_content"
                 android:layout_alignParentRight="true"
                 android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"
+                android:layout_alignParentTop="true"
                 android:gravity="center"
                 android:orientation="vertical">
 
@@ -159,6 +128,27 @@
                     android:textSize="8sp"
                     tools:ignore="SmallSp" />
             </LinearLayout>
+            <HorizontalScrollView
+                android:id="@+id/interaction_values_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="24dp"
+                android:layout_below="@id/text_title"
+                android:fillViewport="false"
+                android:scrollbars="none"
+                android:clickable="true"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/interaction_values"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:singleLine="true"
+                    android:paddingLeft="4dp"
+                    android:paddingRight="4dp"
+                    android:textColor="@color/textwhite"
+                    android:textSize="11sp" />
+            </HorizontalScrollView>
         </RelativeLayout>
 
 
@@ -254,6 +244,13 @@
                 </LinearLayout>
 
             </RelativeLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/player_chapter_list"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:overScrollMode="never"
+                android:visibility="gone" />
 
         </LinearLayout>
 
@@ -408,6 +405,7 @@
                     android:scaleType="fitXY"
                     android:src="@mipmap/morehide" />
 
+
                 <ImageButton
                     android:id="@+id/collection_order_btn"
                     android:layout_width="36dp"
@@ -423,6 +421,19 @@
 
         </LinearLayout>
 
+        <ImageButton
+            android:id="@+id/round_menu_btn"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_alignParentRight="true"
+            android:layout_centerVertical="true"
+            android:layout_marginRight="6dp"
+            android:padding="4dp"
+            android:background="@drawable/background_button_compat"
+            android:contentDescription="更多播放功能"
+            android:src="@mipmap/morehide"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
         <ImageButton
             android:id="@+id/screen_lock_btn"
             android:layout_width="48dp"

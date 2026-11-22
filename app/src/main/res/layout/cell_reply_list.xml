@@ -36,7 +36,7 @@
         android:layout_width="36dp"
         android:layout_height="36dp"
         android:layout_marginEnd="2dp"
-        android:background="@drawable/background_reply_report"
+        android:background="@drawable/background_button_compat"
         android:clickable="true"
         android:focusable="true"
         android:contentDescription="@string/reply_report_description"
@@ -50,7 +50,7 @@
         android:id="@+id/item_reply_top"
         android:layout_width="32dp"
         android:layout_height="35dp"
-        android:background="@android:color/transparent"
+        android:background="@drawable/background_button_compat"
         android:padding="7dp"
         android:contentDescription="@string/reply_pin"
         android:visibility="gone"
@@ -85,7 +85,28 @@
         tools:ignore="TouchTargetSizeCheck" />
 
     <TextView
+        android:id="@+id/translateReply"
+        android:layout_width="wrap_content"
+        android:layout_height="28dp"
+        android:layout_marginTop="2dp"
+        android:background="@drawable/background_button_compat"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:minWidth="42dp"
+        android:paddingStart="5dp"
+        android:paddingEnd="5dp"
+        android:text="@string/reply_translate"
+        android:textColor="#FE679A"
+        android:textSize="12sp"
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="@id/replyText"
+        app:layout_constraintTop_toBottomOf="@id/replyText"
+        tools:ignore="TouchTargetSizeCheck" />
+
+    <TextView
         android:id="@+id/likes"
+        android:background="@drawable/background_button_compat"
         android:layout_width="wrap_content"
         android:layout_height="32dp"
         android:layout_marginTop="4dp"
@@ -102,6 +123,7 @@
 
     <ImageView
         android:id="@+id/dislikeBtn"
+        android:background="@drawable/background_button_compat"
         android:layout_width="32dp"
         android:layout_height="0dp"
         android:layout_marginLeft="6dp"
@@ -121,6 +143,7 @@
     <!-- MMP哪个B在代码里设置了点赞的颜色害得我排除半天色调不对的问题 -->
     <TextView
         android:id="@+id/item_reply_delete"
+        android:background="@drawable/background_button_compat"
         android:layout_width="wrap_content"
         android:layout_height="32dp"
         android:layout_marginLeft="6dp"
@@ -153,7 +176,7 @@
         android:src="@mipmap/placeholder"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/replyText"
+        app:layout_constraintTop_toBottomOf="@+id/translateReply"
         app:round="@dimen/card_round" />
 
 
@@ -222,6 +245,7 @@
 
     <TextView
         android:id="@+id/replyBtn"
+        android:background="@drawable/background_button_compat"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:alpha="0.7"

@@ -238,7 +238,7 @@ public final class ReplyReportDialog extends AlertDialog {
         button.setMinWidth(0); button.setMinimumWidth(0);
         button.setMinHeight(dp(38)); button.setMinimumHeight(dp(38));
         button.setPadding(dp(4), dp(4), dp(4), dp(4));
-        button.setBackgroundResource(R.drawable.background_reply_report);
+        button.setBackgroundResource(R.drawable.background_button_compat);
         return button;
     }
 }

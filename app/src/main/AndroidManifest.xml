@@ -245,6 +245,31 @@
             android:label="特殊登录"
             android:screenOrientation="locked" />
         <activity
+            android:name=".activity.settings.login.OfficialWebLoginActivity"
+            android:exported="false"
+            android:label="主站网页登录"
+            android:screenOrientation="locked" />
+          <activity
+             android:name=".activity.settings.login.LoginStyleActivity"
+             android:exported="false"
+             android:label="登录"
+             android:screenOrientation="locked" />
+          <activity
+             android:name=".activity.settings.login.SmsLoginActivity"
+             android:exported="false"
+             android:label="短信登录"
+             android:screenOrientation="locked" />
+          <activity
+             android:name=".activity.settings.login.CaptchaWebViewActivity"
+             android:exported="false"
+             android:label="安全验证"
+             android:screenOrientation="locked" />
+          <activity
+             android:name=".activity.settings.login.IntlPasswordLoginActivity"
+             android:exported="false"
+             android:label="国际站登录"
+             android:screenOrientation="locked" />
+        <activity
             android:name=".activity.user.FollowUsersActivity"
             android:exported="false"
             android:label="关注"
@@ -314,6 +339,11 @@
             android:label="历史记录"
             android:screenOrientation="locked" />
         <activity
+            android:name=".activity.user.ExperienceRecordActivity"
+            android:exported="false"
+            android:label="@string/experience_records"
+            android:screenOrientation="locked" />
+        <activity
             android:name=".activity.user.LoginRecordActivity"
             android:exported="false"
             android:label="登录记录"
@@ -332,6 +362,11 @@
             android:name=".activity.user.favorite.FavoriteFolderListActivity"
             android:exported="false"
             android:label="收藏夹列表"
+            android:screenOrientation="locked" />
+        <activity
+            android:name=".activity.user.favorite.FavoriteVideoSortActivity"
+            android:exported="false"
+            android:label="手动排序"
             android:screenOrientation="locked" />
         <activity
             android:name=".activity.user.favorite.FavoriteFolderEditActivity"
@@ -371,6 +406,7 @@
             android:exported="false"
             android:label="分页视频选集"
             android:screenOrientation="locked" />
+        <activity android:name=".activity.user.MySpaceSortActivity" android:exported="false" />
         <activity
             android:name=".activity.user.MySpaceActivity"
             android:exported="false"

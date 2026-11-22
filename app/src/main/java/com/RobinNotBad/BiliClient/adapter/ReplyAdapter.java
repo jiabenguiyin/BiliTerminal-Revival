@@ -31,6 +31,7 @@ import com.RobinNotBad.BiliClient.activity.ImageViewerActivity;
 import com.RobinNotBad.BiliClient.activity.reply.ReplyInfoActivity;
 import com.RobinNotBad.BiliClient.activity.reply.WriteReplyActivity;
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
+import com.RobinNotBad.BiliClient.api.CommentTranslationApi;
 import com.RobinNotBad.BiliClient.api.ReplyApi;
 import com.RobinNotBad.BiliClient.event.ReplyTopEvent;
 import com.RobinNotBad.BiliClient.event.ReplyStateEvent;
@@ -56,7 +57,9 @@ import org.greenrobot.eventbus.EventBus;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 //评论Adapter
@@ -82,6 +85,10 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     private final Set<Long> pendingReportRequests = new HashSet<>();
     private ReplyReportDialog activeReportDialog;
     private final Set<Long> appliedDeletions = new HashSet<>();
+    private final Map<Long, String> translatedReplies = new HashMap<>();
+    private final Set<Long> showingTranslations = new HashSet<>();
+    private final Set<Long> pendingTranslations = new HashSet<>();
+    private final Set<Long> unavailableTranslations = new HashSet<>();
     private final long accountMid;
     OnItemClickListener listener;
 
@@ -243,7 +250,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                 replyHolder.userName.setMaxLines(3);
             }
 
-            replyHolder.message.setText(reply.message);
+            bindTranslation(replyHolder, reply);
             StringUtil.setCopy(replyHolder.message);
             replyHolder.message.setOnTouchListener(new StringUtil.ClickableSpanTouchListener());
 
@@ -461,6 +468,101 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
                     intent.putExtra("parentSender", "");
                 context.startActivity(intent);
             });
+        }
+    }
+
+    private void bindTranslation(ReplyHolder holder, Reply reply) {
+        long rpid = reply.rpid;
+        boolean sameAccount = accountMid == ReplyStateSync.account();
+        String translated = sameAccount ? translatedReplies.get(rpid) : null;
+        boolean showingTranslation = translated != null && showingTranslations.contains(rpid);
+        holder.message.setText(showingTranslation ? translated : reply.message);
+
+        // Always clear recycled actions, including rows whose eligibility is unknown.
+        holder.translate.setOnClickListener(null);
+        holder.translate.setEnabled(false);
+        holder.translate.setVisibility(View.GONE);
+        holder.translate.setText(R.string.reply_translate);
+        boolean hasCachedTranslation = translated != null && !translated.trim().isEmpty();
+        if (!sameAccount || (!hasCachedTranslation && !canOfferTranslation(reply))) return;
+        holder.translate.setVisibility(View.VISIBLE);
+
+        boolean pending = pendingTranslations.contains(rpid);
+        holder.translate.setText(pending ? R.string.reply_translate_loading
+                : translated == null ? R.string.reply_translate
+                : showingTranslation ? R.string.reply_show_original : R.string.reply_translate);
+        holder.translate.setEnabled(!pending);
+        holder.translate.setOnClickListener(view -> {
+            if (accountMid != ReplyStateSync.account()) return;
+            if (pendingTranslations.contains(rpid)) return;
+            if (translatedReplies.containsKey(rpid)) {
+                if (showingTranslations.contains(rpid)) showingTranslations.remove(rpid);
+                else showingTranslations.add(rpid);
+                notifyReplyTranslationChanged(rpid);
+                return;
+            }
+            requestTranslation(reply);
+        });
+    }
+
+    private void requestTranslation(Reply reply) {
+        if (accountMid != ReplyStateSync.account()) {
+            MsgUtil.showMsg("账号已切换，请重新打开评论区");
+            return;
+        }
+        if (!canOfferTranslation(reply)) return;
+        final long requestOid = oid;
+        final long rpid = reply.rpid;
+        if (requestOid <= 0 || rpid <= 0 || !pendingTranslations.add(rpid)) return;
+        notifyReplyTranslationChanged(rpid);
+
+        CenterThreadPool.run(() -> {
+            String translation = null;
+            String failure = null;
+            try {
+                translation = CommentTranslationApi.translate(requestOid, type, rpid);
+            } catch (Exception error) {
+                failure = error.getMessage() == null ? "评论翻译失败" : error.getMessage();
+            }
+            final String result = translation;
+            final String errorMessage = failure;
+            CenterThreadPool.runOnUiThread(() -> {
+                pendingTranslations.remove(rpid);
+                if (accountMid != ReplyStateSync.account()) return;
+                if (result != null && !result.trim().isEmpty()) {
+                    translatedReplies.put(rpid, result.trim());
+                    showingTranslations.add(rpid);
+                } else {
+                    unavailableTranslations.add(rpid);
+                }
+                if (errorMessage != null) unavailableTranslations.add(rpid);
+                notifyReplyTranslationChanged(rpid);
+                if (errorMessage != null) MsgUtil.showMsg(errorMessage);
+            });
+        });
+    }
+
+    private boolean canOfferTranslation(Reply reply) {
+        if (!reply.canTranslate() || reply.rpid <= 0 || oid <= 0 || type <= 0
+                || unavailableTranslations.contains(reply.rpid)) return false;
+        long currentMid = ReplyStateSync.account();
+        long boundMid = SharedPreferencesUtil.getLong(
+                SharedPreferencesUtil.APP_RECOMMEND_BOUND_MID, 0L);
+        long expiresAt = SharedPreferencesUtil.getLong(
+                SharedPreferencesUtil.APP_RECOMMEND_ACCESS_KEY_EXPIRES_AT, 0L);
+        String accessKey = SharedPreferencesUtil.getString(
+                SharedPreferencesUtil.APP_RECOMMEND_ACCESS_KEY, "").trim();
+        return accountMid == currentMid && currentMid > 0 && currentMid == boundMid && !accessKey.isEmpty()
+                && (expiresAt <= 0 || System.currentTimeMillis() < expiresAt);
+    }
+
+    private void notifyReplyTranslationChanged(long rpid) {
+        for (int i = 0; i < replyList.size(); i++) {
+            Reply reply = replyList.get(i);
+            if (reply == null || reply.rpid != rpid) continue;
+            int position = isDetail ? (i == 0 ? 0 : i + 1) : i + 1;
+            notifyItemChanged(position);
+            return;
         }
     }
 
@@ -755,6 +857,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         final android.widget.ImageButton reportBtn;
         final LinearLayout childReplies;
         final TextView message;
+        final TextView translate;
         final TextView userName;
         final TextView pubDate;
         final TextView childCount;
@@ -777,6 +880,7 @@ public class ReplyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             reportBtn = itemView.findViewById(R.id.reportbutton);
             childReplies = itemView.findViewById(R.id.repliesList);
             message = itemView.findViewById(R.id.replyText);
+            translate = itemView.findViewById(R.id.translateReply);
             userName = itemView.findViewById(R.id.replyUsername);
             pubDate = itemView.findViewById(R.id.replyPubDate);
             childCount = itemView.findViewById(R.id.repliesControl);

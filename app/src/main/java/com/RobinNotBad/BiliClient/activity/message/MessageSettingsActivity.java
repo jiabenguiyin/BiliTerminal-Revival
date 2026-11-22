@@ -2,8 +2,6 @@ package com.RobinNotBad.BiliClient.activity.message;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
-import android.view.View;
-import android.widget.TextView;
 
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -16,6 +14,7 @@ import com.RobinNotBad.BiliClient.api.MessageApi;
 import com.RobinNotBad.BiliClient.model.message.MessageSettingItem;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.MsgUtil;
+import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 
 import org.json.JSONObject;
 
@@ -25,10 +24,8 @@ import java.util.List;
 public class MessageSettingsActivity extends BaseActivity {
     private RecyclerView recyclerView;
     private SwipeRefreshLayout swipeRefreshLayout;
-    private TextView emptyView;
     private MessageSettingsAdapter adapter;
-    private List<MessageSettingItem> settingsList;
-    private JSONObject currentSettings;
+    private final List<MessageSettingItem> settingsList = new ArrayList<>();
 
     @SuppressLint("SetTextI18n")
     @Override
@@ -38,14 +35,15 @@ public class MessageSettingsActivity extends BaseActivity {
 
         setPageName("消息设置");
 
-        emptyView = findViewById(R.id.emptyTip);
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
         swipeRefreshLayout.setEnabled(false);
         swipeRefreshLayout.setRefreshing(true);
         recyclerView = findViewById(R.id.recyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        settingsList = new ArrayList<>();
+        buildSettingsList(new JSONObject());
+        adapter = new MessageSettingsAdapter(this, settingsList, this::onSettingChanged);
+        recyclerView.setAdapter(adapter);
         loadSettings();
     }
 
@@ -54,34 +52,39 @@ public class MessageSettingsActivity extends BaseActivity {
             try {
                 JSONObject response = MessageApi.getMsgSettings();
                 if (response.getInt("code") == 0) {
-                    currentSettings = response.getJSONObject("data");
-                    buildSettingsList();
+                    JSONObject currentSettings = response.getJSONObject("data");
                     runOnUiThread(() -> {
-                        adapter = new MessageSettingsAdapter(this, settingsList, this::onSettingChanged);
-                        recyclerView.setAdapter(adapter);
+                        if (isDestroyed()) return;
+                        buildSettingsList(currentSettings);
+                        adapter.notifyDataSetChanged();
                         swipeRefreshLayout.setRefreshing(false);
                     });
                 } else {
                     runOnUiThread(() -> {
+                        if (isDestroyed()) return;
                         MsgUtil.showMsg("获取设置失败: " + response.optString("message", "未知错误"));
                         swipeRefreshLayout.setRefreshing(false);
-                        emptyView.setText("加载失败，请重试");
-                        emptyView.setVisibility(View.VISIBLE);
                     });
                 }
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     report(e);
                     swipeRefreshLayout.setRefreshing(false);
-                    emptyView.setText("加载失败，请重试");
-                    emptyView.setVisibility(View.VISIBLE);
                 });
             }
         });
     }
 
-    private void buildSettingsList() {
+    private void buildSettingsList(JSONObject currentSettings) {
         settingsList.clear();
+        settingsList.add(new MessageSettingItem(
+                SharedPreferencesUtil.MESSAGE_REFRESH_ON_RETURN,
+                getString(R.string.message_refresh_on_return),
+                getString(R.string.message_refresh_on_return_desc),
+                MessageSettingItem.TYPE_SWITCH,
+                SharedPreferencesUtil.getBoolean(SharedPreferencesUtil.MESSAGE_REFRESH_ON_RETURN, true),
+                null));
 
         if (currentSettings.has("msg_notify")) {
             int value = currentSettings.optInt("msg_notify", 1);
@@ -151,6 +154,10 @@ public class MessageSettingsActivity extends BaseActivity {
     }
 
     private void onSettingChanged(String key, boolean value) {
+        if (SharedPreferencesUtil.MESSAGE_REFRESH_ON_RETURN.equals(key)) {
+            SharedPreferencesUtil.putBoolean(key, value);
+            return;
+        }
         CenterThreadPool.run(() -> {
             try {
                 JSONObject settings = new JSONObject();

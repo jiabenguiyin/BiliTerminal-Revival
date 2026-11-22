@@ -434,6 +434,11 @@ public class NetWorkUtil {
         return executeGet(url, headers, redirectHandler, shouldRouteUrlForRelay(url), getOkHttpInstance());
     }
 
+    public static Response getDirect(String url, ArrayList<String> headers) throws IOException {
+        Logu.d("get-direct-url", compactUrl(url));
+        return executeGet(url, headers, null, false, getOkHttpInstance());
+    }
+
     public static Response getDownload(String url) throws IOException {
         return getDownload(url, webHeaders);
     }
@@ -564,6 +569,13 @@ public class NetWorkUtil {
 
     public static Response postJson(String url, String data, List<String> headers) throws IOException {
         return post(url, data, headers, "application/json");
+    }
+
+    /** A metadata edit is one submission, including when the connection fails. */
+    public static Response postJsonOnce(String url, String data, List<String> headers) throws IOException {
+        OkHttpClient client = getOkHttpInstance().newBuilder()
+                .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build();
+        return executePost(url, data, headers, "application/json", shouldRouteUrlForRelay(url), client);
     }
 
     public static Response postJson(String url, String data) throws IOException {

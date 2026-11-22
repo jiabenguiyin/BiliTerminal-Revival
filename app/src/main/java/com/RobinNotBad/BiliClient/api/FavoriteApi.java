@@ -10,6 +10,7 @@ import com.RobinNotBad.BiliClient.model.Opus;
 import com.RobinNotBad.BiliClient.model.VideoCard;
 import com.RobinNotBad.BiliClient.util.NetWorkUtil;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
+import com.RobinNotBad.BiliClient.util.FavoriteVideoOrder;
 import com.RobinNotBad.BiliClient.util.SharedPreferencesUtil;
 import com.RobinNotBad.BiliClient.util.StringUtil;
 import com.RobinNotBad.BiliClient.util.SearchQueryUtil;
@@ -20,6 +21,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.HashSet;
@@ -30,6 +32,7 @@ import okhttp3.Response;
 
 public class FavoriteApi {
     // TODO 合集收藏
+    private static final String DELETE_FAVORITE_URL = "https://api.bilibili.com/x/v3/fav/resource/batch-del";
 
     public static ArrayList<FavoriteFolder> getFavoriteFolders(long mid) throws IOException, JSONException {
         ArrayList<FavoriteFolder> folders = new ArrayList<>();
@@ -126,16 +129,18 @@ public class FavoriteApi {
         if (allFolders && query.isEmpty()) {
             throw new IllegalArgumentException("全部收藏的浏览必须合并各收藏夹，不能使用空关键词的跨收藏夹搜索");
         }
-        return "https://api.bilibili.com/x/v3/fav/resource/list" + new NetWorkUtil.FormData()
+        NetWorkUtil.FormData form = new NetWorkUtil.FormData()
                 .setUrlParam(true)
                 .put("media_id", fid)
                 .put("pn", page)
                 .put("ps", 20)
                 .put("keyword", query)
-                .put("order", com.RobinNotBad.BiliClient.util.FavoriteVideoOrder.normalize(order))
                 .put("type", allFolders ? 1 : 0)
-                .put("tid", 0)
-                .put("platform", "web");
+                .put("tid", 0);
+        if (!FavoriteVideoOrder.FOLDER_ORDER.equals(order) || allFolders) {
+            form.put("order", allFolders ? "mtime" : FavoriteVideoOrder.normalize(order)).put("platform", "web");
+        }
+        return "https://api.bilibili.com/x/v3/fav/resource/list" + form;
     }
 
     public static ApiResult getFavoriteVideos(long fid, int page, String keyword, boolean allFolders,
@@ -319,6 +324,38 @@ public class FavoriteApi {
         }
     }
 
+    /** Move one video after its predecessor. A zero predecessor means the front of the folder. */
+    public static String videoSortMove(long predecessor, long moved) {
+        if (predecessor < 0 || moved <= 0 || predecessor == moved) {
+            throw new IllegalArgumentException("视频排序位置无效");
+        }
+        return predecessor + ":" + (predecessor == 0 ? 0 : 2) + ":" + moved + ":2";
+    }
+
+    public static ApiResult sortFavoriteVideos(FavoriteFolder folder, String moves) throws IOException, JSONException {
+        requireOwnedFolder(folder);
+        String cookie = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+        String csrf = NetWorkUtil.getInfoFromCookie("bili_jct", cookie);
+        String cookieMid = NetWorkUtil.getInfoFromCookie("DedeUserID", cookie);
+        if (csrf.isEmpty() || NetWorkUtil.getInfoFromCookie("SESSDATA", cookie).isEmpty()
+                || (!cookieMid.isEmpty() && !Long.toString(folder.ownerMid).equals(cookieMid))) {
+            throw new IOException("登录信息已变化，请返回收藏夹重试");
+        }
+        if (moves == null || moves.isEmpty()) throw new IOException("尚未调整视频顺序");
+        String body = new NetWorkUtil.FormData().put("media_id", folder.id)
+                .put("sort", moves).put("csrf", csrf).toString();
+        List<String> headers = Arrays.asList("Cookie", cookie, "User-Agent", NetWorkUtil.USER_AGENT_WEB,
+                "Origin", "https://space.bilibili.com", "Referer", "https://space.bilibili.com/");
+        requireOwnedFolder(folder);
+        try (Response response = NetWorkUtil.postOnce("https://api.bilibili.com/x/v3/fav/resource/sort", body, headers)) {
+            if (!response.isSuccessful() || response.body() == null) throw new IOException("保存结果未确认");
+            ApiResult result = new ApiResult(new JSONObject(response.body().string()));
+            DiagnosticLogManager.record("favorite_folder_result",
+                    new JSONObject().put("operation", "sort_videos").put("code", result.code));
+            return result;
+        }
+    }
+
     static String buildEditFolderBody(long mediaId, String title, String intro, boolean privateFolder) {
         return new NetWorkUtil.FormData().put("media_id", mediaId).put("title", title).put("intro", intro)
                 .put("privacy", privateFolder ? 1 : 0).put("csrf", currentCsrf()).toString();
@@ -360,11 +397,14 @@ public class FavoriteApi {
 
     public static int deleteFavorite(long aid, long fid) throws IOException, JSONException {
         if (aid <= 0 || fid <= 0) return -400;
-        String url = "https://api.bilibili.com/x/v3/fav/resource/batch-del";
         String body = buildDeleteFavoriteBody(aid, fid);
 
         JSONObject result = new JSONObject(Objects.requireNonNull(
-                NetWorkUtil.post(url, body, NetWorkUtil.webHeaders).body()).string());
+                NetWorkUtil.post(DELETE_FAVORITE_URL, body, NetWorkUtil.webHeaders).body()).string());
+        return recordFavoriteDeletion(result);
+    }
+
+    private static int recordFavoriteDeletion(JSONObject result) throws JSONException {
         Log.e("debug-删除收藏", "code=" + result.optInt("code", -1)
                 + ", message=" + result.optString("message", ""));
         JSONObject details = new JSONObject();
@@ -375,28 +415,75 @@ public class FavoriteApi {
         return result.getInt("code");
     }
 
+    /** Keep every removal in a selection bound to the original account and folder. */
+    public static final class RemovalSession {
+        private final String account;
+        private final long fid;
+        private final String cookie;
+        private final String auth;
+        private final String csrf;
+
+        private RemovalSession(long owner, long fid) {
+            account = Long.toString(owner);
+            this.fid = fid;
+            cookie = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+            auth = NetWorkUtil.getInfoFromCookie("SESSDATA", cookie);
+            csrf = NetWorkUtil.getInfoFromCookie("bili_jct", cookie);
+        }
+
+        public static RemovalSession capture(long owner, long fid) throws IOException {
+            RemovalSession session = new RemovalSession(owner, fid);
+            if (owner <= 0 || fid <= 0 || session.auth.isEmpty() || session.csrf.isEmpty() || !session.isCurrent()) {
+                throw new IOException("登录信息不完整或账号已切换，请返回重试");
+            }
+            return session;
+        }
+
+        public boolean isCurrent() {
+            String current = SharedPreferencesUtil.getString(SharedPreferencesUtil.cookies, "");
+            String cookieMid = NetWorkUtil.getInfoFromCookie("DedeUserID", current);
+            return account.equals(currentMid()) && (cookieMid.isEmpty() || account.equals(cookieMid))
+                    && auth.equals(NetWorkUtil.getInfoFromCookie("SESSDATA", current))
+                    && csrf.equals(NetWorkUtil.getInfoFromCookie("bili_jct", current));
+        }
+
+        public int remove(long aid) throws IOException, JSONException {
+            if (aid <= 0 || !isCurrent()) throw new IOException("收藏操作已取消");
+            String body = buildDeleteFavoriteBody(aid, fid, account, csrf);
+            List<String> headers = Arrays.asList("Cookie", cookie, "User-Agent", NetWorkUtil.USER_AGENT_WEB,
+                    "Origin", "https://www.bilibili.com", "Referer", "https://www.bilibili.com/");
+            try (Response response = NetWorkUtil.postOnce(DELETE_FAVORITE_URL, body, headers)) {
+                if (!response.isSuccessful() || response.body() == null) throw new IOException("删除结果未确认");
+                return recordFavoriteDeletion(new JSONObject(response.body().string()));
+            }
+        }
+    }
+
     static String buildDeleteFavoriteUrl(long aid, long fid) {
-        return "https://api.bilibili.com/x/v3/fav/resource/batch-del"
+        return DELETE_FAVORITE_URL
                 + new NetWorkUtil.FormData()
                 .setUrlParam(true)
                 .put("resources", aid + ":2")
-                .put("media_id", favoriteMediaId(fid))
+                    .put("media_id", favoriteMediaId(fid, currentMid()))
                 .put("platform", "web")
                 .put("csrf", currentCsrf());
     }
 
     static String buildDeleteFavoriteBody(long aid, long fid) {
+        return buildDeleteFavoriteBody(aid, fid, currentMid(), currentCsrf());
+    }
+
+    private static String buildDeleteFavoriteBody(long aid, long fid, String mid, String csrf) {
         return new NetWorkUtil.FormData()
                 .put("resources", aid + ":2")
-                .put("media_id", favoriteMediaId(fid))
+                .put("media_id", favoriteMediaId(fid, mid))
                 .put("platform", "web")
-                .put("csrf", currentCsrf())
+                .put("csrf", csrf)
                 .toString();
     }
 
-    private static String favoriteMediaId(long fid) {
+    private static String favoriteMediaId(long fid, String mid) {
         String value = String.valueOf(fid);
-        String mid = currentMid();
         String suffix = mid.length() >= 2 ? mid.substring(mid.length() - 2) : mid;
         // Folder-list responses may already expose the gateway media id with
         // the account suffix. Do not append it a second time.

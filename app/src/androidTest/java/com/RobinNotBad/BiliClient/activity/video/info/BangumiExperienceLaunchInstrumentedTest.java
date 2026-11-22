@@ -43,6 +43,11 @@ public class BangumiExperienceLaunchInstrumentedTest {
             else if(path.endsWith("/view/web/season"))result.put("season_id",season).put("media_id",99).put("title",season==7?"第一季":"第二季").put("cover","")
                     .put("seasons",new JSONArray().put(new JSONObject().put("season_id",7).put("season_title","第一季"))
                             .put(new JSONObject().put("season_id",8).put("season_title","第二季")));
+            else if(path.contains("/pgc/player/")){
+                result.put("video_info",new JSONObject().put("quality",32)
+                        .put("durl",new JSONArray().put(new JSONObject().put("url","https://fixture.invalid/episode.mp4")))
+                        .put("accept_quality",new JSONArray().put(32).put(16)).put("accept_description",new JSONArray().put("480P").put("360P")));
+            }
             else if(path.endsWith("/season/section")){
                 JSONArray episodes=new JSONArray();for(int n=1;n<=2;n++)episodes.put(new JSONObject().put("id",season*100+n).put("aid",7000)
                         .put("cid",1000+season*100+n).put("title",String.valueOf(n)).put("long_title","测试集").put("cover","").put("badge",""));
@@ -67,6 +72,28 @@ public class BangumiExperienceLaunchInstrumentedTest {
         assertEquals(1,get("selectedEpisode"));RecyclerView list=fragment.getView().findViewById(R.id.rv_episode_list);
         assertEquals(1,((MediaEpisodeAdapter)list.getAdapter()).selectedItemIndex);
         assertEquals("继续播放：2",((android.widget.Button)fragment.getView().findViewById(R.id.btn_play)).getText());
+    }
+    @Test public void cacheEntryChecksTheSelectedEpisodeAndOffersNativeQualityChoices()throws Exception{
+        main(()->{
+            View cache=fragment.getView().findViewById(R.id.bangumi_download);
+            assertEquals(View.VISIBLE,cache.getVisibility());cache.performClick();
+        });
+        await(()->get("downloadMenu") instanceof PlayerOptionsMenu&&((PlayerOptionsMenu)get("downloadMenu")).isShowing());
+        PlayerOptionsMenu menu=(PlayerOptionsMenu)get("downloadMenu");
+        await(()->menu.getDialog().getWindow().getDecorView().getWidth()>0);
+        main(()->{
+            assertEquals(4,menu.getMenu().size());
+            assertEquals("缓存 480P",menu.getMenu().findItem(1).getTitle());
+            assertTrue(menu.getMenu().findItem(1).isChecked());
+            android.app.Dialog dialog=menu.getDialog();
+            assertTrue(dialog.getWindow().getDecorView().getWidth()<=host.findViewById(android.R.id.content).getWidth());
+            assertTrue(dialog.getWindow().getDecorView().getHeight()<=host.findViewById(android.R.id.content).getHeight());
+            View decor=dialog.getWindow().getDecorView();Bitmap image=Bitmap.createBitmap(decor.getWidth(),decor.getHeight(),Bitmap.Config.ARGB_8888);
+            try(FileOutputStream out=new FileOutputStream(new File(host.getFilesDir(),"bangumi-cache-quality.png"))){decor.draw(new Canvas(image));image.compress(Bitmap.CompressFormat.PNG,100,out);}
+            catch(IOException e){throw new AssertionError(e);}finally{image.recycle();}
+            menu.getMenu().performIdentifierAction(3,0);
+            assertFalse(menu.isShowing());
+        });
     }
     @Test public void seasonChoiceUsesSeasonIdAndDoesNotRequireMediaId()throws Exception{
         main(()->invoke("showSeasonChoices"));PlayerOptionsMenu menu=(PlayerOptionsMenu)get("seasonsMenu");

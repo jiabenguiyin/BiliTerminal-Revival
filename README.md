@@ -16,18 +16,17 @@
   <a href="https://jp.031030.xyz/#updates">更新日志</a> ·
   <a href="https://jp.031030.xyz/#guide">使用说明</a> ·
   <a href="https://jp.031030.xyz/#status">服务状态</a> ·
-  <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/releases">Releases</a> ·
   <a href="https://github.com/jiabenguiyin/BiliTerminal-Revival/issues">GitHub 问题反馈</a> ·
   <span>反馈群：1107953621</span>
 </p>
 
-> 正式版和测试版安装包统一从 [https://jp.031030.xyz/#download](https://jp.031030.xyz/#download) 获取。GitHub 仓库用于公开源码、构建记录和问题跟踪。
+> 正式版和测试版安装包统一从[哔哩终端复活版官网](https://jp.031030.xyz/#download)获取。GitHub 仓库用于公开源码、构建记录和问题跟踪。
 
 ## 项目简介
 
 哔哩终端复活版是一款面向智能手表、旧手机和低性能 Android 设备的轻量 B 站客户端。
 
-本项目基于原 BiliClient 代码继续维护，重点保留小屏设备适配、Android 4.0.4 兼容、内置播放器、动态、评论、收藏、私信和离线缓存等能力。客户端默认优先直连 B 站，网络异常时可按配置切换兼容中继。
+本项目基于原 BiliClient 代码继续维护，重点保留小屏设备适配、Android 4.0.4 兼容、内置播放器、动态、评论、收藏和离线缓存等能力。客户端优先直连 B 站，网络异常时可按配置切换兼容中继。
 
 ## 核心功能
 
@@ -36,31 +35,16 @@
 - 内置视频、直播和音频播放器
 - 支持动态、评论、收藏、私信和关注功能
 - 下载任务支持暂停、继续和断点续传
-- 互动视频支持保存播放进度和分支状态
-- 播放器支持屏幕锁定、亮度/音量手势和小屏圆角安全区适配
 - Android 5.0 及以上支持 SAF 外置 SD 卡目录
 - 直连优先，网络异常时可按配置切换兼容中继
 
 ## 下载安装
 
-1. 打开 [https://jp.031030.xyz/#download](https://jp.031030.xyz/#download)。
+1. 打开[官网下载安装页](https://jp.031030.xyz/#download)。
 2. 日常使用请选择正式版；测试版用于提前验证新功能，稳定性可能较低。
 3. 安装前请确认设备允许安装来源可信的 APK，并保留原有数据后再覆盖升级。
 
-当前正式版：`1.2.4` · `2026110401`（`BETA=false`）
-
-最新版本号、发布日期、文件大小和校验值均以 [https://jp.031030.xyz/](https://jp.031030.xyz/) 实时数据为准。
-
-GitHub 发布页：[https://github.com/jiabenguiyin/BiliTerminal-Revival/releases](https://github.com/jiabenguiyin/BiliTerminal-Revival/releases)
-
-## 最新更新
-
-正式版 `1.2.4 / 2026110401`：
-
-- 新增 UP 主投稿、视频合集、在线收藏夹与缓存歌单连播，支持顺序、倒序、随机、单曲循环、耳机切歌及进度续播；新增收藏视频排序、历史记录长按及多选删除。
-- 新增番剧片头片尾跳过、同系列切季及续看；支持本人弹幕边框、精细音量、移动数据与 Wi-Fi 独立画质；长按倍速提示可调大小或关闭，支持手势切换视频，改善放大画面的拖动体验。
-- 新增存储空间清理、评论及视频／动态举报、创作中心本人稿件管理与删除；支持消息红点开关、关注及黑名单管理，统一弹窗和搜索分类交互，优化大图查看；修复退出后重启、下载失败提示不明、搜索安全验证误报及界面输入异常。
-- 优化 Android 4.x、低内存设备和智能手表的运行稳定性
+最新版本号、发布日期、文件大小和校验值均以官网实时数据为准。
 
 ## 兼容范围
 
@@ -92,7 +76,7 @@ Android 5.0 及以上设备可以在设置中选择 SAF 目录作为缓存位置
 
 发现问题时可以在 [GitHub Issues](https://github.com/jiabenguiyin/BiliTerminal-Revival/issues) 提交，也可以加入反馈群 `1107953621`。请尽量附上设备型号、Android 版本、复现步骤、网络类型和日志上传 ID。请勿公开粘贴登录 Cookie、Token 或其他账号凭据。
 
-服务是否正常可先查看 [https://jp.031030.xyz/#status](https://jp.031030.xyz/#status)。
+服务是否正常可先查看[官网服务状态](https://jp.031030.xyz/#status)。
 
 ## 许可与致谢
 
@@ -101,4 +85,3 @@ Android 5.0 及以上设备可以在设置中选择 SAF 目录作为缓存位置
 ## 免责声明
 
 本项目仅供学习、研究和自用设备使用。请遵守哔哩哔哩服务条款、当地法律法规以及网络服务提供方的使用规则。请勿进行高频抓取、刷量、绕过付费内容或影响他人服务的行为。
-

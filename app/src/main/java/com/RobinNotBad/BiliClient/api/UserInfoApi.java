@@ -465,24 +465,35 @@ public class UserInfoApi {
         return code == Integer.MIN_VALUE ? "network" : String.valueOf(code);
     }
 
-    public static int getCurrentUserCoin() {
+    public static double getCurrentUserCoin() {
         try {
             JSONObject nav = NetWorkUtil.getJson("https://api.bilibili.com/x/web-interface/nav",
                     NetWorkUtil.webHeaders);
             JSONObject data = nav.optJSONObject("data");
             if (nav.optInt("code", -1) == 0 && data != null
                     && data.optBoolean("isLogin", false)) {
-                return (int) data.optDouble("money", 0);
+                double value=readCoinAmount(nav);
+                if(!Double.isNaN(value))return value;
             }
         } catch (Exception ignored) {
         }
         try {
             JSONObject all = NetWorkUtil.getJson("https://account.bilibili.com/site/getCoin");
-            JSONObject data = all.optJSONObject("data");
-            return data == null ? 0 : (int) data.optDouble("money", 0);
+            return readCoinAmount(all);
         } catch (Exception ignored) {
-            return 0;
+            return Double.NaN;
         }
+    }
+
+    static double readCoinAmount(JSONObject response){
+        if(response.optInt("code",0)!=0)return Double.NaN;
+        JSONObject data=response.optJSONObject("data");
+        double value=data==null?Double.NaN:data.optDouble("money",Double.NaN);
+        return Double.isInfinite(value)||value<0?Double.NaN:value;
+    }
+    public static String formatCoinAmount(double value){
+        return Double.isNaN(value)||Double.isInfinite(value)||value<0?"--"
+                :String.format(java.util.Locale.ROOT,"%.1f",value);
     }
 
     public static class LoginExpiredException extends IOException {

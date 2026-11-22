@@ -2,7 +2,6 @@ package com.RobinNotBad.BiliClient.util;
 
 import android.app.Activity;
 import android.content.res.Configuration;
-import android.util.Log;
 
 import com.geetest.sdk.GT3ConfigBean;
 import com.geetest.sdk.GT3ErrorBean;
@@ -17,8 +16,6 @@ public class GeetestUtil {
 
     private GT3GeetestUtils mGt3GeetestUtils;
     private GT3ConfigBean gt3ConfigBean;
-
-    private static final String TAG = "GeetestUtils";
 
     /**
      * 0 绑定 1 非绑定 2 一键通过
@@ -51,7 +48,6 @@ public class GeetestUtil {
              */
             @Override
             public void onDialogReady(String duration) {
-                Log.e(TAG, "GT3BaseListener-->onDialogReady-->" + duration);
             }
 
             /**
@@ -60,7 +56,6 @@ public class GeetestUtil {
              */
             @Override
             public void onReceiveCaptchaCode(int code) {
-                Log.e(TAG, "GT3BaseListener-->onReceiveCaptchaCode-->" + code);
             }
 
             /**
@@ -69,7 +64,6 @@ public class GeetestUtil {
              */
             @Override
             public void onDialogResult(String result) {
-                Log.e(TAG, "GT3BaseListener-->onDialogResult-->" + result);
                 handler.onDialogResult(mGt3GeetestUtils, result);
             }
 
@@ -79,7 +73,6 @@ public class GeetestUtil {
              */
             @Override
             public void onStatistics(String result) {
-                Log.e(TAG, "GT3BaseListener-->onStatistics-->" + result);
             }
 
             /**
@@ -88,8 +81,6 @@ public class GeetestUtil {
              */
             @Override
             public void onClosed(int num) {
-                Log.e(TAG, "GT3BaseListener-->onClosed-->" + num);
-
             }
 
             /**
@@ -98,8 +89,6 @@ public class GeetestUtil {
              */
             @Override
             public void onSuccess(String result) {
-                Log.e(TAG, "GT3BaseListener-->onSuccess-->" + result);
-
             }
 
             /**
@@ -108,7 +97,6 @@ public class GeetestUtil {
              */
             @Override
             public void onFailed(GT3ErrorBean errorBean) {
-                Log.e(TAG, "GT3BaseListener-->onFailed-->" + errorBean.toString());
             }
 
             /**

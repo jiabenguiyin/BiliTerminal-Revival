@@ -78,12 +78,12 @@ public final class AccountManager {
             account.mid = mid;
             accounts.add(account);
         }
+        boolean sameLogin = sameSession(account.cookies, cookies);
         account.cookies = cookies;
         account.csrf = new Cookies(cookies).getOrDefault("bili_jct", "");
         String newRefreshToken = safe(refreshToken);
-        if (!newRefreshToken.isEmpty() || account.refreshToken.isEmpty()) {
-            account.refreshToken = newRefreshToken;
-        }
+        // A token belongs to its login session, even when two logins have the same UID.
+        if (!newRefreshToken.isEmpty() || !sameLogin) account.refreshToken = newRefreshToken;
         account.pendingConfirm = "";
         account.updatedAt = System.currentTimeMillis();
         SharedPreferences.Editor editor = SharedPreferencesUtil.getSharedPreferences().edit()

@@ -8,6 +8,7 @@ import android.widget.*;
 import androidx.appcompat.app.AlertDialog;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import android.view.inputmethod.InputMethodManager;
 import com.RobinNotBad.BiliClient.R;
 import com.RobinNotBad.BiliClient.activity.settings.TestActivity;
 import com.RobinNotBad.BiliClient.adapter.dynamic.DynamicHolder;
@@ -80,6 +81,10 @@ public class DynamicReportInstrumentedTest {
             assertEquals("soft input mode="+Integer.toHexString(mode),WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE,mode);
         });
         assertTrue(note.hasFocus());
+        InputMethodManager input=(InputMethodManager)owner.getSystemService(Context.INPUT_METHOD_SERVICE);
+        long deadline=SystemClock.uptimeMillis()+3000;
+        while(SystemClock.uptimeMillis()<deadline&&!input.isAcceptingText())SystemClock.sleep(100);
+        assertTrue("The description field did not activate the input method",input.isAcceptingText());
         assertTrue(posts.isEmpty());
     }
     @Test public void recyclingClosesDraftAndRebindingNeverReportsOldTarget(){

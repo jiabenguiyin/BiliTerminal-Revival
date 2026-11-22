@@ -46,7 +46,7 @@
             android:layout_marginEnd="4dp"
             android:padding="9dp"
             android:scaleType="fitCenter"
-            android:background="@drawable/background_reply_report"
+            android:background="@drawable/background_button_compat"
             android:visibility="gone"
             android:contentDescription="@string/dynamic_report_button"
             app:srcCompat="@drawable/icon_reply_report"

@@ -309,5 +309,15 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/episodes" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/bangumi_download"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/bangumi_cache_episode"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/btn_play" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 </com.RobinNotBad.BiliClient.ui.widget.RotaryNestedScrollView>

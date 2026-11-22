@@ -94,6 +94,7 @@ public class Bangumi {
             data.aid = aid;
             data.cid = cid;
             data.title = title;
+            data.cover = cover;
             data.mid = SharedPreferencesUtil.getLong("mid", 0);
             return data;
         }

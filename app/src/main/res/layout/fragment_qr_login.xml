@@ -67,7 +67,7 @@
                 app:layout_constraintTop_toBottomOf="@+id/qrImageBg" />
 
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/jump"
+                android:id="@+id/webLogin"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginVertical="@dimen/list_margin_vertical"
@@ -75,6 +75,50 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/scanStat">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="35sp"
+                    android:layout_marginHorizontal="@dimen/activity_padding_horizontal"
+                    android:gravity="center_vertical"
+                    android:text="手机号、密码等官方网页登录"
+                    android:textAlignment="textStart"
+                    android:textSize="13sp"
+                    app:drawableEndCompat="@drawable/arrow_forward"
+                    tools:ignore="RtlCompat" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/intlLogin"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginVertical="@dimen/list_margin_vertical"
+                android:layout_marginHorizontal="@dimen/activity_padding_horizontal"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/webLogin">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="35sp"
+                    android:layout_marginHorizontal="@dimen/activity_padding_horizontal"
+                    android:gravity="center_vertical"
+                    android:text="国际站邮箱密码登录"
+                    android:textAlignment="textStart"
+                    android:textSize="13sp"
+                    app:drawableEndCompat="@drawable/arrow_forward"
+                    tools:ignore="RtlCompat" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/jump"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginVertical="@dimen/list_margin_vertical"
+                android:layout_marginHorizontal="@dimen/activity_padding_horizontal"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/intlLogin">
 
                 <TextView
                     android:layout_width="match_parent"

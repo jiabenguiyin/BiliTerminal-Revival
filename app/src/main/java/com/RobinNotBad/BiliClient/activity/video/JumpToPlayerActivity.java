@@ -49,6 +49,9 @@ public class JumpToPlayerActivity extends BaseActivity {
 
                 long currentAid = result.getLongExtra("aid", 0);
                 if (download == 0 && playerData.isVideo()
+                        && !isFinishing()
+                        && !getIntent().getBooleanExtra(com.RobinNotBad.BiliClient.BiliTerminal.RETURNING_HOME, false)
+                        && !result.getBooleanExtra(com.RobinNotBad.BiliClient.BiliTerminal.RETURNING_HOME, false)
                         && result.getBooleanExtra("online_video", false)
                         && currentAid > 0 && currentAid != playerData.aid) {
                     // Queue switches update the player, not the detail beneath it.

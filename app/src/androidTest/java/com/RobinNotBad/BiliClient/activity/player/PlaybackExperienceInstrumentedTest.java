@@ -131,6 +131,108 @@ public class PlaybackExperienceInstrumentedTest {
             assertEquals("快进10秒",menu.getMenu().findItem(107).getTitle());menu.dismiss();
         });
     }
+    @Test public void audioModeKeepsRightToolbarHiddenAfterBoundsUpdates()throws Exception{
+        audioMode();
+        main(()->call("updateRightToolbarBounds"));inst.waitForIdleSync();
+        assertEquals(View.GONE,player.findViewById(R.id.right_control).getVisibility());
+        main(()->{((Runnable)get("hidecon")).run();call("updateRightToolbarBounds");});inst.waitForIdleSync();
+        main(()->call("showcon"));inst.waitForIdleSync();
+        assertEquals(View.GONE,player.findViewById(R.id.right_control).getVisibility());
+        main(()->player.findViewById(R.id.audio_more).performClick());inst.waitForIdleSync();
+        assertEquals(View.GONE,player.findViewById(R.id.right_control).getVisibility());
+    }
+    @Test public void audioDashboardSurvivesHiddenControlsAndUsesRealPlaybackAndSeek()throws Exception{
+        pref(PlaybackVolume.SEEK_SECONDS,7);
+        audioMode();main(()->((Runnable)get("hidecon")).run());
+        await(()->player.findViewById(R.id.audio_play).getWidth()>0);
+        assertEquals(View.GONE,player.findViewById(R.id.bottom_buttons).getVisibility());
+        tap(player.findViewById(R.id.audio_play));assertTrue((Boolean)get("isPlaying"));
+        tap(player.findViewById(R.id.audio_play));assertFalse((Boolean)get("isPlaying"));
+        main(()->call("seekToPosition",new Class[]{long.class},new Object[]{0L}));
+        await(()->!Boolean.TRUE.equals(get("videoSeekPending")));
+        main(()->player.findViewById(R.id.audio_forward).performClick());
+        assertEquals(7000,get("video_now"));
+        await(()->!Boolean.TRUE.equals(get("videoSeekPending")));
+        assertTrue(((android.widget.TextView)player.findViewById(R.id.audio_time)).getText().toString().startsWith("00:07"));
+        main(()->player.findViewById(R.id.audio_rewind).performClick());assertEquals(0,get("video_now"));
+        main(()->{
+            View controls=player.findViewById(R.id.control_layout);Bitmap image=Bitmap.createBitmap(controls.getWidth(),controls.getHeight(),Bitmap.Config.ARGB_8888);
+            controls.draw(new Canvas(image));try(FileOutputStream out=new FileOutputStream(new File(player.getFilesDir(),"audio-dashboard.png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}
+            catch(IOException e){throw new AssertionError(e);}finally{image.recycle();}
+        });
+    }
+    @Test public void audioMenusChangeSpeedAndTimerPausesWithoutLeavingThePlayer()throws Exception{
+        audioMode();
+        main(()->{call("showAudioOptions");PlayerOptionsMenu menu=(PlayerOptionsMenu)get("playbackOptionsMenu");
+            assertFalse(menu.getMenu().findItem(2).isEnabled());menu.getMenu().performIdentifierAction(1,0);
+            menu=(PlayerOptionsMenu)get("playbackOptionsMenu");menu.getMenu().performIdentifierAction(2,0);
+            assertEquals(.75f,(Float)get("currentPlaybackSpeed"),.001f);
+            call("showAudioOptions");menu=(PlayerOptionsMenu)get("playbackOptionsMenu");menu.getMenu().performIdentifierAction(8,0);
+            menu=(PlayerOptionsMenu)get("playbackOptionsMenu");assertNotNull(menu.getMenu().findItem(102));menu.dismiss();
+            call("playerResume");call("setAudioSleepDelay",new Class[]{long.class},new Object[]{200L});
+        });
+        await(()->!Boolean.TRUE.equals(get("isPlaying")));assertEquals(0L,get("audioSleepDeadline"));
+        main(()->{call("setAudioSleepDelay",new Class[]{long.class},new Object[]{15000L});
+            Bundle state=new Bundle();call("onSaveInstanceState",new Class[]{Bundle.class},new Object[]{state});
+            assertEquals(get("audioSleepDeadline"),state.getLong("audio_sleep_deadline"));
+            call("playerResume");set("playbackSwitchInFlight",true);call("setAudioSleepDelay",new Class[]{long.class},new Object[]{100L});});
+        await(()->Long.valueOf(0).equals(get("audioSleepDeadline")));
+        assertFalse((Boolean)get("isPlaying"));assertEquals(Boolean.FALSE,get("pendingMediaPlaybackRequest"));
+        assertEquals(Boolean.FALSE,get("resumeAfterPrepare"));main(()->set("playbackSwitchInFlight",false));
+    }
+    @Test public void audioBlankTapTogglesTopBarAndKeepsSpeedOutOfTheHeader()throws Exception{
+        audioMode();main(()->call("showcon"));
+        assertEquals(View.VISIBLE,player.findViewById(R.id.top).getVisibility());
+        assertEquals(View.GONE,player.findViewById(R.id.text_speed).getVisibility());
+        android.widget.ScrollView panel=player.findViewById(R.id.audio_panel);
+        main(()->{
+            long t=SystemClock.uptimeMillis();float x=Math.max(1,panel.getWidth()-3),y=Math.max(1,panel.getHeight()-3);
+            MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,x,y,0);
+            MotionEvent up=MotionEvent.obtain(t,t+40,MotionEvent.ACTION_UP,x,y,0);
+            panel.dispatchTouchEvent(down);panel.dispatchTouchEvent(up);down.recycle();up.recycle();
+        });inst.waitForIdleSync();
+        assertEquals(View.GONE,player.findViewById(R.id.top).getVisibility());
+        main(()->{
+            long t=SystemClock.uptimeMillis();float x=Math.max(1,panel.getWidth()-3),y=Math.max(1,panel.getHeight()-3);
+            MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,x,y,0);
+            MotionEvent up=MotionEvent.obtain(t,t+40,MotionEvent.ACTION_UP,x,y,0);
+            panel.dispatchTouchEvent(down);panel.dispatchTouchEvent(up);down.recycle();up.recycle();
+        });inst.waitForIdleSync();
+        assertEquals(View.VISIBLE,player.findViewById(R.id.top).getVisibility());
+    }
+    @Test public void lockedAudioPanelCannotPlaySeekOrOpenMenus()throws Exception{
+        audioMode();
+        main(()->{call("setScreenLocked",new Class[]{boolean.class},new Object[]{true});call("updateAudioDashboard");
+            player.findViewById(R.id.audio_play).performClick();player.findViewById(R.id.audio_forward).performClick();
+            player.findViewById(R.id.audio_more).performClick();});
+        assertFalse((Boolean)get("isPlaying"));assertEquals(0,get("video_now"));
+        assertFalse(player.findViewById(R.id.audio_progress).isEnabled());
+        assertTrue(get("playbackOptionsMenu")==null||!((PlayerOptionsMenu)get("playbackOptionsMenu")).isShowing());
+        main(()->call("setScreenLocked",new Class[]{boolean.class},new Object[]{false}));
+        assertTrue(player.findViewById(R.id.audio_play).isEnabled());
+    }
+    private void audioMode()throws Exception{
+        main(()->{set("bangumiPlayback",false);set("isAudioOnlyMode",true);call("updateAudioOnlyUI");call("showcon");});
+        await(()->player.findViewById(R.id.audio_play).getHeight()>0);
+    }
+    @Test public void roundAudioPanelKeepsActionsInsideScrollableSafeArea()throws Exception{
+        pref("player_ui_round",true);
+        main(()->set("screen_round",true));audioMode();main(()->((Runnable)get("hidecon")).run());
+        main(()->{android.widget.ScrollView scroll=player.findViewById(R.id.audio_panel);scroll.scrollTo(0,scroll.getChildAt(0).getHeight());});
+        inst.waitForIdleSync();SystemClock.sleep(100);
+        View more=player.findViewById(R.id.audio_more);Rect rect=new Rect();assertTrue(more.getGlobalVisibleRect(rect));
+        assertEquals(more.getHeight(),rect.height());
+        tap(more);PlayerOptionsMenu menu=(PlayerOptionsMenu)get("playbackOptionsMenu");assertTrue(menu.isShowing());
+        main(menu::dismiss);
+        main(()->{
+            View controls=player.findViewById(R.id.control_layout);Bitmap image=Bitmap.createBitmap(controls.getWidth(),controls.getHeight(),Bitmap.Config.ARGB_8888);
+            controls.draw(new Canvas(image));try(FileOutputStream out=new FileOutputStream(new File(player.getFilesDir(),"audio-dashboard-round.png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}
+            catch(IOException e){throw new AssertionError(e);}finally{image.recycle();}
+        });
+    }
+    private void tap(View view){main(()->{int[] xy=new int[2];view.getLocationInWindow(xy);long t=SystemClock.uptimeMillis();
+        for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){MotionEvent e=MotionEvent.obtain(t,t+(action==MotionEvent.ACTION_UP?50:0),action,xy[0]+view.getWidth()/2f,xy[1]+view.getHeight()/2f,0);player.dispatchTouchEvent(e);e.recycle();}
+    });inst.waitForIdleSync();}
     private static Object primitive(Class<?> c){if(c==boolean.class)return false;if(c==int.class)return 0;if(c==long.class)return 0L;if(c==float.class)return 0f;return null;}
     private void wrap(AtomicInteger seeks,float[] gain){main(()->{IMediaPlayer original=(IMediaPlayer)get("ijkPlayer");
         set("ijkPlayer",Proxy.newProxyInstance(IMediaPlayer.class.getClassLoader(),new Class[]{IMediaPlayer.class},(p,m,a)->{

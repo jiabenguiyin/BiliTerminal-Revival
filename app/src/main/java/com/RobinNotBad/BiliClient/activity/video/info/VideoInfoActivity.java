@@ -33,6 +33,7 @@ import java.util.List;
 //视频详情页，但这只是个壳，瓤是VideoInfoFragment、VideoReplyFragment、VideoRcmdFragment
 
 public class VideoInfoActivity extends BaseActivity {
+    public static final String EXTRA_OPEN_COMMENTS = "openComments";
 
     private long aid;
     private String bvid;
@@ -42,6 +43,7 @@ public class VideoInfoActivity extends BaseActivity {
     public Fragment contentFragment;
     private long seek_reply;
     private long seek_root;
+    private boolean openComments;
     private ImageView loading;
     private ViewPager viewPager;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -62,6 +64,7 @@ public class VideoInfoActivity extends BaseActivity {
         this.bvid = intent.getStringExtra("bvid");
         this.seek_reply = intent.getLongExtra("seekReply", -1);
         this.seek_root = intent.getLongExtra("seekRoot", seek_reply);
+        this.openComments = intent.getBooleanExtra(EXTRA_OPEN_COMMENTS, false);
 
         viewPager = findViewById(R.id.viewPager);
         loading = findViewById(R.id.loading);
@@ -123,7 +126,7 @@ public class VideoInfoActivity extends BaseActivity {
             viewPager.setOffscreenPageLimit(1);
             ViewPagerFragmentAdapter vpfAdapter = new ViewPagerFragmentAdapter(getSupportFragmentManager(), fragmentList);
             viewPager.setAdapter(vpfAdapter);
-            if (seek_reply != -1) viewPager.setCurrentItem(1);
+            if (openComments || seek_reply != -1) viewPager.setCurrentItem(1, false);
         }).onFailure((error) -> {
             if (detailLoadFinished || isFinishing() || isDestroyed()) return;
             detailLoadFinished = true;

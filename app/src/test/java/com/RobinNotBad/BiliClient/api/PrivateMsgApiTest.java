@@ -8,6 +8,8 @@ import com.RobinNotBad.BiliClient.model.PrivateMsgSession;
 
 import java.util.ArrayList;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.junit.Test;
 
 public class PrivateMsgApiTest {
@@ -47,5 +49,36 @@ public class PrivateMsgApiTest {
         message.msgSeqno = 1234;
         messages.add(message);
         assertEquals(1234, PrivateMsgApi.getRefreshBeginSeqno(messages));
+    }
+
+    @Test
+    public void sessionPageExposesUnreadCursorWithoutMessageContent() throws Exception {
+        JSONObject session = new JSONObject()
+                .put("talker_id", 42)
+                .put("session_type", 1)
+                .put("system_msg_type", 0)
+                .put("session_ts", "987654321")
+                .put("unread_count", 2);
+        JSONObject root = new JSONObject().put("data", new JSONObject()
+                .put("has_more", 1)
+                .put("session_list", new JSONArray().put(session)));
+
+        PrivateMsgApi.SessionPage page = PrivateMsgApi.parseSessionPage(root);
+
+        assertTrue(page.hasMore);
+        assertEquals(987654321L, page.nextCursor);
+        assertEquals(2, page.sessions.get(0).unread);
+    }
+
+    @Test public void sessionBusinessFailureKeepsTheNumericCodeInsteadOfPretendingToBeTransportFailure() throws Exception {
+        try {
+            PrivateMsgApi.requireSuccessfulSessionResponse(new JSONObject().put("code", -412).put("message", "private server text"));
+            org.junit.Assert.fail("Expected a session business error");
+        } catch (PrivateMsgApi.SessionApiException error) {
+            assertEquals(-412, error.code);
+            assertTrue(error.getMessage().contains("-412"));
+            assertTrue(!error.getMessage().contains("private server text"));
+        }
+        PrivateMsgApi.requireSuccessfulSessionResponse(new JSONObject().put("code", 0));
     }
 }

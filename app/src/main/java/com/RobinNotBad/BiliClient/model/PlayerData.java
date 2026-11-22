@@ -14,6 +14,7 @@ public class PlayerData implements Parcelable {
     public static int TYPE_LOCAL = 4;
 
     public String title = "";
+    public String cover = "";
     public String videoUrl = "";
     public ArrayList<String> videoBackupUrls = new ArrayList<>();
     public String danmakuUrl = "";
@@ -73,6 +74,7 @@ public class PlayerData implements Parcelable {
         favoritePlaybackToken = in.readString();
         explicitOnlineQueue = in.readInt() != 0;
         seasonId = in.readLong(); episodeId = in.readLong(); seasonType = in.readInt(); clipSegments = in.readString();
+        cover = in.readString();
         // dashData不序列化，下载时会重新获取
     }
 
@@ -117,6 +119,7 @@ public class PlayerData implements Parcelable {
         dest.writeString(favoritePlaybackToken);
         dest.writeInt(explicitOnlineQueue ? 1 : 0);
         dest.writeLong(seasonId); dest.writeLong(episodeId); dest.writeInt(seasonType); dest.writeString(clipSegments);
+        dest.writeString(cover);
         // dashData不序列化，下载时会重新获取
     }
 

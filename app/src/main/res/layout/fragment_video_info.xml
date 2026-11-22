@@ -57,7 +57,7 @@
                 android:layout_alignTop="@id/img_cover"
                 android:layout_margin="2dp"
                 android:padding="8dp"
-                android:background="@drawable/background_reply_report"
+                android:background="@drawable/background_button_compat"
                 android:contentDescription="@string/video_report_button"
                 android:visibility="gone"
                 app:srcCompat="@drawable/icon_video_report" />
@@ -231,6 +231,7 @@
 
                 <LinearLayout
                     android:id="@+id/layout_like"
+                    android:background="@drawable/background_button_compat"
                     android:layout_width="0dp"
                     android:layout_height="50dp"
                     android:layout_weight="0.3"
@@ -254,6 +255,7 @@
 
                 <LinearLayout
                     android:id="@+id/layout_coin"
+                    android:background="@drawable/background_button_compat"
                     android:layout_width="0dp"
                     android:layout_height="50dp"
                     android:layout_weight="0.3"
@@ -278,6 +280,7 @@
 
                 <LinearLayout
                     android:id="@+id/layout_fav"
+                    android:background="@drawable/background_button_compat"
                     android:layout_width="0dp"
                     android:layout_height="50dp"
                     android:layout_weight="0.3"
@@ -328,14 +331,30 @@
         </LinearLayout>
 
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/relay"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="转发"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/download" />
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/relay"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="2dp"
+                android:layout_marginRight="2dp"
+                android:layout_weight="0.5"
+                android:text="转发" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/share_video"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="2dp"
+                android:layout_marginLeft="2dp"
+                android:layout_weight="0.5"
+                android:text="分享" />
+        </LinearLayout>
 
     </LinearLayout>
 

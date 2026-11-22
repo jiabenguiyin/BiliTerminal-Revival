@@ -32,4 +32,17 @@ public class DiagnosticUploadOrderTest {
         List<String> lines=logs(20);lines.set(1,event("player_layout",1));lines.set(2,event("player_control_touch",2));
         List<String> out=DiagnosticUploadOrder.prioritize(lines,1);assertEquals(lines.get(1),out.get(0));assertEquals(lines.size(),out.size());
     }
+    @Test public void cappedUploadKeepsActualNetworkAndSessionFailuresAheadOfRoutineTraffic()throws Exception{
+        List<String> lines=logs(400);
+        lines.set(20,new JSONObject().put("name","network_request").put("id",20)
+                .put("details",new JSONObject().put("status",-1).put("error","SocketTimeoutException")).toString());
+        lines.set(30,new JSONObject().put("name","private_sessions_page").put("id",30)
+                .put("details",new JSONObject().put("code",-412)).toString());
+        lines.set(40,event("reported_network_error",40));
+        lines.set(50,new JSONObject().put("name","network_request").put("id",50)
+                .put("details",new JSONObject().put("status",200)).toString());
+        List<String> head=DiagnosticUploadOrder.prioritize(lines,192).subList(0,192);
+        assertTrue(head.contains(lines.get(20)));assertTrue(head.contains(lines.get(30)));
+        assertTrue(head.contains(lines.get(40)));assertFalse(head.contains(lines.get(50)));
+    }
 }

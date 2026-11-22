@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
     <style name="SearchCategoryText" parent="TextAppearance.Design.Tab">
         <item name="android:textSize">12sp</item>
@@ -8,7 +8,7 @@
     </style>
 
     <style name="CardStyle" parent="Widget.MaterialComponents.CardView">
-        <item name="rippleColor" tools:ignore="PrivateResource">@color/mtrl_btn_ripple_color</item>
+        <item name="rippleColor">@color/button_touch_highlight</item>
         <item name="android:foreground">@drawable/background_button_compat</item>
         <item name="cardBackgroundColor">#cc262626</item>
         <item name="cardCornerRadius">@dimen/card_round</item>
@@ -17,6 +17,7 @@
     </style>
 
     <style name="ButtonStyle" parent="Widget.MaterialComponents.Button">
+        <item name="rippleColor">@color/button_touch_highlight</item>
         <item name="backgroundTint">#cc262626</item>
         <item name="cornerRadius">@dimen/card_round</item>
         <item name="android:textColor">@color/textwhite</item>

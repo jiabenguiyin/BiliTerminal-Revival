@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <include layout="@layout/view_myspace_sort_top" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:paddingLeft="8dp" android:paddingRight="8dp" android:paddingBottom="4dp"
+        android:text="长按拖动，点按可移动；自动保存" android:textSize="11sp" />
+    <com.RobinNotBad.BiliClient.ui.widget.RotaryRecyclerView android:id="@+id/recyclerView"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+    <com.google.android.material.button.MaterialButton android:id="@+id/myspace_order_reset"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginLeft="8dp" android:layout_marginRight="8dp"
+        android:minHeight="44dp" android:text="恢复默认顺序" android:textSize="12sp" />
+</LinearLayout>

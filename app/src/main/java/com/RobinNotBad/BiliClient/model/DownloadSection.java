@@ -27,6 +27,8 @@ public class DownloadSection {
     public String audioUrl;
     public String storageMode;
     public String storageRef;
+    public long episodeId,seasonId,accountMid;
+    public int seasonType=1;
 
     public DownloadSection() {
     }
@@ -40,6 +42,10 @@ public class DownloadSection {
         aid = cursor.getLong(3);
         cid = cursor.getLong(4);
         qn = cursor.getInt(5);
+        episodeId=optionalLong(cursor,"episode_id",0);
+        seasonId=optionalLong(cursor,"season_id",0);
+        accountMid=optionalLong(cursor,"account_mid",0);
+        seasonType=(int)optionalLong(cursor,"season_type",1);
         title = cursor.getString(6);
         child = cursor.getString(7);
         url_cover = cursor.getString(8);
@@ -98,12 +104,16 @@ public class DownloadSection {
     }
 
     public PlayerData toPlayerData() {
-        PlayerData data = new PlayerData();
+        PlayerData data = new PlayerData(episodeId>0?PlayerData.TYPE_BANGUMI:PlayerData.TYPE_VIDEO);
+        data.episodeId=episodeId;data.seasonId=seasonId;data.seasonType=seasonType;
         data.aid = aid;
         data.cid = cid;
         data.title = title;
         data.qn = qn;
         data.mid = SharedPreferencesUtil.getLong("mid", 0);
         return data;
+    }
+    private static long optionalLong(Cursor cursor,String key,long fallback){
+        int index=cursor.getColumnIndex(key);return index<0||cursor.isNull(index)?fallback:cursor.getLong(index);
     }
 }

@@ -112,6 +112,7 @@ public class VideoInfo implements Parcelable, Serializable { // 自定义类需�
     public PlayerData toPlayerData(int index) {
         PlayerData data = new PlayerData();
         data.aid = aid;
+        data.cover = cover;
         data.danmakuCount = stats == null ? -1 : stats.danmaku;
         data.cid = cids.get(index);
         data.title = pagenames.size() == 1 ? title : pagenames.get(index);

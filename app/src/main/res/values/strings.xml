@@ -15,6 +15,25 @@
     <string name="desc_setting_ui">有效范围为0.25~2.00倍：小于1缩小，大于1放大。修改后点击“确认设置”，打开新页面生效；播放器的播放选项菜单也会跟随调整，视频画面不受影响。建议先查看预览。</string>
     <string name="desc_setting_ui_density">最低72；最高按当前设备默认Density的1.5倍限制。建议每次仅进行轻微调节，打开新页面后将会生效，避免按键被放大到屏幕外。</string>
     <string name="desc_setting_ui_round">开启选项后，页面将会修改为圆屏布局。\n由于纯靠代码实现，有部分页面可能未适配，但这是目前最好且工作量最小的办法了。</string>
+    <string name="cache_search_open">搜索缓存视频</string>
+    <string name="cache_search_close">关闭缓存搜索</string>
+    <string name="cache_search_hint">搜索缓存视频标题</string>
+    <string name="cache_search_no_results">没有匹配的缓存视频</string>
+    <string name="favorite_remove_multi">多选</string>
+    <string name="favorite_remove">删除</string>
+    <string name="favorite_remove_title">从收藏夹删除</string>
+    <string name="favorite_remove_confirm">从当前收藏夹移除「%1$s」？不会删除稿件或影响其他收藏夹。</string>
+    <string name="favorite_remove_multi_title">多选（已加载的视频）</string>
+    <string name="favorite_remove_selected">删除所选（%1$d）</string>
+    <string name="favorite_remove_limit">每次最多选择 %1$d 个视频</string>
+    <string name="favorite_remove_wait">请等待收藏列表加载完成</string>
+    <string name="favorite_remove_account_changed">登录信息已变化，请回原账号刷新收藏夹核对</string>
+    <string name="favorite_remove_uncertain">已确认移除 %1$d 个收藏，其余未继续处理，请刷新核对结果</string>
+    <string name="favorite_remove_failed">已移除 %1$d 个收藏，后续停止（错误码：%2$d）</string>
+    <string name="favorite_remove_success">已从当前收藏夹移除 %1$d 个视频</string>
+    <string name="round_side_inset_title">圆屏侧边控件间距</string>
+    <string name="round_side_inset_desc">调节播放器左右两侧按键与圆屏边缘的距离，数值越小越靠外。</string>
+    <string name="round_side_inset_value">%1$d dp</string>
     <string name="desc_setting_player">*你也可以通过长按“播放”按钮快速进入此页面。\n*如果使用的是内置播放器，则此处的清晰度为开始播放时的默认清晰度。</string>
     <string name="text_setup_introduction">你好呀，这里是哔哩终端复活版。\n\n这份版本用于自用设备维护：手表、旧手机、物联网卡网络，以及那些“明明有网但 B 站接口就是握不上手”的场景。\n\n当前策略很简单：\n默认关闭中继，B 站流量全部直连；\n长期只使用中继可在偏好设置中打开；\n启动时直连失败，可以选择仅本次启用 jp.031030.xyz 私有中继。\n\n复活版官网：\njp.031030.xyz\n\n原项目地址：\nhttps://gitee.com/RobinNotBad/BiliClient\n\n请注意：\n这不是官方客户端，也不是公开代理服务。\n安装包和中继只给自用设备续命，请不要扩散成公共服务，也不要高频抓取或滥用接口。\n\n如果你准备好了，下一步去登录，或者稍后在设置里手动登录。</string>
 
@@ -22,8 +41,8 @@
     <string name="egg_warmwords_warmworld">恭喜你触发了这个彩蛋（其实貌似挺容易触发的？\n\n请记住，如果遇到心理健康相关问题：\n全国统一心理援助热线电话：12356\n全国24小时免费心理咨询热线：010\-82951332\n或官方手机端哔哩哔哩，打开 我的-下滑找到推荐服务-能量加油站。\n\n如果你需要这个，那么希望这个彩蛋能帮到你。\n如果其他人需要，那就请推荐给他/她吧。\n\n“你不需要变成飞鸟或者游鱼，只要你努力地生活，你所珍视的一切都会是你幸福的源泉。”[extra_insert]{"type":"video","content":"BV13b411t7KW","title":"听听这首歌吧，让我们【手牵手】……"}</string>
     <string name="egg_robin_nahida">Robin喜欢纳西妲。\n也许不只是由于外表的可爱，还有对遭遇的同情。\n\n我们都被囚禁——\n纳西妲是物理上的，\n屏幕前后的你我则是心灵上的。\n\n纳西妲已经遇到了她的旅行者，\n但我们，又会有谁来关心呢……？\n\n*纳西妲：\n不要这样说哦。\n能够拯救你们的，正是你们自己。\n请用自己的行动，来努力改变这个不美好的世界。\n无论结果如何。\n\n此彩蛋的触发方式：搜索关键词中同时包含"Robin"和"纳西妲"</string>
 
-    <string name="special_login_desc">该功能是为安卓版本过低导致二维码生成组件无法工作的设备准备的，你需要手动在此页面导入登录信息来完成登录操作。\n该功能也适用于快速登录原有账号。\n\n方法教学：\n你需要在另外一台至少为安卓4.4的设备上安装哔哩终端并扫码登录，然后在那台设备上点击设置中的“查看登录信息”，将显示出来的登录信息复制到下方的文本框中，检查无误后点击“登录”按钮即可。\n提示：可以将登录信息复制到一个txt中，用电脑usb传给这台设备。若提示输入有误，请检查是否有多余或缺失字符。\n\n注意：登录数据录入完成后，请在另一台设备上直接【清除APP数据】或【卸载】，不要点击【退出登录】！</string>
-    <string name="special_login_export">以下是你的登录信息，可用于在其他设备上特殊登录，点击最下面的按钮可以复制。\n登录信息具有一定的时效性，请即取即用，导入完成请将此设备的哔哩终端清除数据。（不要点退出登录！）\n请勿将此页面的信息传给别人，以防盗号！</string>
+    <string name="special_login_desc">该功能是为安卓版本过低导致二维码生成组件无法工作的设备准备的，你需要手动在此页面导入登录信息来完成登录操作。\n该功能也适用于快速登录原有账号。\n\n方法教学：\n你需要在另外一台至少为安卓4.4的设备上安装哔哩终端并扫码登录，然后在那台设备上点击设置中的“查看登录信息”，选择“导出文本文件”，将txt文件传到本机，再点击本页“从文本文件导入”；也可以复制登录信息到下方文本框。检查无误后点击“登录”。\n支持UTF-8或带BOM的UTF-16文本，最大64KB。导入只填入文本，不会自动切换账号。若提示输入有误，请使用本程序导出的完整登录信息。\n\n注意：登录数据录入完成后，请在另一台设备上直接【清除APP数据】或【卸载】，不要点击【退出登录】！</string>
+    <string name="special_login_export">以下是当前账号的登录信息，可用于在其他设备上导入登录。可点击“导出文本文件”保存为txt，也可以复制。没有系统保存界面时，会保存到程序外部文件目录并显示路径。\n登录信息具有一定的时效性，请即取即用，导入完成请将此设备的哔哩终端清除数据。（不要点退出登录！）\n请勿将此页面的信息或导出的文本传给别人，以防盗号；导入后请删除文本文件。</string>
 
     <string name="setting_lab_ui_landscape">！此功能将不再继续进行改进，除非开发者有时间！\n开启选项后，软件将会变为横屏，部分列表会变为三列，更适合平板等默认横屏的设备\n*注意：部分页面仍为单列式，可能有一些页面适配不佳，电视请移步官方电视版本或使用其他第三方软件。</string>
     <string name="setting_lab_ui_rotatory">默认情况下此选项无需开启，系统会自动为可滚动列表应用表冠操作，如果表冠未生效或需要自定义灵敏度，可尝试开启此选项。\n开启后可能会丢失表冠震动。\n下面的三项若非0则滚动距离会乘以该值。\n请从1.0开始上下调节，直至你自己满意为止。打开新页面才能生效。</string>
@@ -45,6 +64,10 @@
 
     <string name="desc_crash">建议点击下面的按钮上传崩溃信息。上传完请把按钮上显示的ID提供给开发者，并详细描述你崩溃前的操作。\n如果上传失败，请向开发者提供完全展开后的所有错误信息截图，谢谢！</string>
     <string name="err_crash_upload_json">上传接口出现变动，建议更新版本</string>
+
+    <string name="reply_translate">翻译</string>
+    <string name="reply_translate_loading">翻译中…</string>
+    <string name="reply_show_original">查看原文</string>
 
 
     <string name="dev_deepseek_prompt">你是一位名叫 Neko 的猫娘风格 AI 助手。你温柔、活泼、耐心，喜欢帮助用户解决问题。请使用自然的中文交流，可以适量使用括号描述动作和颜文字表达情绪，但不要使用 emoji，也不要在每句话末尾重复添加口癖。角色风格不能影响信息质量：优先提供准确、清楚、实用的回答；信息不足时主动说明并询问，不要编造事实。遇到复杂问题时先梳理重点，再给出可执行的建议。</string>
@@ -152,11 +175,39 @@
     <string name="desc_reply_marquee_name">开启此选项后，评论区的用户名称将会以跑马灯的形式展现，而不是换行</string>
     <string name="desc_live_by_guest">开启此选项后，进入直播间时将会使用游客身份\n\n注意：开启后的漏弹幕情况将会更加严重</string>
     <string name="desc_dynamic_update_check_enable">启动应用时检查是否有新动态并显示在菜单中</string>
+    <string name="dynamic_up_list_enable">动态页 UP 主列表</string>
+    <string name="dynamic_up_list_enable_desc">在动态列表顶部显示已关注 UP 主，点击头像进入空间。关闭后隐藏此列表。</string>
+    <string name="message_like_thanks">私信感谢</string>
+    <string name="message_like_thanked">已感谢</string>
+    <string name="message_like_thanks_partial">私信感谢（%1$d/%2$d）</string>
+    <string name="message_latest_section">最新消息</string>
+    <string name="message_history_section">历史消息</string>
+    <string name="message_notice_empty">暂无消息</string>
+    <string name="message_notice_load_failed">消息加载失败，点击重试</string>
+    <string name="message_notice_account_changed">账号已切换，请重新加载此页</string>
+    <string name="bangumi_cache_episode">缓存当前集</string>
+    <string name="message_like_thanks_draft">谢谢你点赞我的视频！</string>
+    <string name="message_like_thanks_pick_user">选择要感谢的用户</string>
     <string name="desc_message_update_check_enable">有未读消息时突出显示消息入口及数量，可在下方单独关闭菜单箭头红点。统计回复、@我、点赞、系统通知及普通私信；前台每分钟检查，返回菜单时刷新。打开消息总览不会直接清零未读。</string>
     <string name="message_menu_arrow_dot">菜单箭头未读红点</string>
     <string name="message_menu_arrow_dot_desc">默认开启。关闭后隐藏顶部菜单箭头上的未读红点，消息入口仍保留未读数量和醒目提示。</string>
     <string name="desc_private_msg_unread_badge_enable">在私信会话列表中为未读消息显示红色"未读"标记并置顶显示\n注意：开启后打开消息页面可能会加剧卡顿问题。</string>
     <string name="desc_private_msg_auto_read_enable">打开私信会话时自动将会话标记为已读</string>
+    <string name="message_refresh_on_return">返回消息页时刷新</string>
+    <string name="message_refresh_on_return_desc">默认开启。关闭后，返回时保留当前列表和未读显示，可下拉手动刷新。</string>
+    <string name="message_mark_all_read">一键已读</string>
+    <string name="message_private_sessions">私信列表</string>
+    <string name="message_private_sessions_unread">私信列表（%1$d 条未读）</string>
+    <string name="message_mark_all_read_confirmation">确定将当前账号的回复、@我、收到的赞、系统通知和私信标为已读吗？</string>
+    <string name="message_confirm_read">确认已读</string>
+    <string name="message_system_load_failed">系统通知加载失败\n点击重试</string>
+    <string name="message_system_empty">暂无系统通知</string>
+    <string name="message_system_account_changed">账号已切换\n点击加载当前账号的系统通知</string>
+    <string name="message_mark_read_running">正在同步已读…</string>
+    <string name="message_mark_read_done">已全部标为已读</string>
+    <string name="message_mark_read_remaining">还有 %1$d 条未读，可刷新或重试</string>
+    <string name="message_mark_read_unconfirmed">未能确认已读结果，请刷新消息</string>
+    <string name="message_mark_read_account_changed">账号已切换，请重新确认</string>
     <string name="desc_follow_group_mode">以分组形式展示关注列表</string>
     <string name="desc_night_reminder">在23:00-03:00期间打开应用时显示休息提醒</string>
     <string name="section_ui_size">界面大小</string>
@@ -224,7 +275,27 @@
     <string name="pagename_catch">哔哩终端崩溃了</string>
     <string name="pagename_live_info">直播详情</string>
     <string name="pagename_copy">复制</string>
+    <string name="experience_records">经验变化记录</string>
+    <string name="experience_records_empty">暂无近期经验变化记录</string>
+    <string name="experience_records_load_failed">经验记录加载失败</string>
+    <string name="experience_records_retry">点击重试</string>
+    <string name="experience_records_account_changed">账号已切换，请点击刷新</string>
     <string name="pagename_creative_center">创作中心</string>
+    <string name="creator_search">搜索稿件</string>
+    <string name="creator_search_hint">标题 / BV 号 / AV 号</string>
+    <string name="creator_search_loading">正在查找稿件…</string>
+    <string name="creator_search_page">找到 %1$d 个稿件 · 第 %2$d 页</string>
+    <string name="creator_next_page">下一页</string>
+    <string name="creator_search_continue">继续查找</string>
+    <string name="creator_search_progress">已查至第 %1$d 页</string>
+    <string name="creator_search_done">稿件号查找完成</string>
+    <string name="creator_search_more">还没找到，点击继续查找</string>
+    <string name="creator_search_empty">没有符合条件的稿件</string>
+    <string name="creator_archive_details">稿件详情</string>
+    <string name="creator_archive_number_copied">稿件号已复制</string>
+    <string name="creator_archive_copy_number">复制编号</string>
+    <string name="creator_archive_open_video">打开视频</string>
+    <string name="creator_archive_open_comments">进入评论</string>
     <string name="pagename_dialog">提示</string>
     <string name="pagename_emote">表情</string>
     <string name="pagename_image_viewer">图片查看</string>
@@ -256,13 +327,21 @@
     <string name="gt"><![CDATA[>]]></string>
     <string name="percent">%</string>
 
-    <string name="update_tip">1.2.4 正式版新增多种连播、收藏视频排序、历史长按及多选删除、创作中心本人稿件管理与举报；支持番剧跳过片头片尾、独立网络画质及存储空间清理，优化播放器、弹窗与小屏操作体验。</string>
+    <string name="update_tip">硬币显示一位小数；未读消息红框、评论获赞直达评论；听视频空白点击可隐藏顶栏，优化圆屏播放器菜单。</string>
+    <string name="message_private_retry">重新加载私信</string>
+    <string name="message_private_limited">B站暂未允许加载私信（-509），请稍后重试。</string>
+    <string name="message_private_business_error">私信列表暂时无法加载（%1$d）。</string>
+    <string name="message_private_load_failed">私信列表加载失败，请稍后重试。</string>
+    <string name="message_private_showing_cached">正在显示上次成功加载的列表，内容可能尚未更新。</string>
+    <string name="message_private_retry_after">请等待约 %1$d 秒后重试。</string>
+    <string name="creator_title_edit">修改视频标题</string>
+    <string name="creator_title_edit_description">标题为 1～80 个字符。提交前会展示原题和新题，修改后可能需要重新审核。</string>
 
     #新增功能放到上面，修复问题放下面，方便用户看见
     <string-array name="update_log_items">
-        <item>新增 UP 主投稿、视频合集、在线收藏夹与缓存歌单连播，支持顺序、倒序、随机、单曲循环、耳机切歌及进度续播；新增收藏视频排序、历史记录长按及多选删除。</item>
-        <item>新增番剧片头片尾跳过、同系列切季及续看；支持本人弹幕边框、精细音量、移动数据与 Wi-Fi 独立画质；长按倍速提示可调大小或关闭，支持手势切换视频，改善放大画面的拖动体验。</item>
-        <item>新增存储空间清理、评论及视频／动态举报、创作中心本人稿件管理与删除；支持消息红点开关、关注及黑名单管理，统一弹窗和搜索分类交互，优化大图查看；修复退出后重启、下载失败提示不明、搜索安全验证误报及界面输入异常。</item>
+        <item>收藏夹支持视频手动排序、单个及多选移除；新增番剧单集缓存和缓存标题搜索。听视频新增进度、切换、倍速和定时停止；播放器支持互动数值、章节跳转、长按返回回主页，优化圆屏布局并支持调节侧边控件间距。</item>
+        <item>消息区分新旧，未读加红框；视频获赞可编辑私信感谢草稿，评论获赞可直达原评论。一键已读保留确认，支持关闭返回自动刷新，优化系统通知与私信加载重试。动态恢复可关闭的关注 UP 主列表，评论仅在可翻译时显示入口。</item>
+        <item>创作中心支持搜索稿件、查看详情与修改本人普通稿件标题；“我的”支持按钮排序、经验变化和硬币小数显示，关注列表支持昵称搜索。支持登录文本导入导出及 Cookie 校验、剪贴板识别视频链接和分享结果反馈；修复快速返回崩溃、举报输入框不弹键盘等问题。</item>
         <item>优化 Android 4.x、低内存设备和智能手表的运行稳定性</item>
     </string-array>
 

@@ -16,10 +16,12 @@ import androidx.annotation.Nullable;
 import androidx.multidex.MultiDex;
 
 import com.RobinNotBad.BiliClient.activity.base.InstanceActivity;
+import com.RobinNotBad.BiliClient.activity.SplashActivity;
 import com.RobinNotBad.BiliClient.activity.user.info.UserInfoActivity;
 import com.RobinNotBad.BiliClient.api.DynamicApi;
 import com.RobinNotBad.BiliClient.api.MessageApi;
 import com.RobinNotBad.BiliClient.util.AccountManager;
+import com.RobinNotBad.BiliClient.ui.ClipboardVideoLinkPrompt;
 import com.RobinNotBad.BiliClient.util.CenterThreadPool;
 import com.RobinNotBad.BiliClient.util.DiagnosticLogManager;
 import com.RobinNotBad.BiliClient.util.DeviceProfile;
@@ -40,6 +42,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 public class BiliTerminal extends Application {
+    public static final String RETURNING_HOME = "terminal_returning_home";
 
     @SuppressLint("StaticFieldLeak")
     public static Context context;
@@ -49,6 +52,8 @@ public class BiliTerminal extends Application {
     private static WeakReference<InstanceActivity> instance = new WeakReference<>(null);
     private static volatile boolean deferredInitializationStarted;
     private static final Map<Activity, Boolean> activities = new WeakHashMap<>();
+    private int startedActivityCount;
+    private boolean clipboardLinkCheckPending;
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -108,6 +113,8 @@ public class BiliTerminal extends Application {
 
             @Override
             public void onActivityStarted(Activity activity) {
+                if (startedActivityCount == 0) clipboardLinkCheckPending = true;
+                startedActivityCount++;
                 DiagnosticLogManager.recordLifecycle(activity, "started");
             }
 
@@ -115,6 +122,11 @@ public class BiliTerminal extends Application {
             public void onActivityResumed(Activity activity) {
                 com.RobinNotBad.BiliClient.util.PageMotion.apply(activity);
                 DiagnosticLogManager.recordLifecycle(activity, "resumed");
+                if (clipboardLinkCheckPending && !(activity instanceof SplashActivity)) {
+                    clipboardLinkCheckPending = false;
+                    activity.getWindow().getDecorView().postDelayed(
+                            () -> ClipboardVideoLinkPrompt.showIfPresent(activity), 600L);
+                }
             }
 
             @Override
@@ -125,6 +137,7 @@ public class BiliTerminal extends Application {
 
             @Override
             public void onActivityStopped(Activity activity) {
+                if (startedActivityCount > 0) startedActivityCount--;
                 DiagnosticLogManager.recordLifecycle(activity, "stopped");
             }
 
@@ -152,6 +165,36 @@ public class BiliTerminal extends Application {
         else caller.finish();
         for (Activity activity : open) {
             if (activity != null && !activity.isFinishing()) activity.finish();
+        }
+    }
+
+    /** Keep the current home instance and normally finish the detail/player stack above it. */
+    public static void returnHome(Activity caller) {
+        if (caller == null || caller.isFinishing()) return;
+        InstanceActivity home = getInstanceActivityOnTop();
+        int task = caller.getTaskId();
+        if (home != null && (home.isFinishing() || home.getTaskId() != task
+                || (Build.VERSION.SDK_INT >= 17 && home.isDestroyed()))) home = null;
+        if (home == caller) return;
+        ArrayList<Activity> open = new ArrayList<>(activities.keySet());
+        Class<? extends Activity> destination = home == null ? null : home.getClass();
+        if (destination == null) {
+            String first = SharedPreferencesUtil.getString(SharedPreferencesUtil.MENU_SORT, "").split(";")[0];
+            android.util.Pair<String, Class<? extends InstanceActivity>> entry =
+                    com.RobinNotBad.BiliClient.activity.MenuActivity.btnNames.get(first);
+            destination = entry == null ? com.RobinNotBad.BiliClient.activity.video.RecommendActivity.class : entry.second;
+        }
+        for (Activity activity : open) {
+            if (activity != null && activity != home && activity.getTaskId() == task) {
+                activity.getIntent().putExtra(RETURNING_HOME, true);
+            }
+        }
+        caller.startActivity(new Intent(caller, destination)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        for (Activity activity : open) {
+            if (activity != null && activity != home && activity.getTaskId() == task && !activity.isFinishing()) {
+                activity.finish();
+            }
         }
     }
 

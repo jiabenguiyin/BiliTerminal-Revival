@@ -116,6 +116,9 @@ public final class PlayerOptionsMenu {
         int height = bounds == null ? 0 : bounds.getHeight();
         if (width <= 0) width = owner.getResources().getDisplayMetrics().widthPixels;
         if (height <= 0) height = owner.getResources().getDisplayMetrics().heightPixels;
+        boolean round=SharedPreferencesUtil.getBoolean("player_ui_round",false)
+                ||android.os.Build.VERSION.SDK_INT>=23&&owner.getResources().getConfiguration().isScreenRound();
+        if(round){int side=Math.max(1,Math.round(Math.min(width,height)*.70f));width=side;height=side;}
         int gap = Math.max(2, Math.min(dp(12), Math.min(width, height) / 20));
         width = Math.max(1, Math.min(width - 2 * gap, dp(320)));
         height = Math.max(1, height - 2 * gap);

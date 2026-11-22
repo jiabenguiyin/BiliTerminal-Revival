@@ -74,7 +74,7 @@ public class SettingLaboratoryActivity extends RefreshListActivity {
                 add(new SettingSection("switch", "播放器旋屏兼容方案", "dev_player_rotate_software",
                         "在极少数手表上（如小米手表），系统旋屏存在显示不全的问题。打开此开关，播放器将会使用软件旋屏方法。", "false"));
                 add(new SettingSection("switch", "显示视频分段", "player_show_viewpoints",
-                        "显示视频的章节看点信息，可快速跳转到指定章节", "false"));
+                        "操作栏展开时在底部显示章节时间点，点击可跳转；收起操作栏时隐藏。", "true"));
                 add(new SettingSection("switch", "系统媒体控件", SharedPreferencesUtil.PLAYER_MEDIA_SESSION_ENABLE,
                         getString(R.string.setting_lab_media_session), "false"));
                 add(new SettingSection("switch", "互动视频调试", "player_interaction_debug",

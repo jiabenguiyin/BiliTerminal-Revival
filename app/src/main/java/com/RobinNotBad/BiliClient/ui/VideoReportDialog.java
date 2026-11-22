@@ -176,17 +176,35 @@ public final class VideoReportDialog extends AlertDialog {
     }
 
     private void requestNoteKeyboard() {
-        Window window = getWindow();
-        if (window != null) {
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-        }
+        prepareTextInputWindow(getWindow());
         note.post(() -> {
             if (note == null || !note.hasFocus() || !isShowing()) return;
+            Window window = getWindow();
+            prepareTextInputWindow(window);
             InputMethodManager input = (InputMethodManager) getContext()
                     .getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (input != null) input.showSoftInput(note, InputMethodManager.SHOW_IMPLICIT);
+            if (input != null) {
+                input.showSoftInput(note, InputMethodManager.SHOW_FORCED);
+                if (window != null) window.getDecorView().postDelayed(() -> {
+                    if (note != null && note.hasFocus() && isShowing())
+                        input.showSoftInput(note, InputMethodManager.SHOW_FORCED);
+                }, 180L);
+            }
         });
+    }
+
+    private void prepareTextInputWindow(Window window) {
+        if (window == null) return;
+        window.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        View decor = window.getDecorView();
+        int visibility = decor.getSystemUiVisibility();
+        visibility &= ~(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        if (Build.VERSION.SDK_INT >= 19) visibility &= ~View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        decor.setSystemUiVisibility(visibility);
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
 
     @Override public void show() {
@@ -217,8 +235,15 @@ public final class VideoReportDialog extends AlertDialog {
         scroll.getLayoutParams().height = Math.min(room, body.getMeasuredHeight());
         panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST));
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-                | WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN);
+        if (note != null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | (note.hasFocus() ? WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+                    : WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN));
+        } else {
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN);
+        }
         window.setLayout(width, Math.min(maxHeight, panel.getMeasuredHeight()));
         panel.requestLayout();
     }
@@ -268,7 +293,7 @@ public final class VideoReportDialog extends AlertDialog {
         button.setMinWidth(0); button.setMinimumWidth(0);
         button.setMinHeight(dp(38)); button.setMinimumHeight(dp(38));
         button.setPadding(dp(4), dp(4), dp(4), dp(4));
-        button.setBackgroundResource(R.drawable.background_reply_report);
+        button.setBackgroundResource(R.drawable.background_button_compat);
         return button;
     }
 }

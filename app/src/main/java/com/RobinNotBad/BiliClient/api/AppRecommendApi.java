@@ -429,6 +429,10 @@ public final class AppRecommendApi {
         return headers;
     }
 
+    static String appUserAgent() {
+        return APP_USER_AGENT;
+    }
+
     static String currentNetworkType() {
         try {
             Context context = BiliTerminal.context;

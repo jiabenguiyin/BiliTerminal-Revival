@@ -53,6 +53,8 @@ public class BangumiInfoFragment extends Fragment {
     private long restoredSeason, restoredEpisode;
     private volatile int seasonGeneration;
     private PlayerOptionsMenu seasonsMenu;
+    private PlayerOptionsMenu downloadMenu;
+    private boolean preparingDownload;
 
     public static BangumiInfoFragment newInstance(long mediaId) {
         Bundle args = new Bundle();
@@ -243,6 +245,7 @@ public class BangumiInfoFragment extends Fragment {
         indexShow.setText(bangumi.info.indexShow);
 
         if (bangumi.sectionList.isEmpty()) {
+            rootView.findViewById(R.id.bangumi_download).setVisibility(View.GONE);
             section_choose.setText("敬请期待");
             playButton.setVisibility(View.GONE);
             rootView.findViewById(R.id.episodes).setVisibility(View.GONE);    //未上线的番剧Activity activity = getActivity();
@@ -280,9 +283,60 @@ public class BangumiInfoFragment extends Fragment {
             startActivity(intent);
             return true;
         });
+        View download=rootView.findViewById(R.id.bangumi_download);
+        download.setVisibility(View.VISIBLE);
+        download.setOnClickListener(v->prepareEpisodeDownload());
         onFinishLoad();
 
         refreshReplies();
+    }
+
+    private void prepareEpisodeDownload(){
+        if(preparingDownload||!isAdded()||bangumi==null||bangumi.sectionList==null
+                ||selectedSection<0||selectedSection>=bangumi.sectionList.size()
+                ||selectedEpisode<0||selectedEpisode>=bangumi.sectionList.get(selectedSection).episodeList.size())return;
+        final Bangumi.Episode episode=bangumi.sectionList.get(selectedSection).episodeList.get(selectedEpisode);
+        final PlayerData data=episode.toPlayerData();data.episodeId=episode.id;
+        data.seasonId=bangumi.info.season_id;data.seasonType=bangumi.info.type;data.qn=32;
+        final String parent=bangumi.info.title;
+        final String child=episode.title+" "+(episode.title_long==null?"":episode.title_long);
+        final String cover=bangumi.info.cover;
+        final int generation=seasonGeneration;
+        final Activity owner=requireActivity();preparingDownload=true;
+        MsgUtil.showMsg("正在检查当前剧集可缓存的画质…");
+        CenterThreadPool.run(()->{
+            try{
+                com.RobinNotBad.BiliClient.api.BangumiDownloadApi.resolve(data);
+                owner.runOnUiThread(()->{
+                    preparingDownload=false;
+                    if(!isAdded()||generation!=seasonGeneration||data.mid!=com.RobinNotBad.BiliClient.util.SharedPreferencesUtil.getLong("mid",0))return;
+                    if(downloadMenu!=null)downloadMenu.dismiss();
+                    downloadMenu=new PlayerOptionsMenu(requireActivity(),rootView.findViewById(R.id.bangumi_download));
+                    downloadMenu.getMenu().add(0,0,0,"缓存当前集").setEnabled(false);
+                    for(int i=0;i<data.qnValueList.length;i++)
+                        downloadMenu.getMenu().add(0,i+1,i+1,"缓存 "+data.qnStrList[i])
+                                .setCheckable(true).setChecked(data.qnValueList[i]==data.qn);
+                    downloadMenu.getMenu().add(0,data.qnValueList.length+1,data.qnValueList.length+1,android.R.string.cancel);
+                    downloadMenu.setOnMenuItemClickListener(item->{
+                                int index=item.getItemId()-1;
+                                if(index<0||index>=data.qnValueList.length||!isAdded()||generation!=seasonGeneration)return true;
+                                data.qn=data.qnValueList[index];
+                                CenterThreadPool.run(()->{
+                                    try{
+                                        boolean added=com.RobinNotBad.BiliClient.service.DownloadService.queueBangumi(data,parent,child,cover);
+                                        MsgUtil.showMsg(added?"已加入番剧缓存队列":"该集已在缓存队列中");
+                                        com.RobinNotBad.BiliClient.service.DownloadService.start(-1);
+                                    }catch(Exception error){MsgUtil.showMsg("加入缓存失败，请检查账号和存储设置");}
+                                });
+                                return true;
+                            });
+                    downloadMenu.show();
+                });
+            }catch(Exception error){owner.runOnUiThread(()->{
+                preparingDownload=false;if(isAdded()&&generation==seasonGeneration)
+                    MsgUtil.showMsgLong(error instanceof org.json.JSONException?error.getMessage():"获取番剧缓存信息失败，请检查网络后重试");
+            });}
+        });
     }
 
     @SuppressLint("SetTextI18n")
@@ -390,6 +444,7 @@ public class BangumiInfoFragment extends Fragment {
     }
     @Override public void onDestroyView() {
         seasonGeneration++;if(dialog!=null)dialog.dismiss();if(seasonsMenu!=null)seasonsMenu.dismiss();
+        if(downloadMenu!=null)downloadMenu.dismiss();
         super.onDestroyView();rootView=null;
     }
     @Override public void onResume() {

@@ -23,7 +23,10 @@ import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import okhttp3.Interceptor;
@@ -285,8 +288,21 @@ public class SessionRecoveryInstrumentedTest {
         assertTrue(AccountManager.saveLogin(A, ""));
         AtomicInteger valid = new AtomicInteger();
         AtomicInteger calls = new AtomicInteger();
+        AtomicBoolean blockNextProfile = new AtomicBoolean();
+        CountDownLatch retryStarted = new CountDownLatch(1);
+        CountDownLatch finishRetry = new CountDownLatch(1);
         installFake(chain -> {
-            calls.incrementAndGet();
+            boolean profileRequest = "/x/space/myinfo".equals(chain.request().url().encodedPath());
+            if (profileRequest) calls.incrementAndGet();
+            if (profileRequest && blockNextProfile.compareAndSet(true, false)) {
+                retryStarted.countDown();
+                try {
+                    if (!finishRetry.await(5, TimeUnit.SECONDS)) throw new IOException("Retry fixture timed out");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException(e);
+                }
+            }
             return response(chain.request(), valid.get() == 0 ? "{\"code\":-101}" : profile());
         });
         MySpaceActivity activity = (MySpaceActivity) instrumentation.startActivitySync(new Intent(
@@ -294,8 +310,14 @@ public class SessionRecoveryInstrumentedTest {
         try {
             awaitName(activity, "登录状态未恢复");
             int before = calls.get();
+            blockNextProfile.set(true);
             instrumentation.runOnMainSync(() -> assertTrue(activity.findViewById(R.id.userAvatar).performClick()));
-            instrumentation.waitForIdleSync();
+            assertTrue(retryStarted.await(5, TimeUnit.SECONDS));
+            // A tap while the request is running must not start another one.
+            instrumentation.runOnMainSync(() -> assertTrue(activity.findViewById(R.id.userAvatar).performClick()));
+            assertEquals(before + 1, calls.get());
+            finishRetry.countDown();
+            awaitName(activity, "登录状态未恢复");
             valid.set(1);
             instrumentation.runOnMainSync(() -> assertTrue(activity.findViewById(R.id.userAvatar).performClick()));
             awaitName(activity, "Recovered");
@@ -305,6 +327,7 @@ public class SessionRecoveryInstrumentedTest {
                 assertTrue(activity.findViewById(R.id.myinfo).hasOnClickListeners());
             });
         } finally {
+            finishRetry.countDown();
             instrumentation.runOnMainSync(activity::finish);
             instrumentation.waitForIdleSync();
         }

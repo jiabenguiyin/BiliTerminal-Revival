@@ -59,6 +59,7 @@ public class LocalPageChooseActivity extends BaseActivity {
             playerData.videoUrl = mediaPath;
             playerData.danmakuUrl = danmakuFileList.get(position);
             playerData.title = pageList.get(position);
+            playerData.cover = intent.getStringExtra("cover");
             try {
                 Intent player = PlayerApi.jumpToPlayer(playerData);
                 player.putExtra(com.RobinNotBad.BiliClient.player.CachedPlaybackSnapshot.TOKEN,
